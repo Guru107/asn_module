@@ -4,7 +4,7 @@ authors = [
     { name = "Gurudatt Kulkarni", email = "connect@gurudatt.in"}
 ]
 description = "ASN Module"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
@@ -21,7 +21,7 @@ build-backend = "flit_core.buildapi"
 
 [tool.ruff]
 line-length = 110
-target-version = "py314"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
