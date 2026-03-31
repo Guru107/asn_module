@@ -285,7 +285,7 @@ When a stock transfer (from QC) or Purchase Receipt (non-QC items) is submitted,
 
 - Item code
 - Quantity
-- Suggested bin/shelf location (from Item's default warehouse or Putaway Rule if configured)
+- Suggested bin/shelf location (from Putaway Rule if configured; if no rule exists, bin is omitted and the scan records the actual placement as the first location entry)
 
 ### Handler: `confirm_putaway`
 
