@@ -7,4 +7,3 @@ class ScanLog(Document):
 	def before_insert(self):
 		self.scan_timestamp = now_datetime()
 		self.user = frappe.session.user
-

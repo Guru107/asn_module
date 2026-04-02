@@ -1,6 +1,6 @@
 import frappe
-from frappe.model.document import Document
 from frappe import _
+from frappe.model.document import Document
 
 
 def _parse_allowed_roles(allowed_roles: str | None) -> list[str]:

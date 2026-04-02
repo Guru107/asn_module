@@ -15,7 +15,9 @@ from asn_module.qr_engine.token import create_token
 
 
 class TestDispatch(FrappeTestCase):
-	def _set_registry(self, action_key="create_purchase_receipt", handler_method="asn_module.tests.fake_handler"):
+	def _set_registry(
+		self, action_key="create_purchase_receipt", handler_method="asn_module.tests.fake_handler"
+	):
 		registry = frappe.get_doc("QR Action Registry")
 		registry.set("actions", [])
 		registry.append(
@@ -82,9 +84,11 @@ class TestDispatch(FrappeTestCase):
 				return SimpleNamespace(test_handler=test_handler)
 			return real_get_module(module_path)
 
-		with patch.object(token_module, "_get_secret", return_value="test-secret"), patch(
-			"asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]
-		), patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module):
+		with (
+			patch.object(token_module, "_get_secret", return_value="test-secret"),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module),
+		):
 			result = dispatch(token=token, device_info="Mobile")
 
 		self.assertTrue(result["success"])
@@ -96,7 +100,11 @@ class TestDispatch(FrappeTestCase):
 
 		log = frappe.get_all(
 			"Scan Log",
-			filters={"action": "create_purchase_receipt", "source_name": "QR Action Registry", "result": "Success"},
+			filters={
+				"action": "create_purchase_receipt",
+				"source_name": "QR Action Registry",
+				"result": "Success",
+			},
 			fields=["name", "device_info", "result_doctype", "result_name"],
 			order_by="creation desc",
 			limit=1,
@@ -110,9 +118,11 @@ class TestDispatch(FrappeTestCase):
 		self._set_registry()
 		token = self._make_token(source_doctype="Bogus DocType", source_name="Bogus Name")
 
-		with patch.object(token_module, "_get_secret", return_value="test-secret"), patch(
-			"asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]
-		), patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=frappe.get_module):
+		with (
+			patch.object(token_module, "_get_secret", return_value="test-secret"),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=frappe.get_module),
+		):
 			with self.assertRaises(frappe.ValidationError):
 				dispatch(token=token, device_info="Desktop")
 
@@ -153,9 +163,11 @@ class TestDispatch(FrappeTestCase):
 				return SimpleNamespace(partial_handler=partial_handler)
 			return real_get_module(module_path)
 
-		with patch.object(token_module, "_get_secret", return_value="test-secret"), patch(
-			"asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]
-		), patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module):
+		with (
+			patch.object(token_module, "_get_secret", return_value="test-secret"),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module),
+		):
 			with self.assertRaises(frappe.ValidationError):
 				dispatch(token=token, device_info="Desktop")
 
@@ -194,16 +206,22 @@ class TestDispatch(FrappeTestCase):
 				return SimpleNamespace(failing_handler=failing_handler)
 			return real_get_module(module_path)
 
-		with patch.object(token_module, "_get_secret", return_value="test-secret"), patch(
-			"asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]
-		), patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module):
+		with (
+			patch.object(token_module, "_get_secret", return_value="test-secret"),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module),
+		):
 			with self.assertRaises(ValueError):
 				dispatch(token=token, device_info="Desktop")
 
 		frappe.db.rollback()
 		log = frappe.get_all(
 			"Scan Log",
-			filters={"action": "create_purchase_receipt_failure", "source_name": "QR Action Registry", "result": "Failure"},
+			filters={
+				"action": "create_purchase_receipt_failure",
+				"source_name": "QR Action Registry",
+				"result": "Failure",
+			},
 			fields=["name", "device_info", "error_message"],
 			order_by="creation desc",
 			limit=1,
@@ -215,8 +233,10 @@ class TestDispatch(FrappeTestCase):
 		self._set_registry()
 		token = self._make_token()
 
-		with patch.object(token_module, "_get_secret", return_value="test-secret"), patch(
-			"asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["Accounts User"]
-		), patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=frappe.get_module):
+		with (
+			patch.object(token_module, "_get_secret", return_value="test-secret"),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["Accounts User"]),
+			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=frappe.get_module),
+		):
 			with self.assertRaises(PermissionDeniedError):
 				dispatch(token=token)
