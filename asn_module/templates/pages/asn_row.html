@@ -1,0 +1,17 @@
+<a href="/{{ asn.route }}" class="list-group-item list-group-item-action">
+	<div class="d-flex justify-content-between">
+		<div>
+			<strong>{{ asn.name }}</strong>
+			<span class="text-muted ml-2">{{ asn.supplier_invoice_no }}</span>
+		</div>
+		<div>
+			<span class="badge badge-{{ 'success' if asn.status == 'Received' else 'warning' if asn.status == 'Partially Received' else 'info' }}">
+				{{ asn.status }}
+			</span>
+		</div>
+	</div>
+	<div class="text-muted small mt-1">
+		{{ _("Expected") }}: {{ frappe.format(asn.expected_delivery_date, {"fieldtype": "Date"}) }}
+		| {{ _("Items") }}: {{ asn.total_items }}
+	</div>
+</a>

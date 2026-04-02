@@ -8,12 +8,14 @@ from frappe.query_builder import DocType
 from frappe.query_builder.functions import Sum
 from frappe.utils import flt, today
 from frappe.utils.file_manager import save_file
+from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
 
 
-class ASN(Document):
+class ASN(WebsiteGenerator):
 	def validate(self):
+		super().validate()
 		self._validate_items_present()
 		self._validate_item_qty()
 		self._validate_supplier_invoice_unique()
@@ -164,6 +166,7 @@ def _get_shipped_qty_by_po_item(
 
 @frappe.whitelist()
 def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -> list[dict]:
+	_get_accessible_purchase_order(purchase_order)
 	po_items = frappe.get_all(
 		"Purchase Order Item",
 		filters={"parent": purchase_order},
@@ -216,6 +219,7 @@ def get_po_items(
 	purchase_order = (filters or {}).get("purchase_order")
 	if not purchase_order:
 		return []
+	_get_accessible_purchase_order(purchase_order)
 
 	return frappe.db.sql(
 		"""
@@ -226,4 +230,14 @@ def get_po_items(
 		LIMIT %s OFFSET %s
 		""",
 		(purchase_order, f"%{txt}%", f"%{txt}%", page_len, start),
+	)
+
+
+def _get_accessible_purchase_order(purchase_order: str):
+	doc = frappe.get_doc("Purchase Order", purchase_order)
+	if doc.has_permission("read") or frappe.has_website_permission(doc, "read", user=frappe.session.user):
+		return doc
+
+	frappe.throw(
+		_("Not permitted to access Purchase Order {0}").format(purchase_order), frappe.PermissionError
 	)

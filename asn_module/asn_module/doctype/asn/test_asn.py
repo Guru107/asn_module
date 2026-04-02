@@ -348,3 +348,19 @@ class TestASN(FrappeTestCase):
 
 		self.assertGreaterEqual(len(results), 1)
 		self.assertEqual(results[0][0], po.items[0].item_code)
+
+	def test_get_purchase_order_items_rejects_inaccessible_purchase_order(self):
+		with patch(
+			"asn_module.asn_module.doctype.asn.asn._get_accessible_purchase_order",
+			side_effect=frappe.PermissionError,
+		):
+			with self.assertRaises(frappe.PermissionError):
+				get_purchase_order_items("PO-0001")
+
+	def test_get_po_items_rejects_inaccessible_purchase_order(self):
+		with patch(
+			"asn_module.asn_module.doctype.asn.asn._get_accessible_purchase_order",
+			side_effect=frappe.PermissionError,
+		):
+			with self.assertRaises(frappe.PermissionError):
+				get_po_items("ASN Item", "test", "item_code", 0, 20, {"purchase_order": "PO-0001"})

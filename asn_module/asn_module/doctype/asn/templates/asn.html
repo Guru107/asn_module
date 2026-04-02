@@ -1,0 +1,36 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container">
+	<div class="row">
+		<div class="col-md-12">
+			<h1 class="mb-3">{{ doc.name }}</h1>
+			<div class="mb-3 text-muted">
+				{{ _("Supplier Invoice") }}: {{ doc.supplier_invoice_no or "-" }}
+			</div>
+			<div class="mb-3">
+				<span class="badge badge-{{ 'success' if doc.status == 'Received' else 'warning' if doc.status == 'Partially Received' else 'info' }}">
+					{{ doc.status }}
+				</span>
+			</div>
+			<div class="mb-4">
+				{{ _("Expected Delivery") }}:
+				{{ frappe.format(doc.expected_delivery_date, {"fieldtype": "Date"}) if doc.expected_delivery_date else "-" }}
+			</div>
+			<div class="list-group">
+				{% for item in doc.items %}
+				<div class="list-group-item">
+					<div class="d-flex justify-content-between">
+						<div>
+							<strong>{{ item.item_code }}</strong>
+							<div class="text-muted small">{{ item.item_name or "" }}</div>
+						</div>
+						<div>{{ item.qty }} {{ item.uom }}</div>
+					</div>
+				</div>
+				{% endfor %}
+			</div>
+		</div>
+	</div>
+</div>
+{% endblock %}

@@ -1,5 +1,7 @@
 {
 	"actions": [],
+	"allow_guest_to_view": 0,
+	"allow_import": 1,
 	"autoname": "format:ASN-{####}",
 	"creation": "2026-04-01 00:00:00.000000",
 	"doctype": "DocType",
@@ -28,7 +30,8 @@
 		"column_break_4",
 		"barcode",
 		"remarks_section",
-		"remarks"
+		"remarks",
+		"route"
 	],
 	"fields": [
 		{
@@ -170,8 +173,17 @@
 			"fieldname": "remarks",
 			"fieldtype": "Text",
 			"label": "Remarks"
+		},
+		{
+			"fieldname": "route",
+			"fieldtype": "Data",
+			"hidden": 1,
+			"label": "Route",
+			"no_copy": 1,
+			"read_only": 1
 		}
 	],
+	"has_web_view": 1,
 	"index_web_pages_for_search": 0,
 	"is_submittable": 1,
 	"links": [],
@@ -211,6 +223,7 @@
 			"write": 1
 		}
 	],
+	"route": "asn",
 	"sort_field": "creation",
 	"sort_order": "DESC",
 	"states": [],

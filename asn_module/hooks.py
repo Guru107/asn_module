@@ -64,6 +64,20 @@ required_apps = ["erpnext"]
 # 	"Role": "home_page"
 # }
 
+# Portal
+has_website_permission = {
+	"ASN": "asn_module.templates.pages.asn.has_website_permission",
+}
+
+portal_menu_items = [
+	{
+		"title": "ASN",
+		"route": "/asn",
+		"reference_doctype": "ASN",
+		"role": "Supplier",
+	}
+]
+
 # Generators
 # ----------
 
