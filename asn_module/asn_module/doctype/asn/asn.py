@@ -1,6 +1,11 @@
+from collections.abc import Sequence
+from typing import Any
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.query_builder import DocType
+from frappe.query_builder.functions import Sum
 from frappe.utils import flt, today
 from frappe.utils.file_manager import save_file
 
@@ -15,24 +20,24 @@ class ASN(Document):
 		self._validate_po_qty()
 
 	def on_submit(self):
-		self.status = "Submitted"
-		self.asn_date = today()
-		self._generate_attachments()
+		asn_date = today()
+		qr_code, barcode = self._generate_attachments()
 		frappe.db.set_value(
 			self.doctype,
 			self.name,
 			{
-				"status": self.status,
-				"asn_date": self.asn_date,
-				"qr_code": self.qr_code,
-				"barcode": self.barcode,
+				"status": "Submitted",
+				"asn_date": asn_date,
+				"qr_code": qr_code,
+				"barcode": barcode,
 			},
 			update_modified=False,
 		)
+		self.reload()
 
 	def on_cancel(self):
-		self.status = "Cancelled"
-		frappe.db.set_value(self.doctype, self.name, "status", self.status, update_modified=False)
+		frappe.db.set_value(self.doctype, self.name, "status", "Cancelled", update_modified=False)
+		self.reload()
 
 	def _validate_items_present(self):
 		if self.items:
@@ -51,26 +56,15 @@ class ASN(Document):
 		if not self.supplier_invoice_no:
 			return
 
-		filters = [
-			"supplier = %s",
-			"supplier_invoice_no = %s",
-			"docstatus != 2",
-		]
-		params = [self.supplier, self.supplier_invoice_no]
-
+		filters: dict[str, Any] = {
+			"supplier": self.supplier,
+			"supplier_invoice_no": self.supplier_invoice_no,
+			"docstatus": ("!=", 2),
+		}
 		if self.name:
-			filters.append("name != %s")
-			params.append(self.name)
+			filters["name"] = ("!=", self.name)
 
-		existing = frappe.db.sql(
-			f"""
-			SELECT name
-			FROM `tabASN`
-			WHERE {" AND ".join(filters)}
-			LIMIT 1
-			""",
-			params,
-		)
+		existing = frappe.db.exists("ASN", filters)
 		if existing:
 			frappe.throw(
 				_("Supplier Invoice No {0} already exists for Supplier {1}").format(
@@ -96,28 +90,9 @@ class ASN(Document):
 			fields=["name", "qty"],
 		)
 		po_qty_by_item = {row.name: flt(row.qty) for row in po_items}
-
-		params = purchase_order_item_names.copy()
-		name_clause = ""
-		if self.name:
-			name_clause = "AND a.name != %s"
-			params.append(self.name)
-
-		placeholders = ", ".join(["%s"] * len(purchase_order_item_names))
-		existing_rows = frappe.db.sql(
-			f"""
-			SELECT ai.purchase_order_item, COALESCE(SUM(ai.qty), 0) AS qty
-			FROM `tabASN Item` ai
-			INNER JOIN `tabASN` a ON a.name = ai.parent
-			WHERE ai.purchase_order_item IN ({placeholders})
-			AND a.docstatus != 2
-			{name_clause}
-			GROUP BY ai.purchase_order_item
-			""",
-			params,
-			as_dict=True,
+		existing_qty_by_item = _get_shipped_qty_by_po_item(
+			purchase_order_item_names, exclude_asn_name=self.name or None
 		)
-		existing_qty_by_item = {row.purchase_order_item: flt(row.qty) for row in existing_rows}
 
 		for purchase_order_item, rows in rows_by_purchase_order_item.items():
 			po_qty = po_qty_by_item.get(purchase_order_item)
@@ -139,7 +114,7 @@ class ASN(Document):
 				)
 			)
 
-	def _generate_attachments(self):
+	def _generate_attachments(self) -> tuple[str, str]:
 		qr_result = generate_qr("create_purchase_receipt", "ASN", self.name)
 		barcode_result = generate_barcode("create_purchase_receipt", "ASN", self.name)
 
@@ -160,8 +135,31 @@ class ASN(Document):
 			decode=True,
 		)
 
-		self.qr_code = qr_file.file_url
-		self.barcode = barcode_file.file_url
+		return qr_file.file_url, barcode_file.file_url
+
+
+def _get_shipped_qty_by_po_item(
+	purchase_order_item_names: Sequence[str], exclude_asn_name: str | None = None
+) -> dict[str, float]:
+	if not purchase_order_item_names:
+		return {}
+
+	asn_item = DocType("ASN Item")
+	asn = DocType("ASN")
+	query = (
+		frappe.qb.from_(asn_item)
+		.inner_join(asn)
+		.on(asn.name == asn_item.parent)
+		.select(asn_item.purchase_order_item, Sum(asn_item.qty).as_("qty"))
+		.where(asn_item.purchase_order_item.isin(list(purchase_order_item_names)))
+		.where(asn.docstatus != 2)
+		.groupby(asn_item.purchase_order_item)
+	)
+	if exclude_asn_name:
+		query = query.where(asn.name != exclude_asn_name)
+
+	rows = query.run(as_dict=True)
+	return {row.purchase_order_item: flt(row.qty) for row in rows}
 
 
 @frappe.whitelist()
@@ -179,20 +177,13 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 		],
 	)
 
+	shipped_qty_by_item = _get_shipped_qty_by_po_item(
+		[poi.purchase_order_item for poi in po_items], exclude_asn_name=asn_name
+	)
+
 	result = []
 	for poi in po_items:
-		already_shipped = frappe.db.sql(
-			"""
-			SELECT COALESCE(SUM(ai.qty), 0)
-			FROM `tabASN Item` ai
-			INNER JOIN `tabASN` a ON a.name = ai.parent
-			WHERE ai.purchase_order_item = %s
-			AND a.name != %s
-			AND a.docstatus != 2
-			""",
-			(poi.purchase_order_item, asn_name or ""),
-		)[0][0]
-
+		already_shipped = shipped_qty_by_item.get(poi.purchase_order_item, 0)
 		remaining_qty = flt(poi.qty) - flt(already_shipped)
 		if remaining_qty <= 0:
 			continue
@@ -213,7 +204,15 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 
 
 @frappe.whitelist()
-def get_po_items(doctype, txt, searchfield, start, page_len, filters):
+def get_po_items(
+	doctype: str,
+	txt: str,
+	searchfield: str,
+	start: int,
+	page_len: int,
+	filters: dict[str, Any] | None,
+) -> list[tuple[str, str]]:
+	del doctype, searchfield
 	purchase_order = (filters or {}).get("purchase_order")
 	if not purchase_order:
 		return []
