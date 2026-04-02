@@ -7,10 +7,15 @@ from asn_module.qr_engine.generate import generate_barcode, generate_qr
 
 class TestGenerate(UnitTestCase):
 	def _generate_qr(self, site_url):
+		def write_png(buffer, scale):
+			buffer.write(b"fake-qr-image")
+
 		with (
 			patch("asn_module.qr_engine.generate.create_token", return_value="fixed-token"),
 			patch("asn_module.qr_engine.generate.frappe.utils.get_url", return_value=site_url),
+			patch("asn_module.qr_engine.generate.pyqrcode.create") as create_qr,
 		):
+			create_qr.return_value.png.side_effect = write_png
 			return generate_qr(
 				action="create_purchase_receipt",
 				source_doctype="ASN",
