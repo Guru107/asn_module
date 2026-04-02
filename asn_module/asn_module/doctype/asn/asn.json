@@ -1,0 +1,218 @@
+{
+	"actions": [],
+	"autoname": "format:ASN-{####}",
+	"creation": "2026-04-01 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"supplier",
+		"asn_date",
+		"status",
+		"column_break_1",
+		"expected_delivery_date",
+		"amended_from",
+		"items_section",
+		"items",
+		"transport_section",
+		"vehicle_number",
+		"transporter_name",
+		"column_break_2",
+		"driver_contact",
+		"invoice_section",
+		"supplier_invoice_no",
+		"supplier_invoice_date",
+		"column_break_3",
+		"supplier_invoice_amount",
+		"qr_section",
+		"qr_code",
+		"column_break_4",
+		"barcode",
+		"remarks_section",
+		"remarks"
+	],
+	"fields": [
+		{
+			"fieldname": "supplier",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"in_standard_filter": 1,
+			"label": "Supplier",
+			"options": "Supplier",
+			"reqd": 1
+		},
+		{
+			"fieldname": "asn_date",
+			"fieldtype": "Date",
+			"in_list_view": 1,
+			"label": "ASN Date",
+			"no_copy": 1,
+			"read_only": 1
+		},
+		{
+			"fieldname": "status",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"in_standard_filter": 1,
+			"label": "Status",
+			"options": "Draft\nSubmitted\nPartially Received\nReceived\nClosed\nCancelled",
+			"default": "Draft",
+			"no_copy": 1,
+			"read_only": 1
+		},
+		{
+			"fieldname": "column_break_1",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "expected_delivery_date",
+			"fieldtype": "Date",
+			"label": "Expected Delivery Date"
+		},
+		{
+			"fieldname": "amended_from",
+			"fieldtype": "Link",
+			"label": "Amended From",
+			"no_copy": 1,
+			"options": "ASN",
+			"print_hide": 1,
+			"read_only": 1
+		},
+		{
+			"fieldname": "items_section",
+			"fieldtype": "Section Break",
+			"label": "Items"
+		},
+		{
+			"fieldname": "items",
+			"fieldtype": "Table",
+			"label": "Items",
+			"options": "ASN Item",
+			"reqd": 1
+		},
+		{
+			"fieldname": "transport_section",
+			"fieldtype": "Section Break",
+			"label": "Transport Details"
+		},
+		{
+			"fieldname": "vehicle_number",
+			"fieldtype": "Data",
+			"label": "Vehicle Number"
+		},
+		{
+			"fieldname": "transporter_name",
+			"fieldtype": "Data",
+			"label": "Transporter Name"
+		},
+		{
+			"fieldname": "column_break_2",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "driver_contact",
+			"fieldtype": "Data",
+			"label": "Driver Contact"
+		},
+		{
+			"fieldname": "invoice_section",
+			"fieldtype": "Section Break",
+			"label": "Supplier Invoice Details"
+		},
+		{
+			"fieldname": "supplier_invoice_no",
+			"fieldtype": "Data",
+			"label": "Supplier Invoice No",
+			"reqd": 1
+		},
+		{
+			"fieldname": "supplier_invoice_date",
+			"fieldtype": "Date",
+			"label": "Supplier Invoice Date"
+		},
+		{
+			"fieldname": "column_break_3",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "supplier_invoice_amount",
+			"fieldtype": "Currency",
+			"label": "Supplier Invoice Amount"
+		},
+		{
+			"fieldname": "qr_section",
+			"fieldtype": "Section Break",
+			"label": "QR Code & Barcode"
+		},
+		{
+			"fieldname": "qr_code",
+			"fieldtype": "Attach Image",
+			"label": "QR Code",
+			"no_copy": 1,
+			"read_only": 1
+		},
+		{
+			"fieldname": "column_break_4",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "barcode",
+			"fieldtype": "Attach Image",
+			"label": "Barcode",
+			"no_copy": 1,
+			"read_only": 1
+		},
+		{
+			"fieldname": "remarks_section",
+			"fieldtype": "Section Break",
+			"label": "Remarks"
+		},
+		{
+			"fieldname": "remarks",
+			"fieldtype": "Text",
+			"label": "Remarks"
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"is_submittable": 1,
+	"links": [],
+	"modified": "2026-04-01 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "ASN",
+	"naming_rule": "Expression",
+	"owner": "Administrator",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "Stock User",
+			"share": 1,
+			"submit": 0,
+			"write": 1
+		},
+		{
+			"amend": 1,
+			"cancel": 1,
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "Stock Manager",
+			"share": 1,
+			"submit": 1,
+			"write": 1
+		}
+	],
+	"sort_field": "creation",
+	"sort_order": "DESC",
+	"states": [],
+	"track_changes": 1
+}
