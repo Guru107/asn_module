@@ -96,17 +96,13 @@ jobs:
           bench get-app --branch "version-$ERPNEXT_VERSION" erpnext
           bench get-app asn_module $GITHUB_WORKSPACE
           bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app erpnext
-          bench --site test_site install-app asn_module
-          bench build
         env:
           CI: 'Yes'
 
       - name: Run Tests
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ github.workspace }}
         run: |
-          bench --site test_site set-config allow_tests true
-          bench --site test_site run-tests --app asn_module
+          chmod +x scripts/run_ephemeral_python_tests.sh
+          BENCH_ROOT=/home/runner/frappe-bench DB_ROOT_PASSWORD=root scripts/run_ephemeral_python_tests.sh
         env:
           TYPE: server
