@@ -1,0 +1,54 @@
+{
+	"creation": "2026-04-02 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"action_key",
+		"handler_method",
+		"source_doctype",
+		"allowed_roles"
+	],
+	"fields": [
+		{
+			"fieldname": "action_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Action Key",
+			"reqd": 1,
+			"unique": 1
+		},
+		{
+			"fieldname": "handler_method",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Handler Method",
+			"reqd": 1
+		},
+		{
+			"fieldname": "source_doctype",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "Source DocType",
+			"options": "DocType",
+			"reqd": 1
+		},
+		{
+			"fieldname": "allowed_roles",
+			"fieldtype": "Small Text",
+			"in_list_view": 1,
+			"label": "Allowed Roles",
+			"reqd": 1
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"istable": 1,
+	"modified": "2026-04-02 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "QR Action Registry Item",
+	"owner": "Administrator",
+	"permissions": [],
+	"sort_field": "creation",
+	"sort_order": "DESC",
+	"states": []
+}

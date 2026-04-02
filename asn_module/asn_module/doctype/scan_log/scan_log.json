@@ -1,0 +1,118 @@
+{
+	"autoname": "format:SCAN-{####}",
+	"creation": "2026-04-02 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"scan_timestamp",
+		"user",
+		"action",
+		"source_doctype",
+		"source_name",
+		"device_info",
+		"result",
+		"result_doctype",
+		"result_name",
+		"error_message"
+	],
+	"fields": [
+		{
+			"fieldname": "scan_timestamp",
+			"fieldtype": "Datetime",
+			"label": "Scan Timestamp",
+			"read_only": 1
+		},
+		{
+			"fieldname": "user",
+			"fieldtype": "Link",
+			"label": "User",
+			"options": "User",
+			"read_only": 1
+		},
+		{
+			"fieldname": "action",
+			"fieldtype": "Data",
+			"label": "Action",
+			"read_only": 1,
+			"reqd": 1
+		},
+		{
+			"fieldname": "source_doctype",
+			"fieldtype": "Link",
+			"label": "Source DocType",
+			"options": "DocType",
+			"read_only": 1,
+			"reqd": 1
+		},
+		{
+			"fieldname": "source_name",
+			"fieldtype": "Dynamic Link",
+			"label": "Source Name",
+			"options": "source_doctype",
+			"read_only": 1,
+			"reqd": 1
+		},
+		{
+			"fieldname": "device_info",
+			"fieldtype": "Data",
+			"label": "Device Info",
+			"read_only": 1
+		},
+		{
+			"fieldname": "result",
+			"fieldtype": "Select",
+			"label": "Result",
+			"options": "\nSuccess\nFailure",
+			"read_only": 1,
+			"reqd": 1
+		},
+		{
+			"fieldname": "result_doctype",
+			"fieldtype": "Link",
+			"label": "Result DocType",
+			"options": "DocType",
+			"read_only": 1
+		},
+		{
+			"fieldname": "result_name",
+			"fieldtype": "Dynamic Link",
+			"label": "Result Name",
+			"options": "result_doctype",
+			"read_only": 1
+		},
+		{
+			"fieldname": "error_message",
+			"fieldtype": "Text",
+			"label": "Error Message",
+			"read_only": 1
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"in_create": 1,
+	"modified": "2026-04-02 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "Scan Log",
+	"owner": "Administrator",
+	"permissions": [
+		{
+			"read": 1,
+			"role": "System Manager"
+		},
+		{
+			"read": 1,
+			"role": "Stock User"
+		},
+		{
+			"read": 1,
+			"role": "Stock Manager"
+		},
+		{
+			"read": 1,
+			"role": "Accounts User"
+		}
+	],
+	"sort_field": "creation",
+	"sort_order": "DESC",
+	"states": []
+}
