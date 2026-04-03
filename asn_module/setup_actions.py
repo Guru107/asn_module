@@ -64,4 +64,3 @@ def register_actions():
 		)
 
 	registry.save(ignore_permissions=True)
-	frappe.db.commit()
