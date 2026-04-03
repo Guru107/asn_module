@@ -8,7 +8,7 @@ app_license = "mit"
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["erpnext"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -63,6 +63,20 @@ app_license = "mit"
 # role_home_page = {
 # 	"Role": "home_page"
 # }
+
+# Portal
+has_website_permission = {
+	"ASN": "asn_module.templates.pages.asn.has_website_permission",
+}
+
+portal_menu_items = [
+	{
+		"title": "ASN",
+		"route": "/asn",
+		"reference_doctype": "ASN",
+		"role": "Supplier",
+	}
+]
 
 # Generators
 # ----------
@@ -164,7 +178,7 @@ app_license = "mit"
 # Testing
 # -------
 
-# before_tests = "asn_module.install.before_tests"
+before_tests = "asn_module.utils.test_setup.before_tests"
 
 # Extend DocType Class
 # ------------------------------
@@ -249,4 +263,3 @@ app_license = "mit"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

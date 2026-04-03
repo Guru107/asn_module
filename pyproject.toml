@@ -8,6 +8,7 @@ requires-python = ">=3.11"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
+    "python-barcode>=0.15.1",
     # "frappe~=16.0.0" # Installed and managed by bench.
 ]
 

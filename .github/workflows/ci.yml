@@ -13,6 +13,9 @@ concurrency:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    env:
+      FRAPPE_VERSION: "16"
+      ERPNEXT_VERSION: "16"
     strategy:
       fail-fast: false
     name: Server
@@ -83,23 +86,23 @@ jobs:
       - name: Setup
         run: |
           pip install frappe-bench
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" --frappe-branch "version-$FRAPPE_VERSION" ~/frappe-bench
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
 
       - name: Install
         working-directory: /home/runner/frappe-bench
         run: |
+          bench get-app --branch "version-$ERPNEXT_VERSION" erpnext
           bench get-app asn_module $GITHUB_WORKSPACE
           bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app asn_module
-          bench build
         env:
           CI: 'Yes'
 
       - name: Run Tests
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ github.workspace }}
         run: |
-          bench --site test_site set-config allow_tests true
-          bench --site test_site run-tests --app asn_module
+          chmod +x scripts/run_ephemeral_python_tests.sh
+          BENCH_ROOT=/home/runner/frappe-bench DB_ROOT_PASSWORD=root scripts/run_ephemeral_python_tests.sh
         env:
           TYPE: server
