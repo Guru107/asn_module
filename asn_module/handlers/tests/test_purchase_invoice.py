@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 import frappe
+from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice as make_pi_from_pr
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
@@ -18,7 +19,7 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		before_tests()
 		super().setUpClass()
 
-	def _make_submitted_purchase_receipt(self, *, asn=None, per_billed=0):
+	def _make_submitted_purchase_receipt(self, *, asn=None, per_billed=0, qty=2):
 		purchase_order = create_purchase_order(
 			transaction_date="2026-03-30",
 			schedule_date="2026-03-31",
@@ -39,7 +40,7 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 				"items": [
 					{
 						"item_code": purchase_order.items[0].item_code,
-						"qty": 2,
+						"qty": qty,
 						"rate": purchase_order.items[0].rate,
 						"purchase_order": purchase_order.name,
 						"purchase_order_item": purchase_order.items[0].name,
@@ -59,6 +60,15 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		):
 			pr.submit()
 		return pr
+
+	def _make_partially_billed_purchase_receipt(self, billed_qty=4):
+		pr = self._make_submitted_purchase_receipt(qty=10)
+		partial_pi = make_pi_from_pr(pr.name)
+		partial_pi.items[0].qty = billed_qty
+		partial_pi.save(ignore_permissions=True)
+		partial_pi.submit()
+		pr.reload()
+		return pr, partial_pi
 
 	def test_creates_draft_purchase_invoice_from_purchase_receipt(self):
 		asn = make_test_asn(supplier_invoice_no="INV-0001")
@@ -109,6 +119,21 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 			frappe.db.count("Purchase Invoice Item", {"purchase_receipt": pr.name, "docstatus": 0}),
 			1,
 		)
+
+	def test_uses_pending_quantity_for_partially_billed_purchase_receipt(self):
+		pr, partial_pi = self._make_partially_billed_purchase_receipt(billed_qty=4)
+
+		result = create_from_purchase_receipt(
+			source_doctype="Purchase Receipt",
+			source_name=pr.name,
+			payload={"action": "create_purchase_invoice"},
+		)
+
+		pi = frappe.get_doc("Purchase Invoice", result["name"])
+		self.assertEqual(partial_pi.items[0].qty, 4)
+		self.assertEqual(pi.items[0].qty, 6)
+		self.assertEqual(pi.items[0].received_qty, 10)
+		self.assertEqual(pi.items[0].purchase_receipt, pr.name)
 
 	def test_rejects_unsubmitted_purchase_receipt(self):
 		pr = self._make_submitted_purchase_receipt()
