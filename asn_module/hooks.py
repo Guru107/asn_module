@@ -103,7 +103,7 @@ portal_menu_items = [
 # ------------
 
 # before_install = "asn_module.install.before_install"
-# after_install = "asn_module.install.after_install"
+after_install = "asn_module.setup.after_install"
 
 # Uninstallation
 # ------------
