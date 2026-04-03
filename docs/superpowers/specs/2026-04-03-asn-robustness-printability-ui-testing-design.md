@@ -97,15 +97,15 @@ No legacy token compatibility for newly generated codes:
 ## Generation Flow
 
 1. Trigger code generation on defined events only:
-   - ASN `on_submit`: create initial scan code for `create_purchase_receipt`
-   - Purchase Receipt `on_submit`: create follow-up scan codes for invoice/putaway actions
-   - Quality Inspection `on_submit`: create follow-up scan codes for transfer/return actions
-   - Subcontracting Order `on_submit` and Subcontracting Dispatch `on_submit`: create next-step scan codes
+  - ASN `on_submit`: create initial scan code for `create_purchase_receipt`
+  - Purchase Receipt `on_submit`: create follow-up scan codes for invoice/putaway actions
+  - Quality Inspection `on_submit`: create follow-up scan codes for transfer/return actions
+  - Subcontracting Order `on_submit` and Subcontracting Dispatch `on_submit`: create next-step scan codes
 2. Generate short unique `scan_code` (collision-checked).
 3. Persist registry row with `status=active`.
 4. Render:
-   - QR: compact URL containing only `code`
-   - Barcode: raw short code
+  - QR: compact URL containing only `code`
+  - Barcode: raw short code
 5. Attach rendered assets and show human-readable code text.
 
 ## Dispatch Flow
@@ -233,7 +233,7 @@ Performance:
 - Strict scan input and dispatch validation with stable user-facing errors.
 - Singleton/test isolation rules to prevent test data pollution in shared registries.
 - Required test isolation outcome: any test mutating singleton registries must snapshot and restore state
-  (or run against an isolated disposable site) before suite completion.
+(or run against an isolated disposable site) before suite completion.
 
 ## Subproject 2 Acceptance
 
@@ -258,7 +258,7 @@ Journey 5 verification approach:
 
 - Cypress verifies user-visible outcome (submit success + summary refresh).
 - Transition emission correctness is additionally asserted via API-backed checks in the same test run
-  (query transition rows for ASN/item/state), so UI tests do not rely on visual inference alone.
+(query transition rows for ASN/item/state), so UI tests do not rely on visual inference alone.
 
 ## CI Integration
 
@@ -283,16 +283,13 @@ Journey 5 verification approach:
 ## Risks and Mitigations
 
 - **Risk:** code collision in short IDs  
-  **Mitigation:** unique constraint + retry loop + collision tests.
-
+**Mitigation:** unique constraint + retry loop + collision tests.
 - **Risk:** printability still poor on some invoice templates  
-  **Mitigation:** enforce rendering thresholds and add manual print checklist.
-
+**Mitigation:** enforce rendering thresholds and add manual print checklist.
 - **Risk:** transition event overlogging/noise  
-  **Mitigation:** idempotency keys and canonical state definitions.
-
+**Mitigation:** idempotency keys and canonical state definitions.
 - **Risk:** flaky UI tests  
-  **Mitigation:** smoke-first suite, stable selectors, condition-based waits, CI artifacts.
+**Mitigation:** smoke-first suite, stable selectors, condition-based waits, CI artifacts.
 
 ## Implementation Readiness
 
