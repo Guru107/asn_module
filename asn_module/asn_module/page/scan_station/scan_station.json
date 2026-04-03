@@ -1,0 +1,22 @@
+{
+	"content": null,
+	"creation": "2026-04-01 00:00:00.000000",
+	"doctype": "Page",
+	"icon": "icon-barcode",
+	"modified": "2026-04-01 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "scan-station",
+	"owner": "Administrator",
+	"page_name": "scan-station",
+	"roles": [
+		{ "role": "Stock User" },
+		{ "role": "Stock Manager" },
+		{ "role": "Accounts User" },
+		{ "role": "Accounts Manager" },
+		{ "role": "System Manager" }
+	],
+	"standard": "Yes",
+	"system_page": 0,
+	"title": "Scan Station"
+}

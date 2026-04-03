@@ -41,6 +41,43 @@ class ASN(WebsiteGenerator):
 		frappe.db.set_value(self.doctype, self.name, "status", "Cancelled", update_modified=False)
 		self.reload()
 
+	def update_receipt_status(self):
+		"""Update ASN status based on received quantities across all items."""
+		all_received = True
+		any_received = False
+
+		for item in self.items:
+			received_qty = flt(item.received_qty)
+			qty = flt(item.qty)
+
+			if received_qty > 0:
+				any_received = True
+			if received_qty < qty:
+				all_received = False
+			item.discrepancy_qty = qty - received_qty
+
+		status = self.status
+		if all_received:
+			status = "Received"
+		elif any_received:
+			status = "Partially Received"
+
+		for item in self.items:
+			frappe.db.set_value(
+				item.doctype,
+				item.name,
+				{
+					"received_qty": item.received_qty,
+					"discrepancy_qty": item.discrepancy_qty,
+				},
+				update_modified=False,
+			)
+
+		if status != self.status:
+			frappe.db.set_value(self.doctype, self.name, "status", status, update_modified=False)
+
+		self.reload()
+
 	def _validate_items_present(self):
 		if self.items:
 			return

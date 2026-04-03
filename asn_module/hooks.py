@@ -26,7 +26,10 @@ required_apps = ["erpnext"]
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/asn_module/css/asn_module.css"
-# app_include_js = "/assets/asn_module/js/asn_module.js"
+app_include_js = [
+	"/assets/asn_module/js/scan_dialog.js",
+	"/assets/asn_module/js/asn_module.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/asn_module/css/asn_module.css"
@@ -100,7 +103,7 @@ portal_menu_items = [
 # ------------
 
 # before_install = "asn_module.install.before_install"
-# after_install = "asn_module.install.after_install"
+after_install = "asn_module.setup.after_install"
 
 # Uninstallation
 # ------------
@@ -153,6 +156,14 @@ portal_menu_items = [
 # 		"on_trash": "method"
 # 	}
 # }
+doc_events = {
+	"Purchase Receipt": {
+		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
+	},
+	"Quality Inspection": {
+		"on_submit": "asn_module.handlers.quality_inspection.on_quality_inspection_submit",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
