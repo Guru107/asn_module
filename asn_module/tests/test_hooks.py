@@ -25,12 +25,21 @@ class TestHooks(FrappeTestCase):
 
 	@patch("asn_module.setup.setup_pi_fields")
 	@patch("asn_module.setup.setup_pr_fields")
-	def test_after_install_sets_up_purchase_receipt_and_invoice_fields(
+	@patch("asn_module.setup.create_notifications")
+	def test_after_install_sets_up_purchase_receipt_invoice_fields_and_notifications(
 		self,
+		create_notifications,
 		setup_pr_fields,
 		setup_pi_fields,
 	):
+		call_order = []
+		setup_pr_fields.side_effect = lambda: call_order.append("pr")
+		setup_pi_fields.side_effect = lambda: call_order.append("pi")
+		create_notifications.side_effect = lambda: call_order.append("notif")
+
 		setup_module.after_install()
 
 		setup_pr_fields.assert_called_once_with()
 		setup_pi_fields.assert_called_once_with()
+		create_notifications.assert_called_once_with()
+		self.assertEqual(call_order, ["pr", "pi", "notif"])
