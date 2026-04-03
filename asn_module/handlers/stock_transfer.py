@@ -25,10 +25,24 @@ def create_from_quality_inspection(source_doctype: str, source_name: str, payloa
 		)
 
 	source_row = None
-	for item in purchase_receipt.items:
-		if item.item_code == qi.item_code:
-			source_row = item
-			break
+	qi_pr_item = getattr(qi, "purchase_receipt_item", None)
+	if qi_pr_item:
+		for item in purchase_receipt.items:
+			if item.name == qi_pr_item:
+				source_row = item
+				break
+
+	if not source_row:
+		matching_rows = [item for item in purchase_receipt.items if item.item_code == qi.item_code]
+		if len(matching_rows) == 1:
+			source_row = matching_rows[0]
+		elif len(matching_rows) > 1:
+			frappe.throw(
+				_(
+					"Multiple Purchase Receipt rows found for item {0} in {1}. "
+					"Set a specific purchase_receipt_item on Quality Inspection {2}."
+				).format(qi.item_code, qi.reference_name, qi.name)
+			)
 
 	if not source_row:
 		frappe.throw(_("Item {0} not found in {1}").format(qi.item_code, qi.reference_name))

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Handoff"
-  short_description: "Write session handoff docs"
-  default_prompt: "Use $handoff to write a session handoff document for this repository."
