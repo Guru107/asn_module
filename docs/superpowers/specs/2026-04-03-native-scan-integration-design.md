@@ -80,7 +80,7 @@ The backend authority for workflow scans remains:
 - `asn_module.qr_engine.dispatch.dispatch`
 
 Responsibilities that remain custom:
-- token extraction and verification
+- authoritative token parsing and verification
 - action registry lookup
 - role and permission checks
 - workflow handler invocation
@@ -138,12 +138,29 @@ A small custom adapter is still required between native-feeling scan input and t
 
 Its job is limited to:
 - accepting scanner input
-- extracting `token` from a full scanned URL when needed
+- normalizing input by extracting `token` from a full scanned URL when needed
 - calling `asn_module.qr_engine.dispatch.dispatch`
 - handling success and failure UI
 - navigating to the returned route
 
 It should not reimplement item barcode logic that ERPNext already owns.
+
+Frontend normalization is convenience-only. Backend dispatch remains the sole authority for token validation and workflow routing.
+
+## Scan Routing Rule
+
+Mixed scanning contexts must follow one deterministic rule:
+
+1. If scanned input is an ASN workflow URL or a token that matches ASN dispatch format, route it to `asn_module.qr_engine.dispatch.dispatch`
+2. Otherwise, hand the input to native ERPNext barcode handling
+
+Detection rule:
+- treat input as ASN workflow scan when it is either:
+  - a full URL containing `token=...` for ASN dispatch
+  - a direct token intended for ASN dispatch entry points
+- treat all other scanned values as native ERPNext barcode input
+
+This keeps workflow-token scans and item-barcode scans compatible on the same surface without ambiguous precedence.
 
 ## UI Strategy
 
@@ -169,6 +186,43 @@ Recommended role of `Scan Station`:
 The global shortcut remains acceptable, but it should be treated as a convenience layer rather than the core scan architecture.
 
 It should evolve toward a thin adapter that feels consistent with framework-native input handling rather than a fully custom scanning workflow.
+
+## Frontend Integration Pattern
+
+Each scan surface should use one explicit pattern.
+
+### 1. Stock forms
+
+Use an event wrapper around native form scanning behavior.
+
+- Keep ERPNext native `scan_barcode` behavior as the default for item, serial, batch, and warehouse scans
+- Add ASN workflow-token handling only as a thin interception layer before native barcode resolution
+- If the scanned input matches ASN workflow format, call ASN dispatch
+- If it does not match ASN workflow format, pass control to native ERPNext barcode scanning unchanged
+
+This keeps stock forms framework-native while still allowing workflow-token scans when needed.
+
+### 2. `Scan Station`
+
+Keep `Scan Station` as a separate action entry point.
+
+- It remains a dedicated fallback screen
+- It accepts workflow URLs or direct tokens
+- It calls ASN dispatch directly
+- It also displays recent `Scan Log` history
+
+`Scan Station` should not attempt to become a full replacement for ERPNext native item scanning on forms.
+
+### 3. Global shortcut
+
+Keep the global shortcut as a separate action entry point.
+
+- It opens a minimal scan dialog
+- It accepts workflow URLs or direct tokens
+- It performs frontend normalization and then calls ASN dispatch
+- It does not own native item-scanning behavior
+
+This keeps the shortcut lightweight and avoids overlapping with ERPNext form scanner responsibilities.
 
 ## Practical Migration Strategy
 
