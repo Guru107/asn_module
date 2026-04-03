@@ -163,6 +163,12 @@ doc_events = {
 	"Quality Inspection": {
 		"on_submit": "asn_module.handlers.quality_inspection.on_quality_inspection_submit",
 	},
+	"Stock Entry": {
+		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_dispatch_submit",
+	},
+	"Subcontracting Order": {
+		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_order_submit",
+	},
 }
 
 # Scheduled Tasks
