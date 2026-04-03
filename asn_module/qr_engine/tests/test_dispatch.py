@@ -15,6 +15,33 @@ from asn_module.qr_engine.token import create_token
 
 
 class TestDispatch(FrappeTestCase):
+	@classmethod
+	def _snapshot_registry_actions(cls) -> list[dict]:
+		registry = frappe.get_doc("QR Action Registry")
+		return [
+			{
+				"action_key": row.action_key,
+				"handler_method": row.handler_method,
+				"source_doctype": row.source_doctype,
+				"allowed_roles": row.allowed_roles,
+			}
+			for row in (registry.actions or [])
+		]
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls._registry_snapshot = cls._snapshot_registry_actions()
+
+	@classmethod
+	def tearDownClass(cls):
+		registry = frappe.get_doc("QR Action Registry")
+		registry.set("actions", [])
+		for row in cls._registry_snapshot:
+			registry.append("actions", row)
+		registry.save(ignore_permissions=True)
+		super().tearDownClass()
+
 	def _set_registry(
 		self, action_key="create_purchase_receipt", handler_method="asn_module.tests.fake_handler"
 	):

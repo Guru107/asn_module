@@ -14,16 +14,47 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 	let scan_timeout = null;
 
+	function parse_token_input(value) {
+		const input = (value || "").trim();
+		if (!input) {
+			return { error: __("Please scan or paste a token value.") };
+		}
+
+		try {
+			const parsed = new URL(input, window.location.origin);
+			const token_param = parsed.searchParams.get("token");
+			if (token_param) {
+				return { token: decodeURIComponent(token_param) };
+			}
+
+			if (parsed.pathname && parsed.pathname.startsWith("/files/")) {
+				return {
+					error: __(
+						"You pasted a QR image file URL. Scan the QR image content or paste the URL containing token."
+					),
+				};
+			}
+
+			if (/^https?:\/\//i.test(input)) {
+				return { error: __("Scanned URL is missing token query parameter.") };
+			}
+		} catch (e) {
+			// Not a URL. Treat as raw token.
+		}
+
+		return { token: input };
+	}
+
 	function process_scan(value) {
 		if (!value || !value.trim()) return;
 
-		let token = value.trim();
-
-		// Extract token from URL if full URL was scanned
-		let url_match = token.match(/[?&]token=([^&]+)/);
-		if (url_match) {
-			token = url_match[1];
+		const parsed = parse_token_input(value);
+		if (parsed.error) {
+			$error.text(parsed.error).show();
+			setTimeout(() => $error.fadeOut(), 5000);
+			return;
 		}
+		const token = parsed.token;
 
 		$input.prop("disabled", true);
 		$status.show();

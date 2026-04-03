@@ -49,24 +49,38 @@ frappe.ui.form.on("ASN Item", {
 		if (!row.purchase_order) {
 			return;
 		}
+		// Rows generated from PO items already carry purchase_order_item; skip re-fetch loops.
+		if (row.purchase_order_item) {
+			return;
+		}
+		if (frm.__is_loading_po_items) {
+			return;
+		}
+		frm.__is_loading_po_items = true;
 
 		frappe.call({
 			method: "asn_module.asn_module.doctype.asn.asn.get_purchase_order_items",
 			args: { purchase_order: row.purchase_order, asn_name: frm.doc.name },
 			callback(r) {
-				if (!r.message || !r.message.length) {
-					return;
+				try {
+					if (!r.message || !r.message.length) {
+						return;
+					}
+
+					const [first_item, ...remaining_items] = r.message;
+					Object.assign(row, first_item);
+					remaining_items.forEach((item) => {
+						const new_row = frm.add_child("items");
+						Object.assign(new_row, item);
+					});
+
+					frm.refresh_field("items");
+				} finally {
+					frm.__is_loading_po_items = false;
 				}
-
-				const current_idx = row.idx;
-				frm.doc.items = frm.doc.items.filter((d) => d.idx !== current_idx);
-
-				r.message.forEach((item) => {
-					const new_row = frm.add_child("items");
-					Object.assign(new_row, item);
-				});
-
-				frm.refresh_field("items");
+			},
+			error() {
+				frm.__is_loading_po_items = false;
 			},
 		});
 	},

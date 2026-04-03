@@ -38,15 +38,53 @@ asn_module.ScanDialog = class ScanDialog {
 		}, 100);
 	}
 
+	parse_token_input(value) {
+		const input = (value || "").trim();
+		if (!input) {
+			return { error: __("Please scan or paste a token value.") };
+		}
+
+		try {
+			const parsed = new URL(input, window.location.origin);
+			const token_param = parsed.searchParams.get("token");
+			if (token_param) {
+				return { token: decodeURIComponent(token_param) };
+			}
+
+			if (parsed.pathname && parsed.pathname.startsWith("/files/")) {
+				return {
+					error: __(
+						"You pasted a QR image file URL. Scan the QR image content or paste the URL containing token."
+					),
+				};
+			}
+
+			if (/^https?:\/\//i.test(input)) {
+				return { error: __("Scanned URL is missing token query parameter.") };
+			}
+		} catch (e) {
+			// Not a URL. Treat as raw token.
+		}
+
+		return { token: input };
+	}
+
 	process_scan(value) {
 		if (this.is_processing || !value || !value.trim()) return;
-		this.is_processing = true;
 
-		let token = value.trim();
-		let url_match = token.match(/[?&]token=([^&]+)/);
-		if (url_match) {
-			token = url_match[1];
+		const parsed = this.parse_token_input(value);
+		if (parsed.error) {
+			frappe.show_alert(
+				{
+					message: parsed.error,
+					indicator: "orange",
+				},
+				6
+			);
+			return;
 		}
+		this.is_processing = true;
+		const token = parsed.token;
 
 		this.dialog.hide();
 
