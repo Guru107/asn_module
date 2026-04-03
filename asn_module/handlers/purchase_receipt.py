@@ -9,11 +9,11 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	del source_doctype, payload
 
 	asn = frappe.get_doc("ASN", source_name)
+	if asn.docstatus != 1:
+		frappe.throw(_("Purchase Receipt can only be created from a submitted ASN"))
 	if asn.status in ("Received", "Closed", "Cancelled"):
 		frappe.throw(
-			_("Cannot create Purchase Receipt from ASN {0} with status {1}").format(
-				source_name, asn.status
-			)
+			_("Cannot create Purchase Receipt from ASN {0} with status {1}").format(source_name, asn.status)
 		)
 
 	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": source_name, "docstatus": 0}, "name")
@@ -93,19 +93,22 @@ def on_purchase_receipt_submit(doc, method):
 	)
 	_attach_qr_to_doc(doc, purchase_invoice_qr, "purchase-invoice-qr")
 
+	putaway_required = False
 	for pr_item in doc.items:
 		inspection_required = frappe.db.get_value(
 			"Item", pr_item.item_code, "inspection_required_before_purchase"
 		)
 		if inspection_required:
 			continue
+		putaway_required = True
 
+	if putaway_required:
 		putaway_qr = generate_qr(
 			action="confirm_putaway",
 			source_doctype="Purchase Receipt",
 			source_name=doc.name,
 		)
-		_attach_qr_to_doc(doc, putaway_qr, f"putaway-{pr_item.item_code}")
+		_attach_qr_to_doc(doc, putaway_qr, f"putaway-{doc.name}")
 
 
 def _attach_qr_to_doc(doc, qr_result, prefix):
