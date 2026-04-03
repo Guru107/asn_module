@@ -156,6 +156,11 @@ after_install = "asn_module.setup.after_install"
 # 		"on_trash": "method"
 # 	}
 # }
+doc_events = {
+	"Purchase Receipt": {
+		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
