@@ -155,9 +155,10 @@ Mixed scanning contexts must follow one deterministic rule:
 2. Otherwise, hand the input to native ERPNext barcode handling
 
 Detection rule:
-- treat input as ASN workflow scan when it is either:
-  - a full URL containing `token=...` for ASN dispatch
-  - a direct token intended for ASN dispatch entry points
+- on mixed form surfaces, treat input as ASN workflow scan only when it is a full ASN workflow URL containing `token=...`
+- on dedicated ASN entry points (`Scan Station` and global shortcut), accept either:
+  - a full ASN workflow URL containing `token=...`
+  - a direct ASN token pasted or scanned into that dedicated entry point
 - treat all other scanned values as native ERPNext barcode input
 
 This keeps workflow-token scans and item-barcode scans compatible on the same surface without ambiguous precedence.
@@ -196,9 +197,11 @@ Each scan surface should use one explicit pattern.
 Use an event wrapper around native form scanning behavior.
 
 - Keep ERPNext native `scan_barcode` behavior as the default for item, serial, batch, and warehouse scans
+- In Phase 1, apply this only to `Purchase Receipt`
 - Add ASN workflow-token handling only as a thin interception layer before native barcode resolution
-- If the scanned input matches ASN workflow format, call ASN dispatch
+- If the scanned input is a full ASN workflow URL with `token=...`, call ASN dispatch
 - If it does not match ASN workflow format, pass control to native ERPNext barcode scanning unchanged
+- If ASN dispatch is attempted and fails, show the ASN dispatch error and stop; do not fall back to native barcode handling for that same scanned value
 
 This keeps stock forms framework-native while still allowing workflow-token scans when needed.
 
@@ -254,6 +257,13 @@ Where workflow execution naturally starts from a stock form, attach scanning clo
 
 This does not mean replacing workflow-token scanning with item-barcode scanning. It means using ERPNext-native interaction patterns where scanning happens.
 
+Initial implementation scope for this design:
+- Phase 1 form integration applies to `Purchase Receipt` only
+- `Scan Station` remains supported
+- global shortcut remains supported
+
+Future form expansion such as `Stock Entry` should be treated as a later follow-up after `Purchase Receipt` behavior is verified in real use.
+
 ## Trade-Offs
 
 ### Recommended hybrid model
@@ -297,6 +307,13 @@ The adapter layer should keep current behavior:
 - errors remain logged in `Scan Log`
 - frontend shows concise failure feedback
 - successful dispatch continues to navigate to the returned document route
+
+On mixed form surfaces:
+- once a scanned value is classified as ASN workflow input, failure remains an ASN failure
+- the same scanned value must not be retried through native ERPNext barcode handling automatically
+
+Reason:
+automatic fallback after ASN classification risks turning a workflow-token error into an unintended item-barcode operation.
 
 No additional scanning error framework is needed beyond existing dispatch and log behavior.
 
