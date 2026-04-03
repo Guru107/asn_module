@@ -8,6 +8,13 @@ def create_from_quality_inspection(source_doctype: str, source_name: str, payloa
 
 	qi = frappe.get_doc("Quality Inspection", source_name)
 
+	if qi.docstatus != 1:
+		frappe.throw(
+			_("Quality Inspection {0} must be submitted before creating a Purchase Return").format(
+				source_name
+			)
+		)
+
 	if qi.status != "Rejected":
 		frappe.throw(_("Quality Inspection {0} is not Rejected. Status: {1}").format(source_name, qi.status))
 

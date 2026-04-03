@@ -73,3 +73,16 @@ class TestCreatePurchaseReturn(FrappeTestCase):
 				source_name=qi.name,
 				payload={"action": "create_purchase_return"},
 			)
+
+	def test_rejects_cancelled_quality_inspection(self):
+		pr, qi = self._make_rejected_purchase_receipt_with_qi()
+		qi.cancel()
+
+		with self.assertRaises(frappe.ValidationError):
+			create_from_quality_inspection(
+				source_doctype="Quality Inspection",
+				source_name=qi.name,
+				payload={"action": "create_purchase_return"},
+			)
+
+		self.assertEqual(pr.docstatus, 1)

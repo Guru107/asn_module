@@ -8,6 +8,11 @@ def create_from_quality_inspection(source_doctype: str, source_name: str, payloa
 
 	qi = frappe.get_doc("Quality Inspection", source_name)
 
+	if qi.docstatus != 1:
+		frappe.throw(
+			_("Quality Inspection {0} must be submitted before creating a Stock Transfer").format(source_name)
+		)
+
 	if qi.status != "Accepted":
 		frappe.throw(_("Quality Inspection {0} is not Accepted. Status: {1}").format(source_name, qi.status))
 

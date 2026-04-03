@@ -190,3 +190,16 @@ class TestCreateStockTransfer(FrappeTestCase):
 		)
 
 		self.assertEqual(result["doctype"], "Stock Entry")
+
+	def test_rejects_cancelled_quality_inspection(self):
+		pr, qi = self._make_purchase_receipt_with_qi("Accepted")
+		qi.cancel()
+
+		with self.assertRaises(frappe.ValidationError):
+			create_from_quality_inspection(
+				source_doctype="Quality Inspection",
+				source_name=qi.name,
+				payload={"action": "create_stock_transfer"},
+			)
+
+		self.assertEqual(pr.docstatus, 1)
