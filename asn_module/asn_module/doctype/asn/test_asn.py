@@ -134,6 +134,28 @@ def make_test_asn(*, purchase_order=None, supplier=None, supplier_invoice_no=Non
 	)
 
 
+def make_test_asn_with_two_items(*, purchase_order=None, supplier=None, supplier_invoice_no=None, qty=5):
+	asn = make_test_asn(
+		purchase_order=purchase_order,
+		supplier=supplier,
+		supplier_invoice_no=supplier_invoice_no,
+		qty=qty,
+	)
+	first_item = asn.items[0]
+	asn.append(
+		"items",
+		{
+			"purchase_order": first_item.purchase_order,
+			"purchase_order_item": first_item.purchase_order_item,
+			"item_code": first_item.item_code,
+			"qty": qty,
+			"uom": first_item.uom,
+			"rate": first_item.rate,
+		},
+	)
+	return asn
+
+
 @contextmanager
 def _mock_asn_attachments():
 	def fake_save_file(filename, *_args, **_kwargs):
@@ -316,6 +338,34 @@ class TestASN(FrappeTestCase):
 		asn.reload()
 
 		self.assertEqual(asn.status, "Cancelled")
+
+	def test_update_receipt_status_sets_partially_received_and_updates_discrepancy_qty(self):
+		asn = make_test_asn_with_two_items(qty=5)
+		asn.insert(ignore_permissions=True)
+
+		asn.items[0].received_qty = 2
+		asn.items[1].received_qty = 5
+
+		asn.update_receipt_status()
+		asn.reload()
+
+		self.assertEqual(asn.status, "Partially Received")
+		self.assertEqual(asn.items[0].discrepancy_qty, 3)
+		self.assertEqual(asn.items[1].discrepancy_qty, 0)
+
+	def test_update_receipt_status_sets_received_when_all_items_fully_received(self):
+		asn = make_test_asn_with_two_items(qty=5)
+		asn.insert(ignore_permissions=True)
+
+		asn.items[0].received_qty = 5
+		asn.items[1].received_qty = 5
+
+		asn.update_receipt_status()
+		asn.reload()
+
+		self.assertEqual(asn.status, "Received")
+		self.assertEqual(asn.items[0].discrepancy_qty, 0)
+		self.assertEqual(asn.items[1].discrepancy_qty, 0)
 
 	def test_amendment_resets_copied_lifecycle_fields(self):
 		frappe.reload_doc("asn_module", "doctype", "asn")
