@@ -240,3 +240,51 @@ class TestDispatch(FrappeTestCase):
 		):
 			with self.assertRaises(PermissionDeniedError):
 				dispatch(token=token)
+
+	def test_dispatch_no_duplicate_success_scan_log_when_handler_returns_scan_log(self):
+		self._set_registry(
+			action_key="emit_scan_log_success",
+			handler_method="asn_module.qr_engine.tests.test_dispatch.scan_log_emitting_handler",
+		)
+		token = self._make_token(action_key="emit_scan_log_success")
+		frappe.local.flags.commit = False
+
+		success_filters = {
+			"action": "emit_scan_log_success",
+			"source_name": "QR Action Registry",
+			"result": "Success",
+		}
+		success_logs_before = frappe.db.count("Scan Log", success_filters)
+
+		with (
+			patch.object(token_module, "_get_secret", return_value="test-secret"),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+		):
+			result = dispatch(token=token, device_info="Handheld-Scanner-X")
+
+		self.assertEqual(result["doctype"], "Scan Log")
+		self.assertEqual(frappe.db.count("Scan Log", success_filters), success_logs_before + 1)
+		log = frappe.get_doc("Scan Log", result["name"])
+		self.assertEqual(log.device_info, "Handheld-Scanner-X")
+		self.assertTrue(frappe.local.flags.commit)
+
+
+def scan_log_emitting_handler(*, source_doctype, source_name, payload):
+	"""Test handler: persists Scan Log using ``device_info`` from payload (dispatch-injected)."""
+	device = payload.get("device_info") or "Desktop"
+	log = frappe.get_doc(
+		{
+			"doctype": "Scan Log",
+			"action": payload["action"],
+			"source_doctype": source_doctype,
+			"source_name": source_name,
+			"result": "Success",
+			"device_info": device,
+		}
+	).insert(ignore_permissions=True)
+	return {
+		"doctype": "Scan Log",
+		"name": log.name,
+		"url": f"/app/scan-log/{log.name}",
+		"message": "emit scan log test",
+	}

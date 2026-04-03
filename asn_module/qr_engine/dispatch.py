@@ -107,7 +107,7 @@ def dispatch(token: str, device_info: str = "Desktop") -> dict:
 	source_name = "QR Action Registry"
 
 	try:
-		payload = verify_token(token)
+		payload = {**verify_token(token), "device_info": device_info}
 		action_key = payload["action"]
 		source_doctype = payload["source_doctype"]
 		source_name = payload["source_name"]
@@ -120,15 +120,17 @@ def dispatch(token: str, device_info: str = "Desktop") -> dict:
 			_call_handler(action["handler"], source_doctype, source_name, payload)
 		)
 
-		_log_scan(
-			action=action_key,
-			source_doctype=source_doctype,
-			source_name=source_name,
-			result="Success",
-			device_info=device_info,
-			result_doctype=handler_result.get("doctype"),
-			result_name=handler_result.get("name"),
-		)
+		# Handlers that return Scan Log already persist the success audit row; avoid a second log.
+		if handler_result.get("doctype") != "Scan Log":
+			_log_scan(
+				action=action_key,
+				source_doctype=source_doctype,
+				source_name=source_name,
+				result="Success",
+				device_info=device_info,
+				result_doctype=handler_result.get("doctype"),
+				result_name=handler_result.get("name"),
+			)
 		frappe.local.flags.commit = True
 
 		return {
