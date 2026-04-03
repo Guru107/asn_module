@@ -70,8 +70,33 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		pr.reload()
 		return pr, partial_pi
 
+	def _make_partially_billed_and_returned_purchase_receipt(self):
+		pr = self._make_submitted_purchase_receipt(qty=10)
+		partial_pi = make_pi_from_pr(pr.name)
+		partial_pi.items[0].qty = 4
+		partial_pi.save(ignore_permissions=True)
+		partial_pi.submit()
+
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_return
+
+		return_pr = make_purchase_return(pr.name)
+		return_pr.asn = pr.asn
+		with (
+			_mock_asn_attachments(),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
+			patch("asn_module.handlers.purchase_receipt._attach_qr_to_doc"),
+		):
+			return_pr.submit()
+
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import get_returned_qty_map
+
+		self.assertEqual(return_pr.items[0].purchase_receipt_item, pr.items[0].name)
+		self.assertEqual(get_returned_qty_map(pr.name).get(pr.items[0].name), 10)
+		pr.reload()
+		return pr, partial_pi, return_pr
+
 	def test_creates_draft_purchase_invoice_from_purchase_receipt(self):
-		asn = make_test_asn(supplier_invoice_no="INV-0001")
+		asn = make_test_asn(supplier_invoice_no=f"INV-{frappe.generate_hash(length=8)}")
 		asn.insert(ignore_permissions=True)
 		with (
 			_mock_asn_attachments(),
@@ -134,6 +159,31 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		self.assertEqual(pi.items[0].qty, 6)
 		self.assertEqual(pi.items[0].received_qty, 10)
 		self.assertEqual(pi.items[0].purchase_receipt, pr.name)
+
+	def test_raises_when_no_pending_quantity_after_partial_bill_and_return(self):
+		pr, partial_pi, return_pr = self._make_partially_billed_and_returned_purchase_receipt()
+		old_value = frappe.db.get_single_value(
+			"Buying Settings", "bill_for_rejected_quantity_in_purchase_invoice"
+		)
+		frappe.db.set_single_value("Buying Settings", "bill_for_rejected_quantity_in_purchase_invoice", 0)
+		self.addCleanup(
+			frappe.db.set_single_value,
+			"Buying Settings",
+			"bill_for_rejected_quantity_in_purchase_invoice",
+			old_value,
+		)
+
+		self.assertEqual(partial_pi.items[0].qty, 4)
+		self.assertEqual(return_pr.items[0].qty, -10)
+
+		with self.assertRaises(frappe.ValidationError) as excinfo:
+			create_from_purchase_receipt(
+				source_doctype="Purchase Receipt",
+				source_name=pr.name,
+				payload={"action": "create_purchase_invoice"},
+			)
+
+		self.assertIn("already been Invoiced/Returned", str(excinfo.exception))
 
 	def test_rejects_unsubmitted_purchase_receipt(self):
 		pr = self._make_submitted_purchase_receipt()
