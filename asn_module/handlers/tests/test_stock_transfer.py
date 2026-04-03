@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -66,7 +68,7 @@ class TestCreateStockTransfer(FrappeTestCase):
 		)
 		item.save(ignore_permissions=True)
 
-	def _make_purchase_receipt_with_qi(self, qi_status):
+	def _make_purchase_receipt_with_qi(self, qi_status, submit_purchase_receipt=True):
 		item_code = self._ensure_item()
 		purchase_order = create_purchase_order(
 			transaction_date="2026-03-30",
@@ -98,11 +100,23 @@ class TestCreateStockTransfer(FrappeTestCase):
 		)
 		pr.insert(ignore_permissions=True)
 		qi = self._make_quality_inspection(pr.name, item_code, qi_status)
-		qi.submit()
-		pr.reload()
-		pr.items[0].quality_inspection = qi.name
-		pr.save(ignore_permissions=True)
-		pr.submit()
+		if submit_purchase_receipt:
+			with (
+				patch(
+					"asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}
+				),
+				patch("asn_module.handlers.quality_inspection._attach_qr_to_doc"),
+				patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
+			):
+				qi.submit()
+			pr.reload()
+			pr.items[0].quality_inspection = qi.name
+			pr.save(ignore_permissions=True)
+			pr.submit()
+		else:
+			pr.reload()
+			pr.items[0].quality_inspection = qi.name
+			pr.save(ignore_permissions=True)
 		return pr, qi
 
 	def _make_quality_inspection(self, purchase_receipt_name, item_code, status):
@@ -143,7 +157,16 @@ class TestCreateStockTransfer(FrappeTestCase):
 	def test_rejects_non_accepted_qi(self):
 		pr, _accepted_qi = self._make_purchase_receipt_with_qi("Accepted")
 		qi = self._make_quality_inspection(pr.name, pr.items[0].item_code, "Rejected")
-		qi.submit()
+
+		with self.assertRaises(frappe.ValidationError):
+			create_from_quality_inspection(
+				source_doctype="Quality Inspection",
+				source_name=qi.name,
+				payload={"action": "create_stock_transfer"},
+			)
+
+	def test_rejects_draft_purchase_receipt_reference(self):
+		_pr, qi = self._make_purchase_receipt_with_qi("Accepted", submit_purchase_receipt=False)
 
 		with self.assertRaises(frappe.ValidationError):
 			create_from_quality_inspection(

@@ -12,6 +12,12 @@ def create_from_quality_inspection(source_doctype: str, source_name: str, payloa
 		frappe.throw(_("Quality Inspection {0} is not Rejected. Status: {1}").format(source_name, qi.status))
 
 	original_pr = frappe.get_doc(qi.reference_type, qi.reference_name)
+	if original_pr.docstatus != 1:
+		frappe.throw(
+			_("Purchase Receipt {0} must be submitted before creating a Purchase Return").format(
+				original_pr.name
+			)
+		)
 
 	source_row = None
 	for item in original_pr.items:
