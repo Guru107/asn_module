@@ -11,9 +11,6 @@ def on_quality_inspection_submit(doc, method):
 	if doc.reference_type != "Purchase Receipt":
 		return
 
-	if frappe.db.get_value("Purchase Receipt", doc.reference_name, "docstatus") != 1:
-		return
-
 	if doc.status == "Accepted":
 		action = "create_stock_transfer"
 		message = _("Stock Transfer QR attached for Quality Inspection {0}").format(doc.name)

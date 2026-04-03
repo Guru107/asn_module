@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -15,6 +17,12 @@ class TestCreatePurchaseReturn(FrappeTestCase):
 		fixture = TestCreateStockTransfer()
 		pr, _accepted_qi = fixture._make_purchase_receipt_with_qi("Accepted")
 		rejected_qi = fixture._make_quality_inspection(pr.name, pr.items[0].item_code, "Rejected")
+		with (
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
+			patch("asn_module.handlers.quality_inspection._attach_qr_to_doc"),
+			patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
+		):
+			rejected_qi.submit()
 		return pr, rejected_qi
 
 	def test_creates_return_purchase_receipt(self):
@@ -45,13 +53,19 @@ class TestCreatePurchaseReturn(FrappeTestCase):
 				payload={"action": "create_purchase_return"},
 			)
 
-	def test_rejects_draft_purchase_receipt_reference(self):
+	def test_rejects_before_pr_submit(self):
 		fixture = TestCreateStockTransfer()
 		pr, _accepted_qi = fixture._make_purchase_receipt_with_qi(
 			"Accepted",
 			submit_purchase_receipt=False,
 		)
 		qi = fixture._make_quality_inspection(pr.name, pr.items[0].item_code, "Rejected")
+		with (
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
+			patch("asn_module.handlers.quality_inspection._attach_qr_to_doc"),
+			patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
+		):
+			qi.submit()
 
 		with self.assertRaises(frappe.ValidationError):
 			create_from_quality_inspection(
