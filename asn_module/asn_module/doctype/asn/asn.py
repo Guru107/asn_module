@@ -45,7 +45,6 @@ class ASN(WebsiteGenerator):
 		"""Update ASN status based on received quantities across all items."""
 		all_received = True
 		any_received = False
-		child_rows = []
 
 		for item in self.items:
 			received_qty = flt(item.received_qty)
@@ -56,7 +55,6 @@ class ASN(WebsiteGenerator):
 			if received_qty < qty:
 				all_received = False
 			item.discrepancy_qty = qty - received_qty
-			child_rows.append(item)
 
 		status = self.status
 		if all_received:
@@ -64,7 +62,7 @@ class ASN(WebsiteGenerator):
 		elif any_received:
 			status = "Partially Received"
 
-		for item in child_rows:
+		for item in self.items:
 			frappe.db.set_value(
 				item.doctype,
 				item.name,

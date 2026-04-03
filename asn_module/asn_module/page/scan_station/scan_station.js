@@ -12,7 +12,6 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 	const $error = page.main.find(".scan-error");
 	const $history = page.main.find(".scan-history-list");
 
-	let scan_buffer = "";
 	let scan_timeout = null;
 
 	function process_scan(value) {
@@ -107,6 +106,13 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 					render_scan_history(r.message);
 				}
 			},
+			error() {
+				$history.html(
+					`<p class="text-muted text-center">${frappe.utils.escape_html(
+						__("Unable to load scan history")
+					)}</p>`
+				);
+			},
 		});
 	}
 
@@ -118,19 +124,23 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 		let html = '<div class="list-group">';
 		logs.forEach((log) => {
+			const safeAction = frappe.utils.escape_html(log.action || "");
+			const safeError = frappe.utils.escape_html(log.error_message || "");
 			let indicator = log.result === "Success" ? "green" : "red";
 			let link =
 				log.result === "Success" && log.result_doctype && log.result_name
-					? `/app/${frappe.router.slug(log.result_doctype)}/${log.result_name}`
+					? `/app/${frappe.router.slug(log.result_doctype)}/${encodeURIComponent(
+							log.result_name
+					  )}`
 					: "#";
 
 			html += `
 				<a href="${link}" class="list-group-item list-group-item-action">
 					<div class="d-flex justify-content-between">
-						<span class="indicator-pill ${indicator}">${log.action}</span>
+						<span class="indicator-pill ${indicator}">${safeAction}</span>
 						<small class="text-muted">${frappe.datetime.prettyDate(log.scan_timestamp)}</small>
 					</div>
-					${log.error_message ? `<small class="text-danger">${log.error_message}</small>` : ""}
+					${log.error_message ? `<small class="text-danger">${safeError}</small>` : ""}
 				</a>
 			`;
 		});

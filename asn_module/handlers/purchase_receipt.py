@@ -2,6 +2,9 @@ import json
 
 import frappe
 from frappe import _
+from frappe.utils import flt
+
+from asn_module.handlers.utils import attach_qr_to_doc
 
 
 def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
@@ -70,18 +73,31 @@ def on_purchase_receipt_submit(doc, method):
 
 	asn = frappe.get_doc("ASN", doc.asn)
 	asn_items_map = json.loads(doc.asn_items or "{}")
+	received_qty_by_asn_item = {}
 
 	for pr_item in doc.items:
 		mapping = asn_items_map.get(str(pr_item.idx))
 		if not mapping:
 			continue
 
-		for asn_item in asn.items:
-			if asn_item.name != mapping["asn_item_name"]:
-				continue
-			asn_item.received_qty = (asn_item.received_qty or 0) + pr_item.qty
-			break
+		asn_item_name = mapping.get("asn_item_name")
+		if not asn_item_name:
+			continue
+		received_qty_by_asn_item[asn_item_name] = received_qty_by_asn_item.get(asn_item_name, 0) + flt(
+			pr_item.qty
+		)
 
+	for asn_item_name, qty_delta in received_qty_by_asn_item.items():
+		frappe.db.sql(
+			"""
+			UPDATE `tabASN Item`
+			SET received_qty = COALESCE(received_qty, 0) + %s
+			WHERE name = %s
+			""",
+			(qty_delta, asn_item_name),
+		)
+
+	asn.reload()
 	asn.update_receipt_status()
 
 	from asn_module.qr_engine.generate import generate_qr
@@ -113,15 +129,4 @@ def on_purchase_receipt_submit(doc, method):
 
 def _attach_qr_to_doc(doc, qr_result, prefix):
 	"""Attach a generated QR image to the target document."""
-	import base64
-
-	frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_name": f"{prefix}-{doc.name}.png",
-			"attached_to_doctype": doc.doctype,
-			"attached_to_name": doc.name,
-			"content": base64.b64decode(qr_result["image_base64"]),
-			"is_private": 0,
-		}
-	).save(ignore_permissions=True)
+	attach_qr_to_doc(doc, qr_result, prefix)

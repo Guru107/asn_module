@@ -4,6 +4,7 @@ frappe.provide("asn_module");
 
 asn_module.ScanDialog = class ScanDialog {
 	constructor() {
+		this.is_processing = false;
 		this.dialog = new frappe.ui.Dialog({
 			title: __("Scan QR Code"),
 			fields: [
@@ -24,7 +25,7 @@ asn_module.ScanDialog = class ScanDialog {
 		this.dialog.$wrapper.find('input[data-fieldname="scan_input"]').on("keydown", (e) => {
 			if (e.key === "Enter") {
 				e.preventDefault();
-				this.process_scan(this.dialog.get_value("scan_input"));
+				this.dialog.get_primary_btn().trigger("click");
 			}
 		});
 	}
@@ -38,7 +39,8 @@ asn_module.ScanDialog = class ScanDialog {
 	}
 
 	process_scan(value) {
-		if (!value || !value.trim()) return;
+		if (this.is_processing || !value || !value.trim()) return;
+		this.is_processing = true;
 
 		let token = value.trim();
 		let url_match = token.match(/[?&]token=([^&]+)/);
@@ -51,7 +53,8 @@ asn_module.ScanDialog = class ScanDialog {
 		frappe.call({
 			method: "asn_module.qr_engine.dispatch.dispatch",
 			args: { token: token, device_info: "Desktop" },
-			callback(r) {
+			callback: (r) => {
+				this.is_processing = false;
 				if (r.message && r.message.success) {
 					frappe.show_alert(
 						{
@@ -63,7 +66,8 @@ asn_module.ScanDialog = class ScanDialog {
 					frappe.set_route(r.message.url);
 				}
 			},
-			error() {
+			error: () => {
+				this.is_processing = false;
 				frappe.show_alert(
 					{
 						message: __("Scan failed. Check Scan Log for details."),
