@@ -350,6 +350,8 @@ class TestASN(FrappeTestCase):
 		asn.reload()
 
 		self.assertEqual(asn.status, "Partially Received")
+		self.assertEqual(asn.items[0].received_qty, 2)
+		self.assertEqual(asn.items[1].received_qty, 5)
 		self.assertEqual(asn.items[0].discrepancy_qty, 3)
 		self.assertEqual(asn.items[1].discrepancy_qty, 0)
 
@@ -383,6 +385,8 @@ class TestASN(FrappeTestCase):
 
 		self.assertEqual(asn.docstatus, 1)
 		self.assertEqual(asn.status, "Partially Received")
+		self.assertEqual(asn.items[0].received_qty, 2)
+		self.assertEqual(asn.items[1].received_qty, 5)
 		self.assertEqual(asn.items[0].discrepancy_qty, 3)
 		self.assertEqual(asn.items[1].discrepancy_qty, 0)
 

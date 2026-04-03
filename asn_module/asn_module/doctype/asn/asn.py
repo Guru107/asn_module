@@ -68,7 +68,10 @@ class ASN(WebsiteGenerator):
 			frappe.db.set_value(
 				item.doctype,
 				item.name,
-				{"discrepancy_qty": item.discrepancy_qty},
+				{
+					"received_qty": item.received_qty,
+					"discrepancy_qty": item.discrepancy_qty,
+				},
 				update_modified=False,
 			)
 
