@@ -367,6 +367,25 @@ class TestASN(FrappeTestCase):
 		self.assertEqual(asn.items[0].discrepancy_qty, 0)
 		self.assertEqual(asn.items[1].discrepancy_qty, 0)
 
+	def test_update_receipt_status_works_for_submitted_asn(self):
+		asn = make_test_asn_with_two_items(qty=5)
+		asn.insert(ignore_permissions=True)
+
+		with _mock_asn_attachments():
+			asn.submit()
+
+		asn.reload()
+		asn.items[0].received_qty = 2
+		asn.items[1].received_qty = 5
+
+		asn.update_receipt_status()
+		asn.reload()
+
+		self.assertEqual(asn.docstatus, 1)
+		self.assertEqual(asn.status, "Partially Received")
+		self.assertEqual(asn.items[0].discrepancy_qty, 3)
+		self.assertEqual(asn.items[1].discrepancy_qty, 0)
+
 	def test_amendment_resets_copied_lifecycle_fields(self):
 		frappe.reload_doc("asn_module", "doctype", "asn")
 
