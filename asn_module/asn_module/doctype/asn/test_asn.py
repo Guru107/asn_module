@@ -109,6 +109,44 @@ def _ensure_warehouse():
 	return warehouse
 
 
+def _is_in_active_fiscal_year(date_value: str) -> bool:
+	return bool(
+		frappe.db.exists(
+			"Fiscal Year",
+			{
+				"disabled": 0,
+				"year_start_date": ("<=", date_value),
+				"year_end_date": (">=", date_value),
+			},
+		)
+	)
+
+
+def _normalize_po_dates_for_active_fiscal_year(
+	transaction_date: str, schedule_date: str, item_schedule_date: str
+) -> tuple[str, str, str]:
+	normalized_transaction_date = (
+		transaction_date if _is_in_active_fiscal_year(transaction_date) else nowdate()
+	)
+	normalized_schedule_date = schedule_date
+	if not _is_in_active_fiscal_year(normalized_schedule_date):
+		normalized_schedule_date = add_days(normalized_transaction_date, 1)
+	if normalized_schedule_date < normalized_transaction_date:
+		normalized_schedule_date = normalized_transaction_date
+
+	normalized_item_schedule_date = item_schedule_date
+	if not _is_in_active_fiscal_year(normalized_item_schedule_date):
+		normalized_item_schedule_date = add_days(normalized_transaction_date, 1)
+	if normalized_item_schedule_date < normalized_transaction_date:
+		normalized_item_schedule_date = normalized_transaction_date
+
+	return (
+		normalized_transaction_date,
+		normalized_schedule_date,
+		normalized_item_schedule_date,
+	)
+
+
 def make_test_asn(*, purchase_order=None, supplier=None, supplier_invoice_no=None, qty=1):
 	po = purchase_order or create_purchase_order(do_not_submit=True)
 	po_item = po.items[0]
@@ -184,10 +222,22 @@ def create_purchase_order(**kwargs):
 		or _ensure_currency()
 	)
 	warehouse = kwargs.get("warehouse") or _ensure_warehouse()
+	transaction_date = kwargs.get("transaction_date", nowdate())
+	schedule_date = kwargs.get("schedule_date", add_days(nowdate(), 1))
+	item_schedule_date = kwargs.get("item_schedule_date", add_days(nowdate(), 1))
+	(
+		transaction_date,
+		schedule_date,
+		item_schedule_date,
+	) = _normalize_po_dates_for_active_fiscal_year(
+		transaction_date=transaction_date,
+		schedule_date=schedule_date,
+		item_schedule_date=item_schedule_date,
+	)
 
 	po = frappe.new_doc("Purchase Order")
-	po.transaction_date = kwargs.get("transaction_date", nowdate())
-	po.schedule_date = kwargs.get("schedule_date", add_days(nowdate(), 1))
+	po.transaction_date = transaction_date
+	po.schedule_date = schedule_date
 	po.company = company
 	po.supplier = supplier
 	po.is_subcontracted = kwargs.get("is_subcontracted", 0)
@@ -201,7 +251,7 @@ def create_purchase_order(**kwargs):
 			"warehouse": warehouse,
 			"qty": kwargs.get("qty", 10),
 			"rate": kwargs.get("rate", 500),
-			"schedule_date": kwargs.get("item_schedule_date", add_days(nowdate(), 1)),
+			"schedule_date": item_schedule_date,
 			"include_exploded_items": kwargs.get("include_exploded_items", 1),
 		},
 	)
