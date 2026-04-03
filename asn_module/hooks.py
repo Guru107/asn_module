@@ -160,6 +160,9 @@ doc_events = {
 	"Purchase Receipt": {
 		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
 	},
+	"Quality Inspection": {
+		"on_submit": "asn_module.handlers.quality_inspection.on_quality_inspection_submit",
+	},
 }
 
 # Scheduled Tasks
