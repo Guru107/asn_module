@@ -36,6 +36,7 @@ bench --site "$SITE_NAME" install-app asn_module
 bench build --app asn_module
 bench --site "$SITE_NAME" execute erpnext.setup.setup_wizard.operations.install_fixtures.install --args '["India"]'
 bench --site "$SITE_NAME" set-config allow_tests true
+bench --site "$SITE_NAME" execute asn_module.utils.test_setup.before_tests
 
 run_tests_cmd=(bench --site "$SITE_NAME" run-tests --app asn_module)
 if [ "${ERPNEXT_VERSION:-}" = "16" ]; then

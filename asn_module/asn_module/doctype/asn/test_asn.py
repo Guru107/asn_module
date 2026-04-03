@@ -7,6 +7,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate, today
 
 from asn_module.asn_module.doctype.asn.asn import get_po_items, get_purchase_order_items
+from asn_module.utils.test_setup import TEST_COMPANY_NAME, before_tests
 
 IGNORE_TEST_RECORD_DEPENDENCIES = [
 	"Company",
@@ -25,6 +26,19 @@ IGNORE_TEST_RECORD_DEPENDENCIES = [
 def _first_or_none(doctype, filters=None):
 	names = frappe.get_all(doctype, filters=filters or {}, pluck="name", limit=1)
 	return names[0] if names else None
+
+
+def _resolve_test_company():
+	company = TEST_COMPANY_NAME if frappe.db.exists("Company", TEST_COMPANY_NAME) else None
+	if not company:
+		default_company = frappe.db.get_single_value("Global Defaults", "default_company")
+		if default_company and frappe.db.exists("Company", default_company):
+			company = default_company
+	if not company:
+		company = frappe.db.get_value("Company", {}, "name", order_by="creation asc")
+	if not company:
+		raise AssertionError("No Company records exist in the test site")
+	return company
 
 
 def _ensure_supplier():
@@ -67,13 +81,14 @@ def _ensure_item():
 
 
 def _ensure_company():
-	company = _first_or_none("Company")
-	if not company:
-		raise AssertionError("No Company records exist in the test site")
-	return company
+	return _resolve_test_company()
 
 
 def _ensure_currency():
+	currency = frappe.get_cached_value("Company", _ensure_company(), "default_currency")
+	if currency:
+		return currency
+
 	currency = _first_or_none("Currency")
 	if not currency:
 		raise AssertionError("No Currency records exist in the test site")
@@ -88,7 +103,7 @@ def _ensure_uom():
 
 
 def _ensure_warehouse():
-	warehouse = _first_or_none("Warehouse")
+	warehouse = _first_or_none("Warehouse", filters={"company": _ensure_company()})
 	if not warehouse:
 		raise AssertionError("No Warehouse records exist in the test site")
 	return warehouse
@@ -179,6 +194,11 @@ def create_purchase_order(**kwargs):
 
 
 class TestASN(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		before_tests()
+		super().setUpClass()
+
 	def test_insert_rejects_empty_items(self):
 		asn = make_test_asn()
 		asn.set("items", [])

@@ -178,7 +178,7 @@ portal_menu_items = [
 # Testing
 # -------
 
-# before_tests = "asn_module.install.before_tests"
+before_tests = "asn_module.utils.test_setup.before_tests"
 
 # Extend DocType Class
 # ------------------------------
