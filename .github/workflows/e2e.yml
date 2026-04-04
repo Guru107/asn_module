@@ -52,7 +52,8 @@ jobs:
           MYSQL_ROOT_PASSWORD: root
         ports:
           - 3306:3306
-        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+        # MariaDB 11+ secured root requires password; bare `ping` fails healthcheck (password: NO).
+        options: --health-cmd="mariadb-admin ping -uroot -proot" --health-interval=5s --health-timeout=2s --health-retries=3
 
     steps:
       - name: Clone
