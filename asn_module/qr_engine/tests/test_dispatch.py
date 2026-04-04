@@ -1,3 +1,4 @@
+import secrets
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -10,7 +11,11 @@ from asn_module.qr_engine.dispatch import (
 	_resolve_action,
 	dispatch,
 )
-from asn_module.qr_engine.scan_codes import get_or_create_scan_code
+from asn_module.qr_engine.scan_codes import (
+	SCAN_CODE_ALPHABET,
+	SCAN_CODE_LENGTH,
+	get_or_create_scan_code,
+)
 
 
 class TestDispatch(FrappeTestCase):
@@ -143,10 +148,18 @@ class TestDispatch(FrappeTestCase):
 
 	def test_dispatch_rejects_source_doctype_mismatch_and_logs_failure(self):
 		self._set_registry()
+		code_val = "".join(secrets.choice(SCAN_CODE_ALPHABET) for _ in range(SCAN_CODE_LENGTH))
+
+		def _cleanup_scan_code():
+			if frappe.db.exists("Scan Code", code_val):
+				frappe.delete_doc("Scan Code", code_val, force=True, ignore_permissions=True)
+
+		self.addCleanup(_cleanup_scan_code)
+
 		sc = frappe.get_doc(
 			{
 				"doctype": "Scan Code",
-				"scan_code": "MISMATCHCODE01",
+				"scan_code": code_val,
 				"action_key": "create_purchase_receipt",
 				"source_doctype": "Bogus DocType",
 				"source_name": "Bogus Name",

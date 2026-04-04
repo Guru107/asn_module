@@ -45,6 +45,14 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 		super().tearDownClass()
 
 	def test_verify_registry_ok_after_dispatch_flow(self):
+		# Rows from ``test_dispatch_rejects_source_doctype_mismatch`` (legacy fixed code or failed cleanups).
+		for name in frappe.get_all(
+			"Scan Code",
+			filters={"source_doctype": "Bogus DocType", "source_name": "Bogus Name"},
+			pluck="name",
+		):
+			frappe.delete_doc("Scan Code", name, force=True, ignore_permissions=True)
+
 		run_asn_pr_pi_via_dispatch(
 			supplier_invoice_no=f"REG-OK-{frappe.generate_hash(length=8)}",
 			qty=3,
@@ -68,7 +76,8 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 					"status": "Active",
 				}
 			)
-			doc.insert(ignore_permissions=True)
+			# Dynamic Link would reject a missing ASN; bypass so orphan rows are possible (like DB drift).
+			doc.insert(ignore_permissions=True, ignore_links=True)
 			orphan_name = doc.name
 
 			with integration_user_context():
