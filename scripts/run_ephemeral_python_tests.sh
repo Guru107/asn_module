@@ -18,6 +18,10 @@ fi
 cleanup() {
 	local exit_code=$?
 	set +e
+	if [ -n "${SERVE_PID:-}" ]; then
+		kill "$SERVE_PID" 2>/dev/null || true
+		wait "$SERVE_PID" 2>/dev/null || true
+	fi
 	if [ -n "${SITE_NAME:-}" ] && [ -d "$BENCH_ROOT/sites/$SITE_NAME" ]; then
 		echo "Dropping ephemeral site $SITE_NAME"
 		cd "$BENCH_ROOT" || exit "$exit_code"
@@ -67,3 +71,38 @@ if [ "$#" -gt 0 ]; then
 fi
 
 "${run_tests_cmd[@]}"
+
+if [ "${RUN_UI_TESTS:-}" = "1" ]; then
+	echo "Adding hosts entry for UI tests (Cypress baseUrl)..."
+	echo "127.0.0.1 ${SITE_NAME}" | sudo tee -a /etc/hosts >/dev/null
+
+	echo "Starting Frappe dev server for Cypress..."
+	cd "$BENCH_ROOT"
+	bench --site "$SITE_NAME" serve --port 8000 >/tmp/frappe-serve.log 2>&1 &
+	SERVE_PID=$!
+
+	wait_for_ping() {
+		local i
+		for i in $(seq 1 90); do
+			if curl -sf "http://${SITE_NAME}:8000/api/method/frappe.ping" >/dev/null 2>&1; then
+				return 0
+			fi
+			sleep 2
+		done
+		return 1
+	}
+
+	if ! wait_for_ping; then
+		echo "Frappe server did not become ready in time." >&2
+		cat /tmp/frappe-serve.log >&2 || true
+		kill "$SERVE_PID" 2>/dev/null || true
+		exit 1
+	fi
+
+	echo "Running Cypress smoke tests..."
+	# Electron is bundled with Cypress; avoids installing Chrome in CI.
+	bench --site "$SITE_NAME" run-ui-tests asn_module --headless --browser electron
+
+	kill "$SERVE_PID" 2>/dev/null || true
+	wait "$SERVE_PID" 2>/dev/null || true
+fi

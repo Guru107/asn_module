@@ -106,3 +106,14 @@ jobs:
           BENCH_ROOT=/home/runner/frappe-bench DB_ROOT_PASSWORD=root scripts/run_ephemeral_python_tests.sh
         env:
           TYPE: server
+          RUN_UI_TESTS: "1"
+
+      - name: Upload Cypress artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts
+          path: |
+            ${{ github.workspace }}/cypress/videos
+            ${{ github.workspace }}/cypress/screenshots
+          if-no-files-found: ignore
