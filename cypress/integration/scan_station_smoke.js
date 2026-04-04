@@ -1,15 +1,20 @@
+const route = (path) => {
+	const p = path.replace(/^\//, "");
+	return `/${Cypress.env("routePrefix")}/${p}`;
+};
+
 context("ASN scan station", () => {
 	before(() => {
 		cy.login();
 	});
 
 	it("renders scan input", () => {
-		cy.visit("/app/scan-station");
+		cy.visit(route("scan-station"));
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
 	});
 
 	it("rejects legacy token URLs with a clear message", () => {
-		cy.visit("/app/scan-station");
+		cy.visit(route("scan-station"));
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
 		cy.get(".scan-input").clear();
 		cy.get(".scan-input").type("https://example.com/api?token=old{enter}");
