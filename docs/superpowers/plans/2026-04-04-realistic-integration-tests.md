@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use @superpowers:subagent-driven-development (recommended) or @superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add integration tests that minimize mocks (real users/roles, real file pipeline where feasible, `dispatch(code=…)` against production registry handlers), assert **ASN Transition Log** and **report/summary** consistency, and cover `**verify_scan_code_registry`**.
+**Goal:** Add integration tests that minimize mocks (real users/roles, real file pipeline where feasible, `dispatch(code=…)` against production registry handlers), assert **ASN Transition Log** and **report/summary** consistency, and cover **`verify_scan_code_registry`**.
 
 **Architecture:** New package `asn_module/tests/integration/` holds shared fixtures (users, optional real attachment helper). Existing `test_e2e_flow.py` and handler tests are **refined** rather than deleted: golden paths drop `get_roles` patches and reduce attachment/QR mocks where practical. New focused modules add trace + registry-command coverage. Unit tests under `qr_engine/tests` and dispatch fake-handler tests **remain**.
 
