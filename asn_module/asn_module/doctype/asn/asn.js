@@ -68,7 +68,9 @@ frappe.ui.form.on("ASN", {
 				const rows = r.message || [];
 				let html;
 				if (!rows.length) {
-					html = `<p class="text-muted small">${__("No transition events recorded yet.")}</p>`;
+					html = `<p class="text-muted small">${__(
+						"No transition events recorded yet."
+					)}</p>`;
 				} else {
 					const th = (s) => frappe.utils.escape_html(s || "");
 					html =
@@ -87,7 +89,9 @@ frappe.ui.form.on("ASN", {
 						const ref = th(
 							[row.ref_doctype, row.ref_name].filter(Boolean).join(" ").trim()
 						);
-						const when = row.event_ts ? th(frappe.datetime.str_to_user(row.event_ts)) : "";
+						const when = row.event_ts
+							? th(frappe.datetime.str_to_user(row.event_ts))
+							: "";
 						html += `<tr><td>${item}</td><td>${st}</td><td>${ts}</td><td>${ref}</td><td>${when}</td></tr>`;
 					});
 					html += "</tbody></table></div>";
