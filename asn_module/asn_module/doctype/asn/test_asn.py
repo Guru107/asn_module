@@ -212,6 +212,12 @@ def _mock_asn_attachments():
 		yield
 
 
+@contextmanager
+def real_asn_attachment_context():
+	"""Use real ``generate_qr`` / ``generate_barcode`` / ``save_file`` on ASN submit (no mocks)."""
+	yield
+
+
 def create_purchase_order(**kwargs):
 	company = kwargs.get("company") or _ensure_company()
 	supplier = kwargs.get("supplier") or _ensure_supplier()
@@ -376,6 +382,21 @@ class TestASN(FrappeTestCase):
 		self.assertEqual(str(asn.asn_date), today())
 		self.assertEqual(asn.qr_code, f"/files/{asn.name}-qr.png")
 		self.assertEqual(asn.barcode, f"/files/{asn.name}-barcode.png")
+
+	def test_submit_with_real_qr_and_barcode_attachments(self):
+		asn = make_test_asn()
+		asn.insert(ignore_permissions=True)
+
+		with real_asn_attachment_context():
+			asn.submit()
+
+		asn.reload()
+		self.assertEqual(asn.status, "Submitted")
+		self.assertEqual(str(asn.asn_date), today())
+		self.assertTrue(asn.qr_code)
+		self.assertTrue(asn.barcode)
+		self.assertIn("/files/", asn.qr_code)
+		self.assertIn("/files/", asn.barcode)
 
 	def test_cancel_sets_status_cancelled(self):
 		asn = make_test_asn()
