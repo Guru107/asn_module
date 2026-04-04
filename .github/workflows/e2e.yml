@@ -34,7 +34,8 @@ jobs:
             erpnext_version: "16"
             python_version: "3.14"
             node_version: "24"
-            frappe_route_prefix: "desk"
+            # Use app routes on v16 for Cypress; /desk paths differ and broke smoke.
+            frappe_route_prefix: "app"
 
     services:
       redis-cache:
