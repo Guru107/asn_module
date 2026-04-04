@@ -39,6 +39,11 @@ module.exports = {
         process.env.FRAPPE_ROUTE_PREFIX ||
         process.env.CYPRESS_FRAPPE_ROUTE_PREFIX ||
         "app",
+      // Frappe cy.login() uses this; must match bench new-site --admin-password (see run_ephemeral_e2e.sh).
+      adminPassword:
+        process.env.CYPRESS_adminPassword ||
+        process.env.EPHEMERAL_ADMIN_PASSWORD ||
+        "admin",
     },
   },
 };

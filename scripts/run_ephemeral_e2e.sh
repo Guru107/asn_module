@@ -109,6 +109,8 @@ fi
 
 export FRAPPE_ROUTE_PREFIX="${FRAPPE_ROUTE_PREFIX:-app}"
 export BENCH_ROOT
+export EPHEMERAL_ADMIN_PASSWORD="${EPHEMERAL_ADMIN_PASSWORD:-admin}"
+export CYPRESS_adminPassword="${CYPRESS_adminPassword:-$EPHEMERAL_ADMIN_PASSWORD}"
 
 echo "Running Cypress (mode=${E2E_MODE})..."
 case "$E2E_MODE" in
