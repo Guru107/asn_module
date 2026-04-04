@@ -29,20 +29,26 @@
 - **`workflow_dispatch`**.
 - **`schedule`**: nightly cron (e.g. `0 2 * * *` UTC to mirror reference; exact value is implementation detail).
 
+**Intentionally no `push` trigger** (unlike `ci.yml`): E2E is gated on **PRs**, **manual runs**, and **schedule**. Add `push` later only if product wants main-branch UI coverage.
+
 ### 3.2 Concurrency
 
-- Define a concurrency group (e.g. keyed by workflow + PR number or branch) with **`cancel-in-progress: true`** where appropriate, consistent with existing `ci.yml` patterns.
+- Use **`cancel-in-progress: true`** with a group that works for **PR and non-PR** events, e.g.  
+  `e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.frappe_version }}-${{ matrix.erpnext_version }}`  
+  (exact expression is an implementation detail; avoid `github.event.number`-only keys that are empty on `schedule` / `workflow_dispatch`).
 
 ### 3.3 Job matrix
 
+Matrix **`env`** must use **numeric** major versions (`15`, `16`) so bench commands match this repo’s existing pattern: **`--frappe-branch "version-$FRAPPE_VERSION"`** and **`--branch "version-$ERPNEXT_VERSION"`** on `get-app` (do **not** store `version-15` in `FRAPPE_VERSION` or the CLI becomes `version-version-15`).
+
 | Dimension | Frappe 15 row | Frappe 16 row |
 |-----------|----------------|---------------|
-| Frappe / ERPNext branch | `version-15` | `version-16` |
+| `FRAPPE_VERSION` / `ERPNEXT_VERSION` | `15` | `16` |
 | Python | `3.10` | `3.14` |
 | Node | `20` | `24` |
 | Route prefix for Cypress | `app` | `desk` |
 
-Expose matrix values via job **`env`** (e.g. `FRAPPE_VERSION`, `ERPNEXT_VERSION`, `FRAPPE_ROUTE_PREFIX` or `CYPRESS_FRAPPE_ROUTE_PREFIX`).
+Also expose **`FRAPPE_ROUTE_PREFIX`** (or **`CYPRESS_FRAPPE_ROUTE_PREFIX`**) per row for Cypress.
 
 ### 3.4 Services
 
@@ -62,8 +68,8 @@ Expose matrix values via job **`env`** (e.g. `FRAPPE_VERSION`, `ERPNEXT_VERSION`
 
 ### 3.6 Artifacts (`if: always()`)
 
-- **Cypress:** `cypress/videos`, `cypress/screenshots` (paths under workspace).
-- **Serve log:** e.g. `/tmp/bench-serve-<run-id>.log` or fixed path; names must **include matrix variant** (e.g. `cypress-artifacts-v15`, `bench-serve-v16`).
+- **Cypress:** `cypress/videos`, `cypress/screenshots` (paths under workspace). Each matrix job runs on its **own runner**; disambiguation is via **artifact upload names** (e.g. `cypress-artifacts-frappe15`), not by rewriting paths under `cypress/`.
+- **Serve log:** e.g. `/tmp/bench-serve-<run-id>.log` or fixed path; upload names must **include matrix variant** (e.g. `bench-serve-frappe16`).
 
 ---
 
@@ -77,7 +83,7 @@ New script, behaviorally analogous to **`production-entry-app`**’s `run_epheme
 - Ephemeral **`SITE_NAME`** (e.g. `asn-e2e-<sanitized-run-id>`).
 - **`bench new-site`**, install **erpnext**, install **asn_module**, then **`bench build --app asn_module`** (same pattern as `run_ephemeral_python_tests.sh`). The workflow step runs a **full `bench build`** once after `get-app` / `setup requirements` so the bench tree is compiled before the script runs; the script’s app build covers the ephemeral site install path.
 - **Fixtures:** `erpnext.setup.setup_wizard.operations.install_fixtures.install` with `["India"]`, with the **same tolerant handling** as `run_ephemeral_python_tests.sh` for known **`NestedSetRecursionError`** / item-tree messages.
-- **`bench --site $SITE set-config allow_tests true`**; **`asn_module.utils.test_setup.before_tests`**.
+- **`bench --site "$SITE_NAME" set-config allow_tests true`**; **`asn_module.utils.test_setup.before_tests`**.
 - Optional flags aligned with reference where useful: **`developer_mode`**, **`allow_e2e_tests`** (only if the site exposes such config and tests expect it; otherwise omit to avoid unused knobs).
 - **`bench use $SITE_NAME`** before serve.
 - **Serve:** `bench --site "$SITE_NAME" serve --port <PORT> --noreload` with **`PORT`** fixed when **`CI=true`** (e.g. **18002**, like reference). Log to **`/tmp/bench-serve-...log`**.
@@ -105,7 +111,9 @@ Pass-through for ad-hoc Cypress args is optional (YAGNI unless needed).
 
 - **`cypress.config.cjs`:** define `env.routePrefix` from `process.env.FRAPPE_ROUTE_PREFIX` or `CYPRESS_FRAPPE_ROUTE_PREFIX`, default **`app`** for local dev.
 - **Integration specs:** replace hard-coded **`/app/...`** with **`/${Cypress.env('routePrefix')}/...`** (or helper) for **scan station** and **ASN list** visits.
+- **`desk` vs `app` on Frappe 16:** the matrix uses the same convention as `production-entry-app`; **validate during implementation** (adjust prefix or routes if smoke fails on v16).
 - Ensure **`cy.login()`** and Frappe’s support file remain compatible with both versions (Frappe’s `cypress/support` from sibling app).
+- **`bench run-ui-tests` + Electron:** supported by Frappe’s CLI; if a matrix row fails for runner/Electron reasons, fall back to **`--browser chrome`** with an install step (implementation escape hatch).
 
 ---
 
@@ -125,7 +133,7 @@ Pass-through for ad-hoc Cypress args is optional (YAGNI unless needed).
 
 ## 7. Risks and policy
 
-- **Frappe 15 support:** `pyproject.toml` does not formally declare Frappe 15; the **v15 matrix row is an explicit product decision**. Both rows are **required checks** once the workflow is merged; if v15 is red, fix forward or temporarily disable the row (out of scope for this spec unless agreed).
+- **Frappe 15 support:** `pyproject.toml` does not formally declare Frappe 15; the **v15 matrix row is an explicit product decision**. Both rows are **required checks** once the workflow is merged; if v15 is red, fix forward or temporarily disable the row (out of scope for this spec unless agreed). **Branch protection:** GitHub exposes one status per matrix job (job `name` typically includes the Frappe version); configure required checks using those **exact** names after the first successful run.
 - **MariaDB:** single **11.8** for both rows may expose Frappe 15 edge cases; split images only if CI proves it necessary.
 - **CI duration:** Full **`bench build`** + matrix doubles E2E wall time vs a single row; acceptable per stakeholder choice **B**.
 
@@ -135,8 +143,9 @@ Pass-through for ad-hoc Cypress args is optional (YAGNI unless needed).
 
 - **`ci.yml`** completes **without** running Cypress; Python tests unchanged in behavior.
 - **`e2e.yml`** runs on PR (with path filters), manual dispatch, and schedule.
-- Both matrix jobs run **smoke** Cypress successfully when the app supports both Frappe versions.
-- On failure, artifacts (**videos**, **screenshots**, **serve log**) are uploaded with matrix-specific names.
+- **Pull requests / `workflow_dispatch`:** both matrix jobs complete **`smoke`** mode successfully when the app supports both Frappe versions.
+- **`schedule`:** both matrix jobs complete **`ci`** mode successfully. **Initially `ci` runs the same Cypress command as `smoke`**; when additional specs exist, `ci` may run a wider set without changing workflow YAML structure (script branches only).
+- On failure, artifacts (**videos**, **screenshots**, **serve log**) are uploaded with matrix-specific **artifact names**.
 
 ---
 
