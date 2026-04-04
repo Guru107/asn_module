@@ -12,7 +12,9 @@ asn_module.ScanDialog = class ScanDialog {
 					fieldname: "scan_input",
 					fieldtype: "Data",
 					label: __("Scan or paste code"),
-					description: __("Scan the QR/barcode or paste the dispatch URL (code=) or raw short code"),
+					description: __(
+						"Scan the QR/barcode or paste the dispatch URL (code=) or raw short code"
+					),
 				},
 			],
 			primary_action_label: __("Process"),
@@ -69,7 +71,9 @@ asn_module.ScanDialog = class ScanDialog {
 
 			if (/^https?:\/\//i.test(input)) {
 				return {
-					error: __("Scanned URL is missing the code query parameter (expected ...dispatch?code=...)."),
+					error: __(
+						"Scanned URL is missing the code query parameter (expected ...dispatch?code=...)."
+					),
 				};
 			}
 		} catch (e) {

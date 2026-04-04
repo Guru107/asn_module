@@ -153,7 +153,7 @@ class TestDispatch(FrappeTestCase):
 				"status": "Active",
 			}
 		)
-		sc.insert(ignore_permissions=True, ignore_validate=True)
+		sc.insert(ignore_permissions=True, ignore_links=True)
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),

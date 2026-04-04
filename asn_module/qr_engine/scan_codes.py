@@ -40,7 +40,9 @@ def get_or_create_scan_code(action_key: str, source_doctype: str, source_name: s
 	source_doctype = (source_doctype or "").strip()
 	source_name = (source_name or "").strip()
 	if not action_key or not source_doctype or not source_name:
-		raise frappe.ValidationError(_("Scan code registration requires action, source doctype, and source name"))
+		raise frappe.ValidationError(
+			_("Scan code registration requires action, source doctype, and source name")
+		)
 
 	existing = frappe.db.get_value(
 		"Scan Code",
@@ -56,7 +58,7 @@ def get_or_create_scan_code(action_key: str, source_doctype: str, source_name: s
 	if existing:
 		return existing
 
-	for _ in range(_MAX_CREATE_ATTEMPTS):
+	for _attempt in range(_MAX_CREATE_ATTEMPTS):
 		value = _random_scan_code_value()
 		if frappe.db.exists("Scan Code", value):
 			continue

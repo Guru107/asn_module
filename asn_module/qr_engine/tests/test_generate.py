@@ -11,9 +11,7 @@ class TestGenerate(UnitTestCase):
 			buffer.write(b"fake-qr-image")
 
 		with (
-			patch(
-				"asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"
-			),
+			patch("asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"),
 			patch("asn_module.qr_engine.generate.frappe.utils.get_url", return_value=site_url),
 			patch("asn_module.qr_engine.generate.pyqrcode.create") as create_qr,
 		):

@@ -52,7 +52,9 @@ def execute(filters=None):
 
 	search = (filters.get("search") or "").strip()
 	if search:
-		where_clause += " AND (log.state LIKE %s OR log.item_code LIKE %s OR log.ref_name LIKE %s OR log.details LIKE %s)"
+		where_clause += (
+			" AND (log.state LIKE %s OR log.item_code LIKE %s OR log.ref_name LIKE %s OR log.details LIKE %s)"
+		)
 		like = f"%{search}%"
 		values.extend([like, like, like, like])
 
@@ -92,7 +94,7 @@ def execute(filters=None):
 		ORDER BY log.event_ts DESC
 		LIMIT %s OFFSET %s
 		""",
-		tuple(values) + (limit, offset),
+		(*tuple(values), limit, offset),
 		as_list=True,
 	)
 

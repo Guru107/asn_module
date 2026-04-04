@@ -9,13 +9,13 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn,
 )
 from asn_module.qr_engine.dispatch import dispatch
-from asn_module.qr_engine.token import create_token
+from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
 from asn_module.utils.test_setup import before_tests
 
 
 class TestEndToEndFlow(FrappeTestCase):
-	"""ASN → Purchase Receipt → Purchase Invoice using QR tokens and dispatch."""
+	"""ASN → Purchase Receipt → Purchase Invoice using scan codes and dispatch."""
 
 	@classmethod
 	def _snapshot_registry_actions(cls) -> list[dict]:
@@ -48,9 +48,6 @@ class TestEndToEndFlow(FrappeTestCase):
 
 	def setUp(self):
 		super().setUp()
-		# create_token / verify_token require secret_key; many dev sites omit it in site_config.json.
-		if not frappe.local.conf.get("secret_key"):
-			frappe.local.conf["secret_key"] = "asn-module-e2e-test-secret-key"
 		patcher = patch(
 			"asn_module.qr_engine.dispatch.frappe.get_roles",
 			return_value=["Stock User", "Stock Manager", "Accounts User", "Accounts Manager"],
@@ -72,12 +69,8 @@ class TestEndToEndFlow(FrappeTestCase):
 		self.assertEqual(asn.status, "Submitted")
 		self.assertTrue(asn.qr_code)
 
-		pr_token = create_token(
-			"create_purchase_receipt",
-			"ASN",
-			asn.name,
-		)
-		pr_result = dispatch(token=pr_token, device_info="E2E-Integration")
+		pr_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+		pr_result = dispatch(code=pr_code, device_info="E2E-Integration")
 		self.assertTrue(pr_result["success"])
 		self.assertEqual(pr_result["doctype"], "Purchase Receipt")
 
@@ -104,12 +97,8 @@ class TestEndToEndFlow(FrappeTestCase):
 		self.assertEqual(asn.items[0].received_qty, 10)
 		self.assertEqual(asn.items[0].discrepancy_qty, 0)
 
-		pi_token = create_token(
-			"create_purchase_invoice",
-			"Purchase Receipt",
-			pr.name,
-		)
-		pi_result = dispatch(token=pi_token, device_info="E2E-Integration")
+		pi_code = get_or_create_scan_code("create_purchase_invoice", "Purchase Receipt", pr.name)
+		pi_result = dispatch(code=pi_code, device_info="E2E-Integration")
 		self.assertTrue(pi_result["success"])
 		self.assertEqual(pi_result["doctype"], "Purchase Invoice")
 
@@ -130,12 +119,8 @@ class TestEndToEndFlow(FrappeTestCase):
 		with _mock_asn_attachments():
 			asn.submit()
 
-		pr_token = create_token(
-			"create_purchase_receipt",
-			"ASN",
-			asn.name,
-		)
-		pr_result = dispatch(token=pr_token, device_info="E2E-Integration")
+		pr_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+		pr_result = dispatch(code=pr_code, device_info="E2E-Integration")
 		self.assertTrue(pr_result["success"])
 		pr = frappe.get_doc("Purchase Receipt", pr_result["name"])
 		pr.items[0].qty = 8
