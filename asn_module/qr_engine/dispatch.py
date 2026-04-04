@@ -1,6 +1,12 @@
 import frappe
+from frappe import _
 
-from asn_module.qr_engine.token import verify_token
+from asn_module.qr_engine.scan_codes import (
+	get_scan_code_doc,
+	normalize_scan_code,
+	record_successful_scan,
+	validate_scan_code_row,
+)
 
 
 class ActionNotFoundError(frappe.ValidationError):
@@ -8,6 +14,10 @@ class ActionNotFoundError(frappe.ValidationError):
 
 
 class PermissionDeniedError(frappe.PermissionError):
+	pass
+
+
+class ScanCodeNotFoundError(frappe.ValidationError):
 	pass
 
 
@@ -99,28 +109,68 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 	return handler_fn(source_doctype=source_doctype, source_name=source_name, payload=payload)
 
 
+def _reject_legacy_token_args() -> None:
+	if frappe.form_dict.get("token"):
+		frappe.throw(
+			_(
+				"Token-based scan URLs are no longer supported. Scan the QR again or enter the short code from the document."
+			),
+			title=_("Unsupported scan format"),
+		)
+
+
+def _payload_from_scan_code_registry(scan_doc: frappe.model.document.Document, device_info: str) -> dict:
+	return {
+		"action": scan_doc.action_key,
+		"source_doctype": scan_doc.source_doctype,
+		"source_name": scan_doc.source_name,
+		"created_at": str(scan_doc.generated_on or ""),
+		"created_by": scan_doc.generated_by or "",
+		"device_info": device_info,
+		"scan_code": scan_doc.name,
+	}
+
+
 @frappe.whitelist(allow_guest=False)
-def dispatch(token: str, device_info: str = "Desktop") -> dict:
-	payload = None
+def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
+	"""Resolve a short scan ``code`` (URL param or raw) and run the registered handler."""
+	if not code:
+		code = frappe.form_dict.get("code")
+
+	raw_input = (code or "").strip()
+	normalized = normalize_scan_code(raw_input)
+	_reject_legacy_token_args()
+
 	action_key = "unknown"
 	source_doctype = "DocType"
 	source_name = "QR Action Registry"
 
 	try:
-		payload = {**verify_token(token), "device_info": device_info}
-		action_key = payload["action"]
-		source_doctype = payload["source_doctype"]
-		source_name = payload["source_name"]
+		if not normalized:
+			raise ScanCodeNotFoundError(_("Missing scan code."))
+
+		scan_doc = get_scan_code_doc(normalized)
+		if not scan_doc:
+			raise ScanCodeNotFoundError(_("Unknown or invalid scan code."))
+
+		action_key = scan_doc.action_key
+		source_doctype = scan_doc.source_doctype
+		source_name = scan_doc.source_name
+
+		validate_scan_code_row(scan_doc, action_key)
 
 		action = _resolve_action(action_key)
 		_validate_source_doctype(action["source_doctype"], source_doctype)
 		_check_permission(action["allowed_roles"])
 
+		payload = _payload_from_scan_code_registry(scan_doc, device_info)
+
 		handler_result = _validate_handler_result(
 			_call_handler(action["handler"], source_doctype, source_name, payload)
 		)
 
-		# Handlers that return Scan Log already persist the success audit row; avoid a second log.
+		record_successful_scan(scan_doc.name, action_key)
+
 		if handler_result.get("doctype") != "Scan Log":
 			_log_scan(
 				action=action_key,

@@ -1,0 +1,156 @@
+{
+	"actions": [],
+	"allow_import": 0,
+	"autoname": "hash",
+	"creation": "2026-04-03 00:00:00.000000",
+	"doctype": "DocType",
+	"editable_grid": 0,
+	"engine": "InnoDB",
+	"field_order": [
+		"asn",
+		"asn_item",
+		"item_code",
+		"state",
+		"transition_status",
+		"column_break_1",
+		"ref_doctype",
+		"ref_name",
+		"event_ts",
+		"actor",
+		"error_code",
+		"details",
+		"idempotency_key"
+	],
+	"fields": [
+		{
+			"fieldname": "asn",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "ASN",
+			"options": "ASN",
+			"reqd": 1,
+			"search_index": 1
+		},
+		{
+			"fieldname": "asn_item",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "ASN Item",
+			"options": "ASN Item",
+			"search_index": 1
+		},
+		{
+			"fieldname": "item_code",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "Item Code",
+			"options": "Item",
+			"search_index": 1
+		},
+		{
+			"fieldname": "state",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "State",
+			"reqd": 1,
+			"search_index": 1
+		},
+		{
+			"fieldname": "transition_status",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Status",
+			"reqd": 1
+		},
+		{
+			"fieldname": "column_break_1",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "ref_doctype",
+			"fieldtype": "Link",
+			"label": "Reference DocType",
+			"options": "DocType"
+		},
+		{
+			"fieldname": "ref_name",
+			"fieldtype": "Dynamic Link",
+			"label": "Reference Name",
+			"options": "ref_doctype"
+		},
+		{
+			"fieldname": "event_ts",
+			"fieldtype": "Datetime",
+			"in_list_view": 1,
+			"label": "Event Time",
+			"reqd": 1,
+			"search_index": 1
+		},
+		{
+			"fieldname": "actor",
+			"fieldtype": "Data",
+			"label": "Actor",
+			"reqd": 1
+		},
+		{
+			"fieldname": "error_code",
+			"fieldtype": "Data",
+			"label": "Error Code"
+		},
+		{
+			"fieldname": "details",
+			"fieldtype": "Text",
+			"label": "Details"
+		},
+		{
+			"fieldname": "idempotency_key",
+			"fieldtype": "Data",
+			"label": "Idempotency Key",
+			"unique": 1,
+			"read_only": 1
+		}
+	],
+	"in_create": 0,
+	"index_web_pages_for_search": 0,
+	"is_submittable": 0,
+	"links": [],
+	"modified": "2026-04-03 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "ASN Transition Log",
+	"owner": "Administrator",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 0,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "System Manager",
+			"share": 1,
+			"write": 0
+		},
+		{
+			"read": 1,
+			"report": 1,
+			"role": "Stock Manager"
+		},
+		{
+			"read": 1,
+			"report": 1,
+			"role": "Stock User"
+		},
+		{
+			"read": 1,
+			"report": 1,
+			"role": "Accounts User"
+		}
+	],
+	"sort_field": "event_ts",
+	"sort_order": "DESC",
+	"states": [],
+	"track_changes": 0,
+	"indexes": [["asn", "event_ts"], ["asn", "item_code"], ["asn", "state"]]
+}

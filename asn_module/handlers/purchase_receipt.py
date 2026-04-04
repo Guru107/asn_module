@@ -5,6 +5,7 @@ from frappe import _
 from frappe.utils import flt
 
 from asn_module.handlers.utils import attach_qr_to_doc
+from asn_module.traceability import emit_asn_item_transition
 
 
 def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
@@ -56,6 +57,17 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	pr.asn_items = json.dumps(asn_items_map)
 	pr.insert(ignore_permissions=True)
 
+	for asn_item in asn.items:
+		emit_asn_item_transition(
+			asn=asn.name,
+			asn_item=asn_item.name,
+			item_code=asn_item.item_code,
+			state="PR_CREATED_DRAFT",
+			transition_status="OK",
+			ref_doctype="Purchase Receipt",
+			ref_name=pr.name,
+		)
+
 	return {
 		"doctype": "Purchase Receipt",
 		"name": pr.name,
@@ -99,6 +111,18 @@ def on_purchase_receipt_submit(doc, method):
 
 	asn.reload()
 	asn.update_receipt_status()
+
+	for asn_item_name in received_qty_by_asn_item:
+		item_code = frappe.db.get_value("ASN Item", asn_item_name, "item_code")
+		emit_asn_item_transition(
+			asn=asn.name,
+			asn_item=asn_item_name,
+			item_code=item_code,
+			state="PR_SUBMITTED",
+			transition_status="OK",
+			ref_doctype="Purchase Receipt",
+			ref_name=doc.name,
+		)
 
 	from asn_module.qr_engine.generate import generate_qr
 
