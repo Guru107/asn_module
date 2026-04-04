@@ -3,47 +3,69 @@
 
 import frappe
 from frappe import _
+from frappe.query_builder import DocType
 from frappe.utils import get_datetime
+from pypika import Order
 
 
 def execute(filters=None):
 	filters = filters or {}
 
-	flt: list = []
-	if filters.get("asn"):
-		flt.append(["asn", "=", filters["asn"]])
-	if filters.get("item_code"):
-		flt.append(["item_code", "=", filters["item_code"]])
-	if filters.get("state"):
-		flt.append(["state", "=", filters["state"]])
-	if filters.get("transition_status"):
-		flt.append(["transition_status", "=", filters["transition_status"]])
-	if filters.get("ref_doctype"):
-		flt.append(["ref_doctype", "=", filters["ref_doctype"]])
-	if filters.get("ref_name"):
-		flt.append(["ref_name", "=", filters["ref_name"]])
-	if filters.get("from_date"):
-		flt.append(["event_ts", ">=", get_datetime(filters["from_date"])])
-	if filters.get("to_date"):
-		flt.append(["event_ts", "<=", get_datetime(filters["to_date"])])
-	if filters.get("failures_only"):
-		flt.append(["transition_status", "=", "Error"])
+	Log = DocType("ASN Transition Log")
 
-	or_filters = []
+	q = (
+		frappe.qb.from_(Log)
+		.select(
+			Log.event_ts,
+			Log.asn,
+			Log.asn_item,
+			Log.item_code,
+			Log.state,
+			Log.transition_status,
+			Log.ref_doctype,
+			Log.ref_name,
+			Log.actor,
+			Log.error_code,
+			Log.details,
+		)
+		.orderby(Log.event_ts, order=Order.desc)
+	)
+
+	if filters.get("asn"):
+		q = q.where(Log.asn == filters["asn"])
+	if filters.get("item_code"):
+		q = q.where(Log.item_code == filters["item_code"])
+	if filters.get("state"):
+		q = q.where(Log.state == filters["state"])
+	if filters.get("transition_status"):
+		q = q.where(Log.transition_status == filters["transition_status"])
+	if filters.get("ref_doctype"):
+		q = q.where(Log.ref_doctype == filters["ref_doctype"])
+	if filters.get("ref_name"):
+		q = q.where(Log.ref_name == filters["ref_name"])
+	if filters.get("from_date"):
+		q = q.where(Log.event_ts >= get_datetime(filters["from_date"]))
+	if filters.get("to_date"):
+		q = q.where(Log.event_ts <= get_datetime(filters["to_date"]))
+	if filters.get("failures_only"):
+		q = q.where(Log.transition_status == "Error")
+
 	search = (filters.get("search") or "").strip()
 	if search:
 		pat = f"%{search}%"
-		or_filters = [
-			["state", "like", pat],
-			["item_code", "like", pat],
-			["ref_name", "like", pat],
-			["details", "like", pat],
-		]
+		q = q.where(
+			(Log.state.like(pat))
+			| (Log.item_code.like(pat))
+			| (Log.ref_name.like(pat))
+			| (Log.details.like(pat))
+		)
 
 	limit = int(filters.get("limit_page_length") or 200)
 	limit = max(1, min(limit, 500))
 	offset = int(filters.get("limit_start") or 0)
 	offset = max(0, offset)
+
+	q = q.limit(limit).offset(offset)
 
 	columns = [
 		_("Event Time"),
@@ -58,47 +80,35 @@ def execute(filters=None):
 		_("Details"),
 	]
 
-	kwargs: dict = {
-		"fields": [
-			"event_ts",
-			"asn",
-			"asn_item",
-			"item_code",
-			"state",
-			"transition_status",
-			"ref_doctype",
-			"ref_name",
-			"actor",
-			"error_code",
-			"details",
-		],
-		"order_by": "event_ts desc",
-		"limit_start": offset,
-		"limit_page_length": limit,
-	}
-	if flt:
-		kwargs["filters"] = flt
-	if or_filters:
-		kwargs["or_filters"] = or_filters
-
-	records = frappe.get_all("ASN Transition Log", **kwargs)
-
+	raw_rows = q.run(as_list=True)
 	rows = []
-	for r in records:
-		ref_parts = [r.get("ref_doctype") or "", r.get("ref_name") or ""]
-		ref_display = " ".join(p for p in ref_parts if p).strip()
+	for row in raw_rows:
+		(
+			event_ts,
+			asn,
+			asn_item,
+			item_code,
+			state,
+			transition_status,
+			ref_doctype,
+			ref_name,
+			actor,
+			error_code,
+			details,
+		) = row
+		ref_display = " ".join(p for p in (ref_doctype, ref_name) if p).strip()
 		rows.append(
 			[
-				r.get("event_ts"),
-				r.get("asn"),
-				r.get("asn_item"),
-				r.get("item_code"),
-				r.get("state"),
-				r.get("transition_status"),
+				event_ts,
+				asn,
+				asn_item,
+				item_code,
+				state,
+				transition_status,
 				ref_display,
-				r.get("actor"),
-				r.get("error_code") or "",
-				r.get("details") or "",
+				actor,
+				error_code or "",
+				details or "",
 			]
 		)
 
