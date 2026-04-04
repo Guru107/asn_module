@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use @superpowers:subagent-driven-development (recommended) or @superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add integration tests that minimize mocks (real users/roles, real file pipeline where feasible, `dispatch(code=…)` against production registry handlers), assert **ASN Transition Log** and **report/summary** consistency, and cover **`verify_scan_code_registry`**.
+**Goal:** Add integration tests that minimize mocks (real users/roles, real file pipeline where feasible, `dispatch(code=…)` against production registry handlers), assert **ASN Transition Log** and **report/summary** consistency, and cover `**verify_scan_code_registry`**.
 
 **Architecture:** New package `asn_module/tests/integration/` holds shared fixtures (users, optional real attachment helper). Existing `test_e2e_flow.py` and handler tests are **refined** rather than deleted: golden paths drop `get_roles` patches and reduce attachment/QR mocks where practical. New focused modules add trace + registry-command coverage. Unit tests under `qr_engine/tests` and dispatch fake-handler tests **remain**.
 
@@ -82,7 +82,7 @@
 - **Step 1:** Remove `patch("asn_module.qr_engine.dispatch.frappe.get_roles", …)` from `setUp` for `**test_full_asn_to_purchase_invoice_flow_via_dispatch`** (and any other test that should follow policy **A**).
 - **Step 2:** In `setUpClass` or test start, call `ensure_integration_user` with **union of roles** needed for PR + PI dispatch (Stock User **or** Stock Manager, plus Accounts User **or** Accounts Manager).
 - **Step 3:** Wrap the main test body in `integration_user_context`.
-- **Step 4:** Replace `_mock_asn_attachments()` with `**real_asn_qr_barcode_context`** for ASN submit; for **PR submit**, remove patches `**generate_qr`** / `**_attach_qr_to_doc**` if real pipeline works—if not, document minimal remaining patches in test docstring (policy **A** exception).
+- **Step 4:** Replace `_mock_asn_attachments()` with `**real_asn_qr_barcode_context`** for ASN submit; for **PR submit**, remove patches `**generate_qr`** / `**_attach_qr_to_doc`** if real pipeline works—if not, document minimal remaining patches in test docstring (policy **A** exception).
 - **Step 5:** Run `bench run-tests --app asn_module --module asn_module.tests.test_e2e_flow`.
 - **Step 6:** Commit: `test(e2e): run dispatch flow under real user; reduce attachment mocks`.
 
@@ -106,7 +106,7 @@
 **Files:**
 
 - Create: `asn_module/tests/integration/test_registry_command_integration.py`
-- **Step 1:** `**test_verify_registry_ok_after_valid_flow`:** run minimal flow creating **Scan Code** rows pointing at existing **ASN** (or DocType used in `verify_registry_row_points_to_existing_source`); `**frappe.set_user`** to user with read permission on Scan Code; `frappe.call` or direct import `**verify_scan_code_registry**`; assert `**ok**` and `orphan_count == 0`.
+- **Step 1:** `**test_verify_registry_ok_after_valid_flow`:** run minimal flow creating **Scan Code** rows pointing at existing **ASN** (or DocType used in `verify_registry_row_points_to_existing_source`); `**frappe.set_user`** to user with read permission on Scan Code; `frappe.call` or direct import `**verify_scan_code_registry`**; assert `**ok**` and `orphan_count == 0`.
 - **Step 2:** `**test_verify_registry_detects_orphan`:** create **Scan Code** with **invalid** `source_name` (non-existent ASN id) in `setUp`, assert `**ok` is False** and orphan listed; `**tearDown`** delete Scan Code row and any stray docs.
 - **Step 3:** Commit: `test(integration): verify_scan_code_registry happy and orphan paths`.
 
@@ -118,7 +118,7 @@
 
 - Create: `asn_module/tests/integration/test_dispatch_actions_integration.py`
 - **Step 1:** **PR + PI:** assert covered by Task 3–4 journey; either **import** the same test helper or add a thin test that only **dispatches** the two codes (skip if redundant—then document in file docstring).
-- **Step 2:** **QI actions** (`create_stock_transfer`, `create_purchase_return`): reuse document builders from `asn_module.handlers.tests.test_quality_inspection` / `test_stock_transfer` / `test_purchase_return` to reach **submitted QI** linked to PR/ASN; `**get_or_create_scan_code`**; `**dispatch**` under Stock user; assert handler result and **transition log** if applicable.
+- **Step 2:** **QI actions** (`create_stock_transfer`, `create_purchase_return`): reuse document builders from `asn_module.handlers.tests.test_quality_inspection` / `test_stock_transfer` / `test_purchase_return` to reach **submitted QI** linked to PR/ASN; `**get_or_create_scan_code`**; `**dispatch`** under Stock user; assert handler result and **transition log** if applicable.
 - **Step 3:** `**confirm_putaway`:** reuse `handlers/tests/test_putaway.py` builders; dispatch from **Purchase Receipt** scan code.
 - **Step 4:** **Subcontracting** (`create_subcontracting_dispatch`, `create_subcontracting_receipt`): reuse `test_subcontracting.py` patterns; if **fixture cost is too high** for one PR, implement **one** combined test with **clear `pytest.skip`** or `**unittest.skip**` citing ERPNext version/setup, and add **TODO** in plan appendix (do not block merge of Tasks 1–5).
 - **Step 5:** Run `bench run-tests --app asn_module --module asn_module.tests.integration`.
