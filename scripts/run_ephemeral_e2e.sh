@@ -108,6 +108,7 @@ if [ "$ready" != 1 ]; then
 fi
 
 export FRAPPE_ROUTE_PREFIX="${FRAPPE_ROUTE_PREFIX:-app}"
+export BENCH_ROOT
 
 echo "Running Cypress (mode=${E2E_MODE})..."
 case "$E2E_MODE" in

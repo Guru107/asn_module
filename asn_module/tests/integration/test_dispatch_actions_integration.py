@@ -116,9 +116,7 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		self.assertEqual(ste.docstatus, 0)
 
 		with integration_user_context():
-			with patch(
-				"erpnext.controllers.subcontracting_controller.get_incoming_rate", return_value=5
-			):
+			with patch("erpnext.controllers.subcontracting_controller.get_incoming_rate", return_value=5):
 				code_receipt = get_or_create_scan_code(
 					"create_subcontracting_receipt", "Subcontracting Order", sco.name
 				)
