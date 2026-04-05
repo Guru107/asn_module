@@ -26,6 +26,10 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			item_schedule_date="2026-03-31",
 		)
 		asn = make_test_asn(purchase_order=purchase_order)
+		asn.supplier_invoice_no = f"INV-PR-PREFILL-{frappe.generate_hash(length=6)}"
+		asn.transporter_name = "MAS Logistics"
+		asn.lr_no = "LR-0001"
+		asn.lr_date = "2026-04-05"
 		asn.insert(ignore_permissions=True)
 		with _mock_asn_attachments():
 			asn.submit()
@@ -45,6 +49,10 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(pr.docstatus, 0)
 		self.assertEqual(pr.supplier, asn.supplier)
 		self.assertEqual(pr.asn, asn.name)
+		self.assertEqual(pr.supplier_delivery_note, asn.supplier_invoice_no)
+		self.assertEqual(pr.transporter_name, asn.transporter_name)
+		self.assertEqual(pr.lr_no, asn.lr_no)
+		self.assertEqual(str(pr.lr_date), str(asn.lr_date))
 		self.assertEqual(len(pr.items), 1)
 		self.assertEqual(pr.items[0].item_code, asn.items[0].item_code)
 		self.assertEqual(pr.items[0].qty, asn.items[0].qty)

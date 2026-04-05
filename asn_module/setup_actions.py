@@ -1,9 +1,9 @@
 import frappe
 
 
-def register_actions():
-	"""Register all QR actions in the QR Action Registry."""
-	actions = [
+def get_canonical_actions() -> list[dict]:
+	"""Canonical QR action registry rows managed by this app."""
+	return [
 		{
 			"action_key": "create_purchase_receipt",
 			"handler_method": "asn_module.handlers.purchase_receipt.create_from_asn",
@@ -47,6 +47,11 @@ def register_actions():
 			"roles": ["Stock User", "Stock Manager"],
 		},
 	]
+
+
+def register_actions():
+	"""Register all QR actions in the QR Action Registry."""
+	actions = get_canonical_actions()
 
 	registry = frappe.get_single("QR Action Registry")
 	# Reset to the module's managed defaults for deterministic fresh installs.

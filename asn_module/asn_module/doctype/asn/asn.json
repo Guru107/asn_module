@@ -18,6 +18,8 @@
 		"transport_section",
 		"vehicle_number",
 		"transporter_name",
+		"lr_no",
+		"lr_date",
 		"column_break_2",
 		"driver_contact",
 		"invoice_section",
@@ -109,6 +111,16 @@
 			"fieldname": "transporter_name",
 			"fieldtype": "Data",
 			"label": "Transporter Name"
+		},
+		{
+			"fieldname": "lr_no",
+			"fieldtype": "Data",
+			"label": "LR No"
+		},
+		{
+			"fieldname": "lr_date",
+			"fieldtype": "Date",
+			"label": "LR Date"
 		},
 		{
 			"fieldname": "column_break_2",

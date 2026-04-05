@@ -1,0 +1,58 @@
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import frappe
+from frappe.tests.utils import FrappeTestCase
+
+from asn_module.templates.pages import asn_new_search
+
+
+class TestASNNewSearch(FrappeTestCase):
+	def test_search_open_purchase_orders_returns_supplier_open_pos(self):
+		with (
+			patch("asn_module.templates.pages.asn_new_search.frappe.session", SimpleNamespace(user="s@example.com")),
+			patch("asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
+				return_value=[
+					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05"),
+					SimpleNamespace(name="PO-0002", status="To Receive and Bill", transaction_date="2026-04-06"),
+				],
+			),
+		):
+			rows = asn_new_search.search_open_purchase_orders(txt="PO-0001")
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["value"], "PO-0001")
+
+	def test_search_purchase_order_items_rejects_po_outside_supplier_scope(self):
+		with (
+			patch("asn_module.templates.pages.asn_new_search.frappe.session", SimpleNamespace(user="s@example.com")),
+			patch("asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
+				return_value=[SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")],
+			),
+			self.assertRaises(frappe.PermissionError),
+		):
+			asn_new_search.search_purchase_order_items(purchase_order="PO-9999", txt="")
+
+	def test_search_purchase_order_items_filters_by_po_and_text(self):
+		with (
+			patch("asn_module.templates.pages.asn_new_search.frappe.session", SimpleNamespace(user="s@example.com")),
+			patch("asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
+				return_value=[SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")],
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.get_all",
+				return_value=[
+					SimpleNamespace(name="POI-1", idx=1, item_code="ITEM-001", uom="Nos", rate=10),
+					SimpleNamespace(name="POI-2", idx=2, item_code="ABC-002", uom="Nos", rate=20),
+				],
+			),
+		):
+			rows = asn_new_search.search_purchase_order_items(purchase_order="PO-0001", txt="ITEM")
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["value"], "ITEM-001")
+		self.assertEqual(rows[0]["sr_no"], "1")

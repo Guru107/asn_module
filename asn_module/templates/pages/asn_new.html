@@ -1,0 +1,338 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container">
+	<div class="row">
+		<div class="col-md-11 col-lg-10">
+			<div class="d-flex justify-content-between align-items-center mb-3">
+				<h3>{{ _("Create ASN") }}</h3>
+				<a href="/asn" class="btn btn-light btn-sm">{{ _("Back to ASN List") }}</a>
+			</div>
+
+			<ul class="nav nav-tabs mb-3" role="tablist">
+				<li class="nav-item" role="presentation">
+					<button class="nav-link {% if active_tab != 'bulk' %}active{% endif %}" id="single-tab" data-bs-toggle="tab" data-bs-target="#single-pane" type="button" role="tab">
+						{{ _("Single ASN") }}
+					</button>
+				</li>
+				<li class="nav-item" role="presentation">
+					<button class="nav-link {% if active_tab == 'bulk' %}active{% endif %}" id="bulk-tab" data-bs-toggle="tab" data-bs-target="#bulk-pane" type="button" role="tab">
+						{{ _("Bulk ASN Upload") }}
+					</button>
+				</li>
+			</ul>
+
+			<div class="tab-content">
+				<div class="tab-pane fade {% if active_tab != 'bulk' %}show active{% endif %}" id="single-pane" role="tabpanel">
+					{% if single_errors %}
+					<div class="alert alert-danger" role="alert">
+						<strong>{{ _("Please fix the following errors:") }}</strong>
+						<ul class="mb-0 mt-2">
+							{% for error in single_errors %}
+							<li>
+								{% if error.row_number %}
+								{{ _("Manual row {0}:").format(error.row_number) }}
+								{% endif %}
+								{{ error.message }}
+							</li>
+							{% endfor %}
+						</ul>
+					</div>
+					{% endif %}
+
+					<form method="post" id="single-asn-form">
+						<input type="hidden" name="csrf_token" value="{{ frappe.session.csrf_token }}">
+						<input type="hidden" name="mode" value="single">
+
+						<div class="mb-3">
+							<label class="form-label">{{ _("Supplier") }}</label>
+							<input class="form-control" value="{{ supplier }}" disabled>
+						</div>
+
+						<div class="row">
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Supplier Invoice No") }}</label>
+								<input class="form-control" name="supplier_invoice_no" maxlength="140" required>
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Supplier Invoice Date") }}</label>
+								<input type="date" class="form-control" name="supplier_invoice_date">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Expected Delivery Date") }}</label>
+								<input type="date" class="form-control" name="expected_delivery_date">
+							</div>
+						</div>
+
+						<div class="row">
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("LR No") }}</label>
+								<input class="form-control" name="lr_no" maxlength="140">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("LR Date") }}</label>
+								<input type="date" class="form-control" name="lr_date">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Transporter Name") }}</label>
+								<input class="form-control" name="transporter_name" maxlength="140">
+							</div>
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">{{ _("Add Open Purchase Orders") }}</label>
+							<div class="input-group">
+								<input class="form-control" id="single-po-input" list="open-pos-list" placeholder="PO-0001">
+								<button type="button" class="btn btn-outline-secondary" id="add-po-btn">{{ _("Add") }}</button>
+							</div>
+							<datalist id="open-pos-list">
+								{% for po in open_purchase_orders %}
+								<option value="{{ po.name }}">{{ po.status }} | {{ po.transaction_date }}</option>
+								{% endfor %}
+							</datalist>
+							<div id="selected-po-chips" class="d-flex flex-wrap gap-2 mt-2"></div>
+							<div id="selected-po-hidden-inputs"></div>
+						</div>
+
+						<hr>
+						<h5>{{ _("Manual Rows") }}</h5>
+						<div id="single-manual-rows"></div>
+						<button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="add-single-row">{{ _("Add Row") }}</button>
+
+						<div class="mt-4">
+							<button type="submit" class="btn btn-primary">{{ _("Create and Submit ASN") }}</button>
+						</div>
+					</form>
+				</div>
+
+				<div class="tab-pane fade {% if active_tab == 'bulk' %}show active{% endif %}" id="bulk-pane" role="tabpanel">
+					{% if bulk_success %}
+					<div class="alert alert-success">{{ bulk_success }}</div>
+					{% endif %}
+					{% if bulk_errors %}
+					<div class="alert alert-danger" role="alert">
+						<strong>{{ _("Bulk upload failed. No ASNs created.") }}</strong>
+						<ul class="mb-0 mt-2">
+							{% for error in bulk_errors %}
+							<li>
+								{% if error.invoice_no %}<strong>{{ _("Invoice") }} {{ error.invoice_no }}:</strong>{% endif %}
+								{% if error.row_number %}{{ _("Row {0}:").format(error.row_number) }}{% endif %}
+								{{ error.message }}
+							</li>
+							{% endfor %}
+						</ul>
+					</div>
+					{% endif %}
+
+					<form method="post" enctype="multipart/form-data">
+						<input type="hidden" name="csrf_token" value="{{ frappe.session.csrf_token }}">
+						<input type="hidden" name="mode" value="bulk">
+						<div class="mb-2 text-muted">
+							{{ _("Strict CSV headers:") }} <code>{{ bulk_csv_headers | join(",") }}</code>
+						</div>
+						<div class="mb-3">
+							<input class="form-control" type="file" name="bulk_items_csv" accept=".csv,text/csv" required>
+						</div>
+						<button type="submit" class="btn btn-primary">{{ _("Validate, Create and Submit ASNs") }}</button>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+(() => {
+	const selectedPoSet = new Set();
+	const poInput = document.getElementById("single-po-input");
+	const addPoBtn = document.getElementById("add-po-btn");
+	const chipsRoot = document.getElementById("selected-po-chips");
+	const hiddenInputsRoot = document.getElementById("selected-po-hidden-inputs");
+	const rowsRoot = document.getElementById("single-manual-rows");
+	const addRowBtn = document.getElementById("add-single-row");
+	const openPoDatalist = document.getElementById("open-pos-list");
+	if (!poInput || !addPoBtn || !chipsRoot || !hiddenInputsRoot || !rowsRoot || !addRowBtn) return;
+
+	function syncHiddenPoInputs() {
+		hiddenInputsRoot.innerHTML = "";
+		selectedPoSet.forEach((po) => {
+			const hidden = document.createElement("input");
+			hidden.type = "hidden";
+			hidden.name = "selected_purchase_orders";
+			hidden.value = po;
+			hiddenInputsRoot.appendChild(hidden);
+		});
+	}
+
+	function refreshRowPoSelects() {
+		const poOptions = Array.from(selectedPoSet.values());
+		rowsRoot.querySelectorAll("[data-field='purchase_order']").forEach((select) => {
+			const current = select.value;
+			select.innerHTML = `<option value="">Select PO</option>`;
+			poOptions.forEach((po) => {
+				const option = document.createElement("option");
+				option.value = po;
+				option.textContent = po;
+				select.appendChild(option);
+			});
+			if (current && selectedPoSet.has(current)) {
+				select.value = current;
+			} else {
+				select.value = "";
+			}
+		});
+	}
+
+	function renderPoChips() {
+		chipsRoot.innerHTML = "";
+		selectedPoSet.forEach((po) => {
+			const chip = document.createElement("span");
+			chip.className = "badge rounded-pill bg-light text-dark border";
+			chip.innerHTML = `${po} <button type="button" class="btn btn-sm p-0 ms-1 remove-po" data-po="${po}" aria-label="Remove">&times;</button>`;
+			chipsRoot.appendChild(chip);
+		});
+		syncHiddenPoInputs();
+		refreshRowPoSelects();
+	}
+
+	addPoBtn.addEventListener("click", () => {
+		const po = poInput.value.trim();
+		if (!po) return;
+		selectedPoSet.add(po);
+		poInput.value = "";
+		renderPoChips();
+	});
+
+	async function loadOpenPoOptions(searchText) {
+		if (!openPoDatalist) return;
+		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_purchase_orders?txt=${encodeURIComponent(searchText || "")}`;
+		const response = await fetch(url, { credentials: "same-origin" });
+		const payload = await response.json();
+		const rows = payload.message || [];
+		openPoDatalist.innerHTML = "";
+		rows.forEach((entry) => {
+			const option = document.createElement("option");
+			option.value = entry.value || "";
+			option.textContent = entry.description || "";
+			openPoDatalist.appendChild(option);
+		});
+	}
+
+	poInput.addEventListener("input", async () => {
+		await loadOpenPoOptions(poInput.value);
+	});
+
+	chipsRoot.addEventListener("click", (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		if (!event.target.classList.contains("remove-po")) return;
+		const po = event.target.dataset.po || "";
+		selectedPoSet.delete(po);
+		renderPoChips();
+	});
+
+	async function loadItemOptionsForRow(row) {
+		const po = row.querySelector("[data-field='purchase_order']").value;
+		const itemInput = row.querySelector("[data-field='item_code']");
+		const datalist = row.querySelector("datalist");
+		if (!po || !itemInput || !datalist) return;
+
+		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_purchase_order_items?purchase_order=${encodeURIComponent(po)}&txt=${encodeURIComponent(itemInput.value || "")}`;
+		const response = await fetch(url, { credentials: "same-origin" });
+		const payload = await response.json();
+		const rows = payload.message || [];
+		datalist.innerHTML = "";
+		rows.forEach((entry) => {
+			const option = document.createElement("option");
+			option.value = entry.value || "";
+			option.dataset.srNo = entry.sr_no || "";
+			option.dataset.uom = entry.uom || "";
+			option.dataset.rate = entry.rate || "";
+			datalist.appendChild(option);
+		});
+		row.dataset.itemOptions = JSON.stringify(rows);
+	}
+
+	function clearDependentFields(row) {
+		row.querySelector("[data-field='sr_no']").value = "";
+		row.querySelector("[data-field='item_code']").value = "";
+		row.querySelector("[data-field='uom']").value = "";
+		row.querySelector("[data-field='rate']").value = "";
+	}
+
+	function createRowHtml(rowId) {
+		return `
+		<div class="card mb-2 p-2 single-row" data-row-id="${rowId}">
+			<div class="row g-2 align-items-end">
+				<div class="col-md-2">
+					<label class="form-label">PO</label>
+					<select class="form-select" name="single_manual_purchase_order" data-field="purchase_order"></select>
+				</div>
+				<div class="col-md-1">
+					<label class="form-label">Sr No</label>
+					<input class="form-control" name="single_manual_sr_no" data-field="sr_no">
+				</div>
+				<div class="col-md-2">
+					<label class="form-label">Item</label>
+					<input class="form-control" list="single-item-list-${rowId}" name="single_manual_item_code" data-field="item_code">
+					<datalist id="single-item-list-${rowId}"></datalist>
+				</div>
+				<div class="col-md-2">
+					<label class="form-label">UOM</label>
+					<input class="form-control" name="single_manual_uom" data-field="uom">
+				</div>
+				<div class="col-md-2">
+					<label class="form-label">Qty</label>
+					<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_qty" data-field="qty">
+				</div>
+				<div class="col-md-2">
+					<label class="form-label">Rate</label>
+					<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_rate" data-field="rate">
+				</div>
+				<div class="col-md-1">
+					<button type="button" class="btn btn-outline-danger btn-sm remove-row">X</button>
+				</div>
+			</div>
+		</div>
+	`;
+	}
+
+	function addRow() {
+		const rowId = Date.now().toString();
+		rowsRoot.insertAdjacentHTML("beforeend", createRowHtml(rowId));
+		refreshRowPoSelects();
+	}
+
+	addRowBtn.addEventListener("click", addRow);
+	addRow();
+
+	rowsRoot.addEventListener("change", async (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		const row = event.target.closest(".single-row");
+		if (!row) return;
+
+		if (event.target.dataset.field === "purchase_order") {
+			clearDependentFields(row);
+			await loadItemOptionsForRow(row);
+			return;
+		}
+		if (event.target.dataset.field === "item_code") {
+			await loadItemOptionsForRow(row);
+			const options = JSON.parse(row.dataset.itemOptions || "[]");
+			const selected = options.find((entry) => entry.value === event.target.value);
+			if (!selected) return;
+			row.querySelector("[data-field='sr_no']").value = selected.sr_no || row.querySelector("[data-field='sr_no']").value;
+			row.querySelector("[data-field='uom']").value = selected.uom || "";
+			row.querySelector("[data-field='rate']").value = selected.rate || "";
+		}
+	});
+
+	rowsRoot.addEventListener("click", (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		if (!event.target.classList.contains("remove-row")) return;
+		const allRows = rowsRoot.querySelectorAll(".single-row");
+		if (allRows.length <= 1) return;
+		event.target.closest(".single-row")?.remove();
+	});
+})();
+</script>
+{% endblock %}

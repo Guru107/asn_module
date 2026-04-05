@@ -16,6 +16,7 @@ from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_LENGTH,
 	get_or_create_scan_code,
 )
+from asn_module.setup_actions import register_actions
 
 
 class TestDispatch(FrappeTestCase):
@@ -35,6 +36,7 @@ class TestDispatch(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		register_actions()
 		cls._registry_snapshot = cls._snapshot_registry_actions()
 
 	@classmethod
@@ -47,7 +49,10 @@ class TestDispatch(FrappeTestCase):
 		super().tearDownClass()
 
 	def _set_registry(
-		self, action_key="create_purchase_receipt", handler_method="asn_module.tests.fake_handler"
+		self,
+		action_key="create_purchase_receipt",
+		handler_method="asn_module.tests.fake_handler",
+		source_doctype="DocType",
 	):
 		registry = frappe.get_doc("QR Action Registry")
 		registry.set("actions", [])
@@ -56,7 +61,7 @@ class TestDispatch(FrappeTestCase):
 			{
 				"action_key": action_key,
 				"handler_method": handler_method,
-				"source_doctype": "DocType",
+				"source_doctype": source_doctype,
 				"allowed_roles": "System Manager",
 			},
 		)
@@ -84,6 +89,18 @@ class TestDispatch(FrappeTestCase):
 
 		with self.assertRaises(ActionNotFoundError):
 			_resolve_action("unknown_action")
+
+	def test_resolve_action_self_heals_registry_for_known_canonical_action(self):
+		# Simulate stale singleton rows from interrupted test runs.
+		self._set_registry(action_key="create_purchase_receipt")
+
+		action = _resolve_action("create_purchase_invoice")
+
+		self.assertEqual(
+			action["handler"],
+			"asn_module.handlers.purchase_invoice.create_from_purchase_receipt",
+		)
+		self.assertEqual(action["source_doctype"], "Purchase Receipt")
 
 	def test_dispatch_returns_success_payload_and_logs_success(self):
 		self._set_registry(handler_method="asn_module.qr_engine.tests.test_dispatch.dispatch_success_handler")
@@ -147,7 +164,7 @@ class TestDispatch(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Used")
 
 	def test_dispatch_rejects_source_doctype_mismatch_and_logs_failure(self):
-		self._set_registry()
+		self._set_registry(source_doctype="ASN")
 		code_val = "".join(secrets.choice(SCAN_CODE_ALPHABET) for _ in range(SCAN_CODE_LENGTH))
 
 		def _cleanup_scan_code():

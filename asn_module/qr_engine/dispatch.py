@@ -25,7 +25,14 @@ def _resolve_action(action_key: str) -> dict:
 	registry = frappe.get_single("QR Action Registry")
 	action = registry.get_action(action_key)
 	if not action:
-		raise ActionNotFoundError(f"Unknown QR action: {action_key}")
+		# Self-heal: re-apply canonical action registry when singleton rows are stale.
+		from asn_module.setup_actions import register_actions
+
+		register_actions()
+		registry = frappe.get_single("QR Action Registry")
+		action = registry.get_action(action_key)
+		if not action:
+			raise ActionNotFoundError(f"Unknown QR action: {action_key}")
 
 	return {
 		"handler": action["handler_method"],

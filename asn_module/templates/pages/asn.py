@@ -8,8 +8,8 @@ def get_context(context):
 	context.title = "ASN"
 
 	user = frappe.session.user
-	context.can_create_asn = frappe.has_permission("ASN", "create", user=user)
 	supplier = _get_supplier_for_user(user)
+	context.can_create_asn = bool(supplier)
 
 	if not supplier:
 		context.asn_list = []
@@ -28,7 +28,7 @@ def get_context(context):
 		for row in frappe.get_all(
 			"ASN Item",
 			filters={"parent": ["in", [asn.name for asn in asn_list]]},
-			fields=["parent", "count(name) as total_items"],
+			fields=["parent", {"COUNT": "name", "as": "total_items"}],
 			group_by="parent",
 		)
 	}
@@ -39,6 +39,23 @@ def get_context(context):
 		asn.total_items = item_counts.get(asn.name, 0)
 
 	context.asn_list = asn_list
+
+
+def get_open_purchase_orders_for_supplier(supplier: str) -> list[frappe._dict]:
+	if not supplier:
+		return []
+
+	return frappe.get_all(
+		"Purchase Order",
+		filters={
+			"supplier": supplier,
+			"docstatus": 1,
+			"status": ["in", ["To Receive", "To Receive and Bill"]],
+		},
+		fields=["name", "transaction_date", "schedule_date", "status"],
+		order_by="transaction_date desc",
+		limit_page_length=200,
+	)
 
 
 def _get_supplier_for_user(user):

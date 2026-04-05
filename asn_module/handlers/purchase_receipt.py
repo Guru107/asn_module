@@ -33,6 +33,11 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	pr = frappe.new_doc("Purchase Receipt")
 	pr.supplier = asn.supplier
 	pr.asn = asn.name
+	# Prefill supplier-facing transport/invoice references on PR draft.
+	pr.supplier_delivery_note = asn.supplier_invoice_no
+	pr.transporter_name = asn.transporter_name
+	pr.lr_no = asn.lr_no
+	pr.lr_date = asn.lr_date
 
 	for asn_item in asn.items:
 		pr_item = pr.append(
