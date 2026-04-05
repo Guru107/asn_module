@@ -20,7 +20,7 @@ def get_context(context):
 
 	asn_list = frappe.get_all(
 		"ASN",
-		filters={"supplier": supplier, "docstatus": ("!=", 2)},
+		filters={"supplier": supplier},
 		fields=[
 			"name",
 			"route",
@@ -34,15 +34,17 @@ def get_context(context):
 		limit_page_length=50,
 	)
 
-	asns_with_pr = set()
-	if asn_list:
+	asns_with_active_pr = set()
+	if asn_list and frappe.db.has_column("Purchase Receipt", "asn"):
 		for row in frappe.get_all(
 			"Purchase Receipt",
-			filters={"asn": ["in", [a.name for a in asn_list]], "docstatus": ("!=", 2)},
-			fields=["asn"],
+			filters={"asn": ["in", [a.name for a in asn_list]]},
+			fields=["asn", "docstatus"],
 		):
-			if row.asn:
-				asns_with_pr.add(row.asn)
+			if not row.asn:
+				continue
+			if row.docstatus != 2:
+				asns_with_active_pr.add(row.asn)
 
 	item_counts = {
 		row.parent: row.total_items
@@ -59,8 +61,9 @@ def get_context(context):
 			asn.route = _ensure_asn_route(asn.name)
 		asn.total_items = item_counts.get(asn.name, 0)
 		asn.can_cancel_portal = (
-			asn.docstatus == 1 and asn.status == "Submitted" and asn.name not in asns_with_pr
+			asn.docstatus == 1 and asn.status == "Submitted" and asn.name not in asns_with_active_pr
 		)
+		asn.can_delete_portal = asn.docstatus == 2 and asn.name not in asns_with_active_pr
 
 	context.asn_list = asn_list
 
@@ -148,5 +151,36 @@ def cancel_portal_asn(asn_name: str | None = None):
 
 	doc.flags.ignore_permissions = True
 	doc.cancel()
+
+	return {"ok": True, "redirect": "/asn"}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_portal_asn(asn_name: str | None = None):
+	"""Permanently delete a cancelled ASN for the portal supplier when no purchase receipt references it."""
+	asn_name = (asn_name or "").strip()
+	if not asn_name:
+		frappe.throw(_("ASN is required."))
+
+	supplier = _get_supplier_for_user(frappe.session.user)
+	if not supplier:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	doc = frappe.get_doc("ASN", asn_name)
+	if doc.supplier != supplier:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	if doc.docstatus != 2:
+		frappe.throw(_("Only cancelled notices can be deleted from the portal."))
+
+	if purchase_receipt_exists_for_asn(doc.name):
+		frappe.throw(
+			_(
+				"A purchase receipt is still open or submitted for this notice, so it cannot be deleted here. "
+				"Contact your buyer if the receipt should be cancelled or removed first."
+			)
+		)
+
+	frappe.delete_doc("ASN", doc.name, ignore_permissions=True)
 
 	return {"ok": True, "redirect": "/asn"}

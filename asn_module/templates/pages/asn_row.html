@@ -17,9 +17,14 @@
 				| {{ _("Items") }}: {{ asn.total_items }}
 			</div>
 		</a>
-		{% if asn.can_cancel_portal %}
-		<div class="d-flex align-items-center">
+		{% if asn.can_cancel_portal or asn.can_delete_portal %}
+		<div class="d-flex align-items-center gap-1">
+			{% if asn.can_cancel_portal %}
 			<button type="button" class="btn btn-sm btn-outline-danger asn-portal-cancel-btn" data-asn-name="{{ asn.name }}">{{ _("Cancel") }}</button>
+			{% endif %}
+			{% if asn.can_delete_portal %}
+			<button type="button" class="btn btn-sm btn-outline-secondary asn-portal-delete-btn" data-asn-name="{{ asn.name }}">{{ _("Delete") }}</button>
+			{% endif %}
 		</div>
 		{% endif %}
 	</div>

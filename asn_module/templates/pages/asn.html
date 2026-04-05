@@ -39,24 +39,62 @@
 	const csrf = {{ frappe.session.csrf_token | tojson }};
 	const confirmMsg = {{ _("Cancel this shipping notice? This cannot be undone. You can submit a new notice with a different supplier invoice number if you need to replace it.") | tojson }};
 	const genericErr = {{ _("This notice could not be cancelled. Try again or contact your buyer for help.") | tojson }};
-	const methodPath = "/api/method/asn_module.templates.pages.asn.cancel_portal_asn";
+	const cancelPath = "/api/method/asn_module.templates.pages.asn.cancel_portal_asn";
+	const deletePath = "/api/method/asn_module.templates.pages.asn.delete_portal_asn";
+	const deleteConfirmMsg = {{ _("Permanently delete this cancelled notice? This cannot be undone.") | tojson }};
+	const deleteErr = {{ _("This notice could not be deleted. Try again or contact your buyer for help.") | tojson }};
+	const errorDialogTitle = {{ _("Error") | tojson }};
+
+	function escapeHtmlText(s) {
+		const d = document.createElement("div");
+		d.textContent = s;
+		return d.innerHTML;
+	}
+
+	/** Prefer Frappe msgprint modal on portal; fall back to alert if frappe-web bundle is not loaded. */
+	function showPortalError(message) {
+		const text = (message || "").trim();
+		if (!text) return;
+		if (window.frappe && typeof frappe.msgprint === "function") {
+			frappe.msgprint({
+				title: errorDialogTitle,
+				indicator: "red",
+				message: `<p class="mb-0" style="white-space: pre-wrap;">${escapeHtmlText(text)}</p>`,
+			});
+			return;
+		}
+		window.alert(text);
+	}
+
+	function plainTextForAlert(raw) {
+		if (raw == null || raw === "") return null;
+		const d = document.createElement("div");
+		d.innerHTML = String(raw);
+		const t = (d.textContent || d.innerText || "").replace(/\s+/g, " ").trim();
+		return t || null;
+	}
 
 	function parseServerError(data) {
-		if (!data || !data._server_messages) return null;
-		try {
-			const arr = JSON.parse(data._server_messages);
-			for (const row of arr) {
-				const o = typeof row === "string" ? JSON.parse(row) : row;
-				if (o && o.message) return o.message;
-			}
-		} catch (e) { /* ignore */ }
+		if (!data) return null;
+		if (data._server_messages) {
+			try {
+				const arr = JSON.parse(data._server_messages);
+				for (const row of arr) {
+					const o = typeof row === "string" ? JSON.parse(row) : row;
+					if (o && o.message) return plainTextForAlert(o.message);
+				}
+			} catch (e) { /* ignore */ }
+		}
+		if (typeof data.message === "string" && data.message.trim()) {
+			return plainTextForAlert(data.message);
+		}
 		return null;
 	}
 
 	async function cancelAsn(asnName) {
 		if (!asnName || !confirm(confirmMsg)) return;
 		try {
-			const res = await fetch(methodPath, {
+			const res = await fetch(cancelPath, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -69,13 +107,13 @@
 			const data = await res.json();
 			const inner = data.message !== undefined ? data.message : data;
 			if (!res.ok || data.exc || (inner && inner.exc)) {
-				alert(parseServerError(data) || genericErr);
+				showPortalError(parseServerError(data) || genericErr);
 				return;
 			}
 			const redirect = typeof inner === "object" && inner.redirect ? inner.redirect : "/asn";
 			window.location.href = redirect;
 		} catch (e) {
-			alert(genericErr);
+			showPortalError(genericErr);
 		}
 	}
 
@@ -85,6 +123,41 @@
 			ev.stopPropagation();
 			const name = btn.getAttribute("data-asn-name") || "";
 			void cancelAsn(name);
+		});
+	});
+
+	async function deleteAsn(asnName) {
+		if (!asnName || !confirm(deleteConfirmMsg)) return;
+		try {
+			const res = await fetch(deletePath, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json",
+					"X-Frappe-CSRF-Token": csrf,
+				},
+				credentials: "same-origin",
+				body: JSON.stringify({ asn_name: asnName }),
+			});
+			const data = await res.json();
+			const inner = data.message !== undefined ? data.message : data;
+			if (!res.ok || data.exc || (inner && inner.exc)) {
+				showPortalError(parseServerError(data) || deleteErr);
+				return;
+			}
+			const redirect = typeof inner === "object" && inner.redirect ? inner.redirect : "/asn";
+			window.location.href = redirect;
+		} catch (e) {
+			showPortalError(deleteErr);
+		}
+	}
+
+	document.querySelectorAll(".asn-portal-delete-btn").forEach((btn) => {
+		btn.addEventListener("click", (ev) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+			const name = btn.getAttribute("data-asn-name") || "";
+			void deleteAsn(name);
 		});
 	});
 })();

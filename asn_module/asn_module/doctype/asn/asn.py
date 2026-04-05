@@ -11,7 +11,10 @@ from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
-from asn_module.supplier_asn_portal import asn_eligible_for_supplier_portal_cancel
+from asn_module.supplier_asn_portal import (
+	asn_eligible_for_supplier_portal_cancel,
+	asn_eligible_for_supplier_portal_delete,
+)
 from asn_module.traceability import emit_asn_item_transition, get_latest_transition_rows_for_asn
 
 
@@ -23,6 +26,7 @@ class ASN(WebsiteGenerator):
 		context.doc = self
 		context.title = self.name
 		context.can_cancel_portal = asn_eligible_for_supplier_portal_cancel(self)
+		context.can_delete_portal = asn_eligible_for_supplier_portal_delete(self)
 
 	def validate(self):
 		self._validate_items_present()
@@ -60,9 +64,54 @@ class ASN(WebsiteGenerator):
 				ref_name=self.name,
 			)
 
+	def before_cancel(self):
+		self._purge_scan_codes_for_asn()
+		self._delete_linked_draft_purchase_receipts()
+
 	def on_cancel(self):
 		frappe.db.set_value(self.doctype, self.name, "status", "Cancelled", update_modified=False)
 		self.reload()
+
+	def on_trash(self):
+		self._purge_scan_codes_for_asn()
+		self._delete_asn_transition_logs()
+		self._clear_cancelled_purchase_receipt_asn_links()
+		self._validate_deletable_against_purchase_receipts()
+
+	def _purge_scan_codes_for_asn(self):
+		"""Remove QR/barcode registry rows so cancel/delete is not blocked by Dynamic Link checks."""
+		if not frappe.db.exists("DocType", "Scan Code"):
+			return
+		frappe.db.delete(
+			"Scan Code",
+			{"source_doctype": self.doctype, "source_name": self.name},
+		)
+
+	def _delete_asn_transition_logs(self):
+		"""Remove traceability rows so ASN delete is not blocked by Link checks (logs are ASN-specific)."""
+		if not frappe.db.exists("DocType", "ASN Transition Log"):
+			return
+		frappe.db.delete("ASN Transition Log", {"asn": self.name})
+
+	def _clear_cancelled_purchase_receipt_asn_links(self):
+		"""Drop ASN link on cancelled receipts so deletion is not blocked by a stale Link field."""
+		if not frappe.db.has_column("Purchase Receipt", "asn"):
+			return
+		frappe.db.sql(
+			"UPDATE `tabPurchase Receipt` SET `asn` = NULL WHERE `asn` = %s AND `docstatus` = 2",
+			(self.name,),
+		)
+
+	def _delete_linked_draft_purchase_receipts(self):
+		"""Remove draft PRs created from this ASN so the notice can be deleted after cancel without a manual PR delete."""
+		if not frappe.db.has_column("Purchase Receipt", "asn"):
+			return
+		for pr_name in frappe.get_all(
+			"Purchase Receipt",
+			filters={"asn": self.name, "docstatus": 0},
+			pluck="name",
+		):
+			frappe.delete_doc("Purchase Receipt", pr_name)
 
 	def update_receipt_status(self):
 		"""Update ASN status based on received quantities across all items."""
@@ -140,6 +189,24 @@ class ASN(WebsiteGenerator):
 					self.supplier_invoice_no, self.supplier
 				)
 			)
+
+	def _validate_deletable_against_purchase_receipts(self):
+		"""Block ASN deletion while a draft or submitted Purchase Receipt still references this ASN.
+
+		Cancelled receipts are unlinked in on_trash before this runs.
+		"""
+		if not frappe.db.has_column("Purchase Receipt", "asn"):
+			return
+		linked = frappe.db.get_value("Purchase Receipt", {"asn": self.name}, "name")
+		if not linked:
+			return
+		frappe.throw(
+			_(
+				"Cannot delete ASN {0} while Purchase Receipt {1} is linked. "
+				"Remove draft receipts or cancel and delete receipts that reference this ASN."
+			).format(self.name, linked),
+			frappe.LinkExistsError,
+		)
 
 	def _validate_po_qty(self):
 		rows_by_purchase_order_item = {}
