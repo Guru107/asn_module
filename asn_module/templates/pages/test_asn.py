@@ -286,3 +286,9 @@ class TestASNPortalPage(FrappeTestCase):
 			out = delete_portal_asn("ASN-0001")
 		self.assertEqual(deleted, ["ASN:ASN-0001"])
 		self.assertEqual(out.get("redirect"), "/asn")
+
+	def test_get_open_purchase_orders_returns_empty_for_empty_supplier(self):
+		from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
+
+		result = get_open_purchase_orders_for_supplier("")
+		self.assertEqual(result, [])
