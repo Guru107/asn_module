@@ -99,11 +99,24 @@ class TestToken(UnitTestCase):
 
 	def test_create_token_raises_when_site_secret_missing(self):
 		with patch.dict(frappe.local.conf, {}, clear=True):
-			with self.assertRaises(InvalidTokenError) as exc:
-				create_token(
+			with patch.object(token_module, "get_encryption_key", return_value=""):
+				with self.assertRaises(InvalidTokenError) as exc:
+					create_token(
+						action="create_purchase_receipt",
+						source_doctype="ASN",
+						source_name="ASN-00001",
+					)
+
+		self.assertEqual(str(exc.exception), "Site secret is not configured")
+
+	def test_create_token_uses_encryption_key_when_secret_key_missing(self):
+		with patch.dict(frappe.local.conf, {}, clear=True):
+			with patch.object(token_module, "get_encryption_key", return_value="fallback-key"):
+				token = create_token(
 					action="create_purchase_receipt",
 					source_doctype="ASN",
 					source_name="ASN-00001",
 				)
 
-		self.assertEqual(str(exc.exception), "Site secret is not configured")
+		self.assertIsInstance(token, str)
+		self.assertTrue(token)

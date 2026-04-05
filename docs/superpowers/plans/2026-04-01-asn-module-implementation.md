@@ -92,12 +92,12 @@ asn_module/
 ### Task 1: Token Signing and Verification
 
 **Files:**
+
 - Create: `asn_module/qr_engine/__init__.py`
 - Create: `asn_module/qr_engine/token.py`
 - Create: `asn_module/qr_engine/tests/__init__.py`
 - Create: `asn_module/qr_engine/tests/test_token.py`
-
-- [ ] **Step 1: Write the failing tests for token sign/verify**
+- **Step 1: Write the failing tests for token sign/verify**
 
 ```python
 # asn_module/qr_engine/tests/test_token.py
@@ -154,12 +154,12 @@ class TestToken(UnitTestCase):
 		self.assertEqual(payload["created_by"], frappe.session.user)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- **Step 2: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.qr_engine.tests.test_token`
 Expected: FAIL with ImportError
 
-- [ ] **Step 3: Implement token module**
+- **Step 3: Implement token module**
 
 ```python
 # asn_module/qr_engine/__init__.py
@@ -247,12 +247,12 @@ def verify_token(token: str) -> dict:
 		raise InvalidTokenError(f"Invalid token format: {e}") from e
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- **Step 4: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.qr_engine.tests.test_token`
 Expected: All 5 tests PASS
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/qr_engine/
@@ -264,19 +264,22 @@ git commit -m "feat: add QR token signing and verification"
 ### Task 2: QR Code and Barcode Generation
 
 **Files:**
+
 - Create: `asn_module/qr_engine/generate.py`
 - Create: `asn_module/qr_engine/tests/test_generate.py`
 - Modify: `pyproject.toml` (add python-barcode dependency)
-
-- [ ] **Step 1: Add python-barcode dependency**
+- **Step 1: Add python-barcode dependency**
 
 In `pyproject.toml`, change:
+
 ```toml
 dependencies = [
     # "frappe~=16.0.0" # Installed and managed by bench.
 ]
 ```
+
 to:
+
 ```toml
 dependencies = [
     # "frappe~=16.0.0" # Installed and managed by bench.
@@ -286,7 +289,7 @@ dependencies = [
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && pip install python-barcode`
 
-- [ ] **Step 2: Write the failing tests for QR and barcode generation**
+- **Step 2: Write the failing tests for QR and barcode generation**
 
 ```python
 # asn_module/qr_engine/tests/test_generate.py
@@ -327,12 +330,12 @@ class TestGenerateQR(IntegrationTestCase):
 		self.assertTrue(len(result["image_base64"]) > 0)
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- **Step 3: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.qr_engine.tests.test_generate`
 Expected: FAIL with ImportError
 
-- [ ] **Step 4: Implement generate module**
+- **Step 4: Implement generate module**
 
 ```python
 # asn_module/qr_engine/generate.py
@@ -404,12 +407,12 @@ def generate_barcode(action: str, source_doctype: str, source_name: str) -> dict
 	}
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- **Step 5: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.qr_engine.tests.test_generate`
 Expected: All 3 tests PASS
 
-- [ ] **Step 6: Commit**
+- **Step 6: Commit**
 
 ```bash
 git add asn_module/qr_engine/generate.py asn_module/qr_engine/tests/test_generate.py pyproject.toml
@@ -421,6 +424,7 @@ git commit -m "feat: add QR code and barcode generation utilities"
 ### Task 3: QR Action Registry and Scan Log Doctypes
 
 **Files:**
+
 - Create: `asn_module/asn_module/doctype/qr_action_registry/qr_action_registry.json`
 - Create: `asn_module/asn_module/doctype/qr_action_registry/qr_action_registry.py`
 - Create: `asn_module/asn_module/doctype/qr_action_registry_item/qr_action_registry_item.json`
@@ -428,8 +432,7 @@ git commit -m "feat: add QR code and barcode generation utilities"
 - Create: `asn_module/asn_module/doctype/scan_log/scan_log.json`
 - Create: `asn_module/asn_module/doctype/scan_log/scan_log.py`
 - Create: `asn_module/asn_module/doctype/scan_log/test_scan_log.py`
-
-- [ ] **Step 1: Create the QR Action Registry single doctype**
+- **Step 1: Create the QR Action Registry single doctype**
 
 Create directory: `asn_module/asn_module/doctype/qr_action_registry/`
 
@@ -590,7 +593,7 @@ class QRActionRegistry(Document):
 		return None
 ```
 
-- [ ] **Step 2: Create the Scan Log doctype**
+- **Step 2: Create the Scan Log doctype**
 
 Create directory: `asn_module/asn_module/doctype/scan_log/`
 
@@ -753,7 +756,7 @@ class ScanLog(Document):
 		self.user = frappe.session.user
 ```
 
-- [ ] **Step 3: Write test for Scan Log creation**
+- **Step 3: Write test for Scan Log creation**
 
 ```python
 # asn_module/asn_module/doctype/scan_log/test_scan_log.py
@@ -788,12 +791,12 @@ class TestScanLog(IntegrationTestCase):
 		self.assertTrue(log.name.startswith("SCAN-"))
 ```
 
-- [ ] **Step 4: Run tests**
+- **Step 4: Run tests**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.asn_module.doctype.scan_log.test_scan_log`
 Expected: All 2 tests PASS
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/asn_module/doctype/
@@ -805,10 +808,10 @@ git commit -m "feat: add QR Action Registry, QR Action Registry Item, and Scan L
 ### Task 4: Dispatch Endpoint
 
 **Files:**
+
 - Create: `asn_module/qr_engine/dispatch.py`
 - Create: `asn_module/qr_engine/tests/test_dispatch.py`
-
-- [ ] **Step 1: Write the failing tests for dispatch**
+- **Step 1: Write the failing tests for dispatch**
 
 ```python
 # asn_module/qr_engine/tests/test_dispatch.py
@@ -916,12 +919,12 @@ def dummy_handler(source_doctype, source_name, payload):
 	}
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- **Step 2: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.qr_engine.tests.test_dispatch`
 Expected: FAIL with ImportError
 
-- [ ] **Step 3: Implement dispatch module**
+- **Step 3: Implement dispatch module**
 
 ```python
 # asn_module/qr_engine/dispatch.py
@@ -1061,12 +1064,12 @@ def dispatch(token: str, device_info: str = "Desktop") -> dict:
 		raise
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- **Step 4: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.qr_engine.tests.test_dispatch`
 Expected: All 5 tests PASS
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/qr_engine/dispatch.py asn_module/qr_engine/tests/test_dispatch.py
@@ -1080,11 +1083,11 @@ git commit -m "feat: add QR dispatch endpoint with action routing and scan loggi
 ### Task 5: ASN Item Child Table
 
 **Files:**
+
 - Create: `asn_module/asn_module/doctype/asn_item/__init__.py`
 - Create: `asn_module/asn_module/doctype/asn_item/asn_item.json`
 - Create: `asn_module/asn_module/doctype/asn_item/asn_item.py`
-
-- [ ] **Step 1: Create the ASN Item child table doctype**
+- **Step 1: Create the ASN Item child table doctype**
 
 Create directory: `asn_module/asn_module/doctype/asn_item/`
 
@@ -1225,7 +1228,7 @@ class ASNItem(Document):
 	pass
 ```
 
-- [ ] **Step 2: Commit**
+- **Step 2: Commit**
 
 ```bash
 git add asn_module/asn_module/doctype/asn_item/
@@ -1237,12 +1240,12 @@ git commit -m "feat: add ASN Item child table doctype"
 ### Task 6: ASN Doctype - Structure and Validations
 
 **Files:**
+
 - Create: `asn_module/asn_module/doctype/asn/__init__.py`
 - Create: `asn_module/asn_module/doctype/asn/asn.json`
 - Create: `asn_module/asn_module/doctype/asn/asn.py`
 - Create: `asn_module/asn_module/doctype/asn/test_asn.py`
-
-- [ ] **Step 1: Create the ASN doctype JSON**
+- **Step 1: Create the ASN doctype JSON**
 
 Create directory: `asn_module/asn_module/doctype/asn/`
 
@@ -1468,7 +1471,7 @@ Create directory: `asn_module/asn_module/doctype/asn/`
 }
 ```
 
-- [ ] **Step 2: Write the failing tests for ASN validations**
+- **Step 2: Write the failing tests for ASN validations**
 
 ```python
 # asn_module/asn_module/doctype/asn/test_asn.py
@@ -1572,12 +1575,12 @@ class TestASNValidation(IntegrationTestCase):
 			asn.insert()
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- **Step 3: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.asn_module.doctype.asn.test_asn`
 Expected: FAIL with ImportError or validation not implemented
 
-- [ ] **Step 4: Implement ASN controller with validations**
+- **Step 4: Implement ASN controller with validations**
 
 ```python
 # asn_module/asn_module/doctype/asn/asn.py
@@ -1728,12 +1731,12 @@ class ASN(Document):
 		self.save(ignore_permissions=True)
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- **Step 5: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.asn_module.doctype.asn.test_asn`
 Expected: All 4 tests PASS
 
-- [ ] **Step 6: Commit**
+- **Step 6: Commit**
 
 ```bash
 git add asn_module/asn_module/doctype/asn/
@@ -1745,9 +1748,9 @@ git commit -m "feat: add ASN doctype with validations and QR generation on submi
 ### Task 7: ASN Client Script
 
 **Files:**
-- Create: `asn_module/asn_module/doctype/asn/asn.js`
 
-- [ ] **Step 1: Write the client script for ASN form**
+- Create: `asn_module/asn_module/doctype/asn/asn.js`
+- **Step 1: Write the client script for ASN form**
 
 ```javascript
 // asn_module/asn_module/doctype/asn/asn.js
@@ -1829,7 +1832,7 @@ frappe.ui.form.on("ASN Item", {
 });
 ```
 
-- [ ] **Step 2: Add the server-side helper for fetching PO items**
+- **Step 2: Add the server-side helper for fetching PO items**
 
 Append to `asn_module/asn_module/doctype/asn/asn.py`:
 
@@ -1907,14 +1910,14 @@ def get_po_items(doctype, txt, searchfield, start, page_len, filters):
 	)
 ```
 
-- [ ] **Step 3: Run E2E tests manually**
+- **Step 3: Run E2E tests manually**
 
 Open browser, navigate to `frappe16.localhost/app/asn/new`, verify:
+
 - Supplier field filters POs correctly
 - Selecting a PO populates items with remaining quantities
 - QR code and barcode are generated on submit
-
-- [ ] **Step 4: Commit**
+- **Step 4: Commit**
 
 ```bash
 git add asn_module/asn_module/doctype/asn/asn.js asn_module/asn_module/doctype/asn/asn.py
@@ -1928,12 +1931,12 @@ git commit -m "feat: add ASN client script with PO item fetching and quantity va
 ### Task 8: Portal Configuration for ASN
 
 **Files:**
+
 - Create: `asn_module/templates/pages/asn.html`
 - Create: `asn_module/templates/pages/asn.py`
 - Create: `asn_module/templates/pages/asn_row.html`
 - Modify: `asn_module/hooks.py`
-
-- [ ] **Step 1: Configure hooks for portal**
+- **Step 1: Configure hooks for portal**
 
 In `asn_module/hooks.py`, add after the existing comments:
 
@@ -1961,7 +1964,7 @@ Also update the ASN doctype JSON to add web view settings. In `asn.json`, add th
 "allow_import": 1
 ```
 
-- [ ] **Step 2: Create the portal list page controller**
+- **Step 2: Create the portal list page controller**
 
 ```python
 # asn_module/templates/pages/asn.py
@@ -1994,7 +1997,7 @@ def has_website_permission(doc, ptype, user=None, verbose=False):
 	return doc.supplier == supplier if supplier else False
 ```
 
-- [ ] **Step 3: Create the portal list template**
+- **Step 3: Create the portal list template**
 
 ```html
 <!-- asn_module/templates/pages/asn.html -->
@@ -2049,7 +2052,7 @@ def has_website_permission(doc, ptype, user=None, verbose=False):
 </a>
 ```
 
-- [ ] **Step 4: Update the portal list controller to fetch ASN data**
+- **Step 4: Update the portal list controller to fetch ASN data**
 
 Update `asn_module/templates/pages/asn.py`:
 
@@ -2109,7 +2112,7 @@ def has_website_permission(doc, ptype, user=None, verbose=False):
 	return doc.supplier == supplier if supplier else False
 ```
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/templates/ asn_module/hooks.py asn_module/asn_module/doctype/asn/asn.json
@@ -2123,13 +2126,13 @@ git commit -m "feat: add supplier portal for ASN list and creation"
 ### Task 9: Scan Station Page
 
 **Files:**
+
 - Create: `asn_module/asn_module/page/scan_station/__init__.py`
 - Create: `asn_module/asn_module/page/scan_station/scan_station.json`
 - Create: `asn_module/asn_module/page/scan_station/scan_station.js`
 - Create: `asn_module/asn_module/page/scan_station/scan_station.html`
 - Create: `asn_module/asn_module/page/scan_station/scan_station.py`
-
-- [ ] **Step 1: Create the Scan Station page definition**
+- **Step 1: Create the Scan Station page definition**
 
 Create directory: `asn_module/asn_module/page/scan_station/`
 
@@ -2163,7 +2166,7 @@ Create directory: `asn_module/asn_module/page/scan_station/`
 }
 ```
 
-- [ ] **Step 2: Create the Scan Station HTML template**
+- **Step 2: Create the Scan Station HTML template**
 
 ```html
 <!-- asn_module/asn_module/page/scan_station/scan_station.html -->
@@ -2196,7 +2199,7 @@ Create directory: `asn_module/asn_module/page/scan_station/`
 </div>
 ```
 
-- [ ] **Step 3: Create the Scan Station JavaScript**
+- **Step 3: Create the Scan Station JavaScript**
 
 ```javascript
 // asn_module/asn_module/page/scan_station/scan_station.js
@@ -2351,7 +2354,7 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 };
 ```
 
-- [ ] **Step 4: Commit**
+- **Step 4: Commit**
 
 ```bash
 git add asn_module/asn_module/page/scan_station/
@@ -2363,11 +2366,11 @@ git commit -m "feat: add Scan Station page with scanner input and scan history"
 ### Task 10: Global Scan Shortcut
 
 **Files:**
+
 - Create: `asn_module/public/js/asn_module.js`
 - Create: `asn_module/public/js/scan_dialog.js`
 - Modify: `asn_module/hooks.py`
-
-- [ ] **Step 1: Create the scan dialog component**
+- **Step 1: Create the scan dialog component**
 
 ```javascript
 // asn_module/public/js/scan_dialog.js
@@ -2470,7 +2473,7 @@ $(document).ready(function () {
 });
 ```
 
-- [ ] **Step 2: Update hooks.py to include JS files**
+- **Step 2: Update hooks.py to include JS files**
 
 In `asn_module/hooks.py`, uncomment and set:
 
@@ -2487,13 +2490,13 @@ app_include_js = [
 ]
 ```
 
-- [ ] **Step 3: Build assets and verify**
+- **Step 3: Build assets and verify**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench build --app asn_module`
 
 Open browser, press `Ctrl+Shift+S` and verify the scan dialog appears.
 
-- [ ] **Step 4: Commit**
+- **Step 4: Commit**
 
 ```bash
 git add asn_module/public/js/ asn_module/hooks.py
@@ -2507,11 +2510,11 @@ git commit -m "feat: add global scan shortcut (Ctrl+Shift+S) and scan dialog com
 ### Task 11: Custom Fields on Purchase Receipt
 
 **Files:**
+
 - Create: `asn_module/custom_fields/__init__.py`
 - Create: `asn_module/custom_fields/purchase_receipt.py`
 - Modify: `asn_module/hooks.py`
-
-- [ ] **Step 1: Define custom fields for Purchase Receipt**
+- **Step 1: Define custom fields for Purchase Receipt**
 
 ```python
 # asn_module/custom_fields/__init__.py
@@ -2548,7 +2551,7 @@ def setup():
 	create_custom_fields(custom_fields)
 ```
 
-- [ ] **Step 2: Add after_install hook to create custom fields**
+- **Step 2: Add after_install hook to create custom fields**
 
 In `asn_module/hooks.py`, add:
 
@@ -2567,11 +2570,11 @@ def after_install():
 	setup_pr_fields()
 ```
 
-- [ ] **Step 3: Run the setup to create fields**
+- **Step 3: Run the setup to create fields**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost execute asn_module.setup.after_install`
 
-- [ ] **Step 4: Commit**
+- **Step 4: Commit**
 
 ```bash
 git add asn_module/custom_fields/ asn_module/setup.py asn_module/hooks.py
@@ -2583,13 +2586,13 @@ git commit -m "feat: add custom fields (asn, asn_items) on Purchase Receipt"
 ### Task 12: Purchase Receipt Handler
 
 **Files:**
+
 - Create: `asn_module/handlers/__init__.py`
 - Create: `asn_module/handlers/purchase_receipt.py`
 - Create: `asn_module/handlers/tests/__init__.py`
 - Create: `asn_module/handlers/tests/test_purchase_receipt.py`
 - Modify: `asn_module/hooks.py`
-
-- [ ] **Step 1: Write the failing tests for purchase receipt handler**
+- **Step 1: Write the failing tests for purchase receipt handler**
 
 ```python
 # asn_module/handlers/tests/__init__.py
@@ -2702,12 +2705,12 @@ class TestCreatePurchaseReceipt(IntegrationTestCase):
 			)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- **Step 2: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_purchase_receipt`
 Expected: FAIL with ImportError
 
-- [ ] **Step 3: Implement purchase receipt handler**
+- **Step 3: Implement purchase receipt handler**
 
 ```python
 # asn_module/handlers/__init__.py
@@ -2797,7 +2800,7 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	}
 ```
 
-- [ ] **Step 4: Add doc_events hook for Purchase Receipt submit**
+- **Step 4: Add doc_events hook for Purchase Receipt submit**
 
 In `asn_module/hooks.py`, add:
 
@@ -2872,12 +2875,12 @@ def _attach_qr_to_doc(doc, qr_result, prefix):
 	}).save(ignore_permissions=True)
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- **Step 5: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_purchase_receipt`
 Expected: All 4 tests PASS
 
-- [ ] **Step 6: Commit**
+- **Step 6: Commit**
 
 ```bash
 git add asn_module/handlers/ asn_module/hooks.py
@@ -2891,10 +2894,10 @@ git commit -m "feat: add purchase receipt handler with ASN discrepancy tracking"
 ### Task 13: Stock Transfer Handler
 
 **Files:**
+
 - Create: `asn_module/handlers/stock_transfer.py`
 - Create: `asn_module/handlers/tests/test_stock_transfer.py`
-
-- [ ] **Step 1: Write the failing tests for stock transfer handler**
+- **Step 1: Write the failing tests for stock transfer handler**
 
 ```python
 # asn_module/handlers/tests/test_stock_transfer.py
@@ -2980,12 +2983,12 @@ class TestCreateStockTransfer(IntegrationTestCase):
 			}).insert(ignore_permissions=True)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- **Step 2: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_stock_transfer`
 Expected: FAIL with ImportError
 
-- [ ] **Step 3: Implement stock transfer handler**
+- **Step 3: Implement stock transfer handler**
 
 ```python
 # asn_module/handlers/stock_transfer.py
@@ -3056,12 +3059,12 @@ def create_from_quality_inspection(source_doctype: str, source_name: str, payloa
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- **Step 4: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_stock_transfer`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/handlers/stock_transfer.py asn_module/handlers/tests/test_stock_transfer.py
@@ -3073,10 +3076,10 @@ git commit -m "feat: add stock transfer handler for accepted QC items"
 ### Task 14: Purchase Return Handler
 
 **Files:**
+
 - Create: `asn_module/handlers/purchase_return.py`
 - Create: `asn_module/handlers/tests/test_purchase_return.py`
-
-- [ ] **Step 1: Write the failing tests for purchase return handler**
+- **Step 1: Write the failing tests for purchase return handler**
 
 ```python
 # asn_module/handlers/tests/test_purchase_return.py
@@ -3154,12 +3157,12 @@ class TestCreatePurchaseReturn(IntegrationTestCase):
 		return qi
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- **Step 2: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_purchase_return`
 Expected: FAIL with ImportError
 
-- [ ] **Step 3: Implement purchase return handler**
+- **Step 3: Implement purchase return handler**
 
 ```python
 # asn_module/handlers/purchase_return.py
@@ -3230,12 +3233,12 @@ def create_from_quality_inspection(source_doctype: str, source_name: str, payloa
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- **Step 4: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_purchase_return`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/handlers/purchase_return.py asn_module/handlers/tests/test_purchase_return.py
@@ -3247,10 +3250,10 @@ git commit -m "feat: add purchase return handler for rejected QC items"
 ### Task 15: Quality Inspection Submit Hook
 
 **Files:**
+
 - Modify: `asn_module/hooks.py`
 - Create: `asn_module/handlers/quality_inspection.py`
-
-- [ ] **Step 1: Write the QI submit hook**
+- **Step 1: Write the QI submit hook**
 
 ```python
 # asn_module/handlers/quality_inspection.py
@@ -3308,7 +3311,7 @@ def _attach_qr(doc, qr_result, prefix):
 	}).save(ignore_permissions=True)
 ```
 
-- [ ] **Step 2: Add doc_events hook for Quality Inspection**
+- **Step 2: Add doc_events hook for Quality Inspection**
 
 In `asn_module/hooks.py`, update `doc_events`:
 
@@ -3323,7 +3326,7 @@ doc_events = {
 }
 ```
 
-- [ ] **Step 3: Commit**
+- **Step 3: Commit**
 
 ```bash
 git add asn_module/handlers/quality_inspection.py asn_module/hooks.py
@@ -3337,10 +3340,10 @@ git commit -m "feat: add QI submit hook to generate stock transfer and return QR
 ### Task 16: Custom Fields on Purchase Invoice
 
 **Files:**
+
 - Create: `asn_module/custom_fields/purchase_invoice.py`
 - Modify: `asn_module/setup.py`
-
-- [ ] **Step 1: Define custom fields for Purchase Invoice**
+- **Step 1: Define custom fields for Purchase Invoice**
 
 ```python
 # asn_module/custom_fields/purchase_invoice.py
@@ -3366,7 +3369,7 @@ def setup():
 	create_custom_fields(custom_fields)
 ```
 
-- [ ] **Step 2: Update setup.py**
+- **Step 2: Update setup.py**
 
 ```python
 # asn_module/setup.py
@@ -3381,7 +3384,7 @@ def after_install():
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost execute asn_module.setup.after_install`
 
-- [ ] **Step 3: Commit**
+- **Step 3: Commit**
 
 ```bash
 git add asn_module/custom_fields/purchase_invoice.py asn_module/setup.py
@@ -3393,10 +3396,10 @@ git commit -m "feat: add custom field (asn) on Purchase Invoice"
 ### Task 17: Purchase Invoice Handler
 
 **Files:**
+
 - Create: `asn_module/handlers/purchase_invoice.py`
 - Create: `asn_module/handlers/tests/test_purchase_invoice.py`
-
-- [ ] **Step 1: Write the failing tests**
+- **Step 1: Write the failing tests**
 
 ```python
 # asn_module/handlers/tests/test_purchase_invoice.py
@@ -3514,12 +3517,12 @@ class TestCreatePurchaseInvoice(IntegrationTestCase):
 			)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- **Step 2: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_purchase_invoice`
 Expected: FAIL with ImportError
 
-- [ ] **Step 3: Implement purchase invoice handler**
+- **Step 3: Implement purchase invoice handler**
 
 ```python
 # asn_module/handlers/purchase_invoice.py
@@ -3613,12 +3616,12 @@ def create_from_purchase_receipt(source_doctype: str, source_name: str, payload:
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- **Step 4: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_purchase_invoice`
 Expected: All 3 tests PASS
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/handlers/purchase_invoice.py asn_module/handlers/tests/test_purchase_invoice.py
@@ -3632,10 +3635,10 @@ git commit -m "feat: add purchase invoice handler with ASN bill details"
 ### Task 18: Putaway Confirmation Handler
 
 **Files:**
+
 - Create: `asn_module/handlers/putaway.py`
 - Create: `asn_module/handlers/tests/test_putaway.py`
-
-- [ ] **Step 1: Write the failing tests**
+- **Step 1: Write the failing tests**
 
 ```python
 # asn_module/handlers/tests/test_putaway.py
@@ -3663,12 +3666,12 @@ class TestConfirmPutaway(IntegrationTestCase):
 		self.assertEqual(log.result, "Success")
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- **Step 2: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_putaway`
 Expected: FAIL with ImportError
 
-- [ ] **Step 3: Implement putaway handler**
+- **Step 3: Implement putaway handler**
 
 ```python
 # asn_module/handlers/putaway.py
@@ -3706,12 +3709,12 @@ def confirm_putaway(source_doctype: str, source_name: str, payload: dict) -> dic
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- **Step 4: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_putaway`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/handlers/putaway.py asn_module/handlers/tests/test_putaway.py
@@ -3725,11 +3728,11 @@ git commit -m "feat: add putaway confirmation handler (audit scan log)"
 ### Task 19: Subcontracting Dispatch Handler
 
 **Files:**
+
 - Create: `asn_module/handlers/subcontracting.py`
 - Create: `asn_module/handlers/tests/test_subcontracting.py`
 - Modify: `asn_module/hooks.py`
-
-- [ ] **Step 1: Write the failing tests for subcontracting dispatch**
+- **Step 1: Write the failing tests for subcontracting dispatch**
 
 ```python
 # asn_module/handlers/tests/test_subcontracting.py
@@ -3814,12 +3817,12 @@ class TestSubcontractingDispatch(IntegrationTestCase):
 		return sco
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- **Step 2: Run tests to verify they fail**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_subcontracting`
 Expected: FAIL with ImportError
 
-- [ ] **Step 3: Implement subcontracting handlers**
+- **Step 3: Implement subcontracting handlers**
 
 ```python
 # asn_module/handlers/subcontracting.py
@@ -4002,7 +4005,7 @@ def create_receipt_from_subcontracting_order(
 	}
 ```
 
-- [ ] **Step 4: Add doc_events hooks for Subcontracting Order and Stock Entry**
+- **Step 4: Add doc_events hooks for Subcontracting Order and Stock Entry**
 
 In `asn_module/hooks.py`, update `doc_events`:
 
@@ -4048,12 +4051,12 @@ def on_subcontracting_order_submit(doc, method):
 	}).save(ignore_permissions=True)
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- **Step 5: Run tests to verify they pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.handlers.tests.test_subcontracting`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- **Step 6: Commit**
 
 ```bash
 git add asn_module/handlers/subcontracting.py asn_module/handlers/tests/test_subcontracting.py asn_module/hooks.py
@@ -4067,11 +4070,11 @@ git commit -m "feat: add subcontracting dispatch and receipt handlers with QR ge
 ### Task 20: Notification Templates
 
 **Files:**
+
 - Create: `asn_module/notifications/__init__.py`
 - Create: `asn_module/notifications/setup.py`
 - Modify: `asn_module/setup.py`
-
-- [ ] **Step 1: Create notification setup**
+- **Step 1: Create notification setup**
 
 ```python
 # asn_module/notifications/__init__.py
@@ -4150,7 +4153,7 @@ def create_notifications():
 		notif.insert(ignore_permissions=True)
 ```
 
-- [ ] **Step 2: Update setup.py to create notifications**
+- **Step 2: Update setup.py to create notifications**
 
 ```python
 # asn_module/setup.py
@@ -4167,7 +4170,7 @@ def after_install():
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost execute asn_module.setup.after_install`
 
-- [ ] **Step 3: Commit**
+- **Step 3: Commit**
 
 ```bash
 git add asn_module/notifications/ asn_module/setup.py
@@ -4181,10 +4184,10 @@ git commit -m "feat: add notification templates for ASN events"
 ### Task 21: Register All Actions
 
 **Files:**
+
 - Create: `asn_module/setup_actions.py`
 - Modify: `asn_module/setup.py`
-
-- [ ] **Step 1: Create action registry seed data**
+- **Step 1: Create action registry seed data**
 
 ```python
 # asn_module/setup_actions.py
@@ -4250,7 +4253,7 @@ def register_actions():
 	frappe.db.commit()
 ```
 
-- [ ] **Step 2: Update setup.py**
+- **Step 2: Update setup.py**
 
 ```python
 # asn_module/setup.py
@@ -4269,7 +4272,7 @@ def after_install():
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost execute asn_module.setup.after_install`
 
-- [ ] **Step 3: Commit**
+- **Step 3: Commit**
 
 ```bash
 git add asn_module/setup_actions.py asn_module/setup.py
@@ -4283,10 +4286,10 @@ git commit -m "feat: register all QR actions in the Action Registry on install"
 ### Task 22: End-to-End Flow Test
 
 **Files:**
+
 - Create: `asn_module/tests/__init__.py`
 - Create: `asn_module/tests/test_e2e_flow.py`
-
-- [ ] **Step 1: Write integration test for full ASN-to-Invoice flow**
+- **Step 1: Write integration test for full ASN-to-Invoice flow**
 
 ```python
 # asn_module/tests/__init__.py
@@ -4436,12 +4439,12 @@ class TestEndToEndFlow(IntegrationTestCase):
 		self.assertEqual(asn.items[0].discrepancy_qty, 2)
 ```
 
-- [ ] **Step 2: Run the E2E tests**
+- **Step 2: Run the E2E tests**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module --module asn_module.tests.test_e2e_flow`
 Expected: All 2 tests PASS
 
-- [ ] **Step 3: Commit**
+- **Step 3: Commit**
 
 ```bash
 git add asn_module/tests/
@@ -4452,29 +4455,30 @@ git commit -m "test: add end-to-end integration tests for ASN-to-Invoice flow"
 
 ### Task 23: Run Full Test Suite
 
-- [ ] **Step 1: Run all tests**
+- **Step 1: Run all tests**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --app asn_module`
 Expected: All tests PASS
 
-- [ ] **Step 2: Run linting**
+- **Step 2: Run linting**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/asn_module && ruff check asn_module/ && ruff format --check asn_module/`
 Expected: No errors
 
-- [ ] **Step 3: Fix any issues found**
+- **Step 3: Fix any issues found**
 
 Address any test failures or linting errors.
 
-- [ ] **Step 4: Final commit**
+- **Step 4: Final commit**
 
 ```bash
 git add -A
 git commit -m "chore: fix linting and test issues across all modules"
 ```
 
-- [ ] **Step 5: Push to remote**
+- **Step 5: Push to remote**
 
 ```bash
 git push origin main
 ```
+

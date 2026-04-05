@@ -4,7 +4,7 @@ authors = [
     { name = "Gurudatt Kulkarni", email = "connect@gurudatt.in"}
 ]
 description = "ASN Module"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [

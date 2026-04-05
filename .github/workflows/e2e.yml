@@ -1,0 +1,147 @@
+name: E2E
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+jobs:
+  cypress:
+    runs-on: ubuntu-latest
+    name: E2E (Frappe ${{ matrix.frappe_version }} / ERPNext ${{ matrix.erpnext_version }})
+    concurrency:
+      group: e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.frappe_version }}-${{ matrix.erpnext_version }}
+      cancel-in-progress: true
+    env:
+      FRAPPE_VERSION: ${{ matrix.frappe_version }}
+      ERPNEXT_VERSION: ${{ matrix.erpnext_version }}
+      FRAPPE_ROUTE_PREFIX: ${{ matrix.frappe_route_prefix }}
+      CI: "Yes"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - frappe_version: "15"
+            erpnext_version: "15"
+            python_version: "3.10"
+            node_version: "20"
+            frappe_route_prefix: "app"
+          - frappe_version: "16"
+            erpnext_version: "16"
+            python_version: "3.14"
+            node_version: "24"
+            # Use app routes on v16 for Cypress; /desk paths differ and broke smoke.
+            frappe_route_prefix: "app"
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        # MariaDB 11+ secured root requires password; bare `ping` fails healthcheck (password: NO).
+        options: --health-cmd="mariadb-admin ping -uroot -proot" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node_version }}
+          check-latest: true
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-e2e-${{ matrix.frappe_version }}-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-e2e-${{ matrix.frappe_version }}-
+            ${{ runner.os }}-pip-
+
+      - name: Get yarn cache directory path
+        id: yarn-cache-dir-path
+        run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
+
+      - uses: actions/cache@v4
+        id: yarn-cache
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-e2e-${{ matrix.frappe_version }}-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-e2e-${{ matrix.frappe_version }}-
+            ${{ runner.os }}-yarn-
+
+      - name: Install MariaDB Client
+        run: |
+          sudo apt update
+          sudo apt-get install -y mariadb-client
+
+      - name: Setup bench
+        run: |
+          pip install frappe-bench
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" --frappe-branch "version-$FRAPPE_VERSION" ~/frappe-bench
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install apps
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench get-app --branch "version-$ERPNEXT_VERSION" erpnext
+          bench get-app asn_module "$GITHUB_WORKSPACE"
+          bench setup requirements --dev
+          bench build
+        env:
+          CI: "Yes"
+
+      - name: Run Cypress E2E
+        working-directory: ${{ github.workspace }}
+        env:
+          DB_ROOT_PASSWORD: root
+          BENCH_ROOT: /home/runner/frappe-bench
+          FRAPPE_ROUTE_PREFIX: ${{ matrix.frappe_route_prefix }}
+        run: |
+          chmod +x scripts/run_ephemeral_e2e.sh
+          MODE="smoke"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            MODE="ci"
+          fi
+          scripts/run_ephemeral_e2e.sh "$MODE"
+
+      - name: Upload Cypress artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts-frappe${{ matrix.frappe_version }}
+          path: |
+            ${{ github.workspace }}/cypress/videos
+            ${{ github.workspace }}/cypress/screenshots
+          if-no-files-found: ignore
+
+      - name: Upload bench serve log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-serve-frappe${{ matrix.frappe_version }}
+          path: /tmp/bench-serve-*.log
+          if-no-files-found: ignore

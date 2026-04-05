@@ -11,7 +11,7 @@ class TestGenerate(UnitTestCase):
 			buffer.write(b"fake-qr-image")
 
 		with (
-			patch("asn_module.qr_engine.generate.create_token", return_value="fixed-token"),
+			patch("asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"),
 			patch("asn_module.qr_engine.generate.frappe.utils.get_url", return_value=site_url),
 			patch("asn_module.qr_engine.generate.pyqrcode.create") as create_qr,
 		):
@@ -25,12 +25,13 @@ class TestGenerate(UnitTestCase):
 	def test_generate_qr_returns_expected_contract(self):
 		result = self._generate_qr("https://example.com")
 
-		self.assertEqual(result["token"], "fixed-token")
+		self.assertEqual(result["scan_code"], "FIXEDCODE123")
+		self.assertIn("human_readable", result)
 		self.assertIn("url", result)
 		self.assertIn("image_base64", result)
 		self.assertEqual(
 			result["url"],
-			"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?token=fixed-token",
+			"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code=FIXEDCODE123",
 		)
 		self.assertTrue(result["image_base64"])
 
@@ -39,17 +40,18 @@ class TestGenerate(UnitTestCase):
 
 		self.assertEqual(
 			result["url"],
-			"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?token=fixed-token",
+			"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code=FIXEDCODE123",
 		)
 
 	def test_generate_barcode_returns_expected_contract(self):
-		with patch("asn_module.qr_engine.generate.create_token", return_value="fixed-token"):
+		with patch("asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"):
 			result = generate_barcode(
 				action="create_purchase_receipt",
 				source_doctype="ASN",
 				source_name="ASN-00001",
 			)
 
-		self.assertEqual(result["token"], "fixed-token")
+		self.assertEqual(result["scan_code"], "FIXEDCODE123")
+		self.assertIn("human_readable", result)
 		self.assertIn("image_base64", result)
 		self.assertTrue(result["image_base64"])

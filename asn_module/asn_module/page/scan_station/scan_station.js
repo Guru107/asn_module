@@ -14,16 +14,59 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 	let scan_timeout = null;
 
+	function parse_scan_input(value) {
+		const input = (value || "").trim();
+		if (!input) {
+			return { error: __("Please scan or paste a scan code or dispatch URL.") };
+		}
+
+		try {
+			const parsed = new URL(input, window.location.origin);
+			if (parsed.searchParams.get("token")) {
+				return {
+					error: __(
+						"This URL uses the old token format. Use a label printed after the upgrade (code= URL or raw short code)."
+					),
+				};
+			}
+
+			const code_param = parsed.searchParams.get("code");
+			if (code_param) {
+				return { code: decodeURIComponent(code_param).trim() };
+			}
+
+			if (parsed.pathname && parsed.pathname.startsWith("/files/")) {
+				return {
+					error: __(
+						"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or dispatch URL."
+					),
+				};
+			}
+
+			if (/^https?:\/\//i.test(input)) {
+				return {
+					error: __(
+						"Scanned URL is missing the code query parameter. Expected ...dispatch?code=..."
+					),
+				};
+			}
+		} catch (e) {
+			// Not a URL. Treat as raw scan code.
+		}
+
+		return { code: input.replace(/[\s-]/g, "") };
+	}
+
 	function process_scan(value) {
 		if (!value || !value.trim()) return;
 
-		let token = value.trim();
-
-		// Extract token from URL if full URL was scanned
-		let url_match = token.match(/[?&]token=([^&]+)/);
-		if (url_match) {
-			token = url_match[1];
+		const parsed = parse_scan_input(value);
+		if (parsed.error) {
+			$error.text(parsed.error).show();
+			setTimeout(() => $error.fadeOut(), 5000);
+			return;
 		}
+		const code = parsed.code;
 
 		$input.prop("disabled", true);
 		$status.show();
@@ -31,7 +74,7 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 		frappe.call({
 			method: "asn_module.qr_engine.dispatch.dispatch",
-			args: { token: token, device_info: "Desktop" },
+			args: { code: code, device_info: "Desktop" },
 			callback(r) {
 				$status.hide();
 				$input.val("").prop("disabled", false).focus();
@@ -76,7 +119,8 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 		clearTimeout(scan_timeout);
 		scan_timeout = setTimeout(() => {
 			let val = $input.val();
-			if (val && val.length > 20) {
+			// Short scan codes (~12 chars) or full dispatch URLs
+			if (val && (val.length >= 10 || /^https?:\/\//i.test(val))) {
 				process_scan(val);
 			}
 		}, 300);

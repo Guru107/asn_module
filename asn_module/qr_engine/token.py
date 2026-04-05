@@ -6,6 +6,7 @@ from binascii import Error as BinasciiError
 
 import frappe
 from frappe.utils import now_datetime
+from frappe.utils.password import get_encryption_key
 
 
 class InvalidTokenError(Exception):
@@ -22,7 +23,7 @@ _REQUIRED_PAYLOAD_KEYS = (
 
 
 def _get_secret() -> str:
-	secret = frappe.local.conf.get("secret_key")
+	secret = frappe.local.conf.get("secret_key") or get_encryption_key()
 	if not secret:
 		raise InvalidTokenError("Site secret is not configured")
 

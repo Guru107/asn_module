@@ -11,6 +11,7 @@ from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
+from asn_module.traceability import emit_asn_item_transition, get_latest_transition_rows_for_asn
 
 
 class ASN(WebsiteGenerator):
@@ -23,7 +24,7 @@ class ASN(WebsiteGenerator):
 
 	def on_submit(self):
 		asn_date = today()
-		qr_code, barcode = self._generate_attachments()
+		qr_code, barcode, scan_label = self._generate_attachments()
 		frappe.db.set_value(
 			self.doctype,
 			self.name,
@@ -32,10 +33,22 @@ class ASN(WebsiteGenerator):
 				"asn_date": asn_date,
 				"qr_code": qr_code,
 				"barcode": barcode,
+				"scan_code_label": scan_label,
 			},
 			update_modified=False,
 		)
 		self.reload()
+
+		for row in self.items:
+			emit_asn_item_transition(
+				asn=self.name,
+				asn_item=row.name,
+				item_code=row.item_code,
+				state="ASN_GENERATED",
+				transition_status="OK",
+				ref_doctype=self.doctype,
+				ref_name=self.name,
+			)
 
 	def on_cancel(self):
 		frappe.db.set_value(self.doctype, self.name, "status", "Cancelled", update_modified=False)
@@ -153,9 +166,10 @@ class ASN(WebsiteGenerator):
 				)
 			)
 
-	def _generate_attachments(self) -> tuple[str, str]:
+	def _generate_attachments(self) -> tuple[str, str, str]:
 		qr_result = generate_qr("create_purchase_receipt", "ASN", self.name)
 		barcode_result = generate_barcode("create_purchase_receipt", "ASN", self.name)
+		scan_label = qr_result.get("human_readable") or qr_result.get("scan_code", "")
 
 		qr_file = save_file(
 			f"{self.name}-qr.png",
@@ -174,7 +188,7 @@ class ASN(WebsiteGenerator):
 			decode=True,
 		)
 
-		return qr_file.file_url, barcode_file.file_url
+		return qr_file.file_url, barcode_file.file_url, scan_label
 
 
 def _get_shipped_qty_by_po_item(
@@ -268,6 +282,15 @@ def get_po_items(
 		""",
 		(purchase_order, f"%{txt}%", f"%{txt}%", page_len, start),
 	)
+
+
+@frappe.whitelist()
+def get_item_transition_summary(asn: str) -> list[dict]:
+	"""Latest transition row per ASN line item (for compact ASN form summary)."""
+	doc = frappe.get_doc("ASN", asn)
+	if not doc.has_permission("read"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	return get_latest_transition_rows_for_asn(asn)
 
 
 def _get_accessible_purchase_order(purchase_order: str):

@@ -11,8 +11,10 @@ asn_module.ScanDialog = class ScanDialog {
 				{
 					fieldname: "scan_input",
 					fieldtype: "Data",
-					label: __("Scan or paste token"),
-					description: __("Use your scanner or paste the QR URL here"),
+					label: __("Scan or paste code"),
+					description: __(
+						"Scan the QR/barcode or paste the dispatch URL (code=) or raw short code"
+					),
 				},
 			],
 			primary_action_label: __("Process"),
@@ -38,21 +40,71 @@ asn_module.ScanDialog = class ScanDialog {
 		}, 100);
 	}
 
+	parse_scan_input(value) {
+		const input = (value || "").trim();
+		if (!input) {
+			return { error: __("Please scan or paste a scan code or dispatch URL.") };
+		}
+
+		try {
+			const parsed = new URL(input, window.location.origin);
+			if (parsed.searchParams.get("token")) {
+				return {
+					error: __(
+						"This URL uses the old token format. Use the short code printed on the document."
+					),
+				};
+			}
+
+			const code_param = parsed.searchParams.get("code");
+			if (code_param) {
+				return { code: decodeURIComponent(code_param).trim() };
+			}
+
+			if (parsed.pathname && parsed.pathname.startsWith("/files/")) {
+				return {
+					error: __(
+						"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or URL."
+					),
+				};
+			}
+
+			if (/^https?:\/\//i.test(input)) {
+				return {
+					error: __(
+						"Scanned URL is missing the code query parameter (expected ...dispatch?code=...)."
+					),
+				};
+			}
+		} catch (e) {
+			// Not a URL. Treat as raw scan code.
+		}
+
+		return { code: input.replace(/[\s-]/g, "") };
+	}
+
 	process_scan(value) {
 		if (this.is_processing || !value || !value.trim()) return;
-		this.is_processing = true;
 
-		let token = value.trim();
-		let url_match = token.match(/[?&]token=([^&]+)/);
-		if (url_match) {
-			token = url_match[1];
+		const parsed = this.parse_scan_input(value);
+		if (parsed.error) {
+			frappe.show_alert(
+				{
+					message: parsed.error,
+					indicator: "orange",
+				},
+				6
+			);
+			return;
 		}
+		this.is_processing = true;
+		const code = parsed.code;
 
 		this.dialog.hide();
 
 		frappe.call({
 			method: "asn_module.qr_engine.dispatch.dispatch",
-			args: { token: token, device_info: "Desktop" },
+			args: { code: code, device_info: "Desktop" },
 			callback: (r) => {
 				this.is_processing = false;
 				if (r.message && r.message.success) {

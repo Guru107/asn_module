@@ -26,9 +26,12 @@
 		"column_break_3",
 		"supplier_invoice_amount",
 		"qr_section",
+		"scan_code_label",
 		"qr_code",
 		"column_break_4",
 		"barcode",
+		"traceability_section",
+		"asn_trace_summary",
 		"remarks_section",
 		"remarks",
 		"route"
@@ -147,6 +150,14 @@
 			"label": "QR Code & Barcode"
 		},
 		{
+			"fieldname": "scan_code_label",
+			"fieldtype": "Data",
+			"label": "Scan Code (manual entry)",
+			"description": "Grouped for readability; barcode encodes the raw code without dashes.",
+			"no_copy": 1,
+			"read_only": 1
+		},
+		{
 			"fieldname": "qr_code",
 			"fieldtype": "Attach Image",
 			"label": "QR Code",
@@ -162,6 +173,18 @@
 			"fieldtype": "Attach Image",
 			"label": "Barcode",
 			"no_copy": 1,
+			"read_only": 1
+		},
+		{
+			"fieldname": "traceability_section",
+			"fieldtype": "Section Break",
+			"label": "Traceability",
+			"depends_on": "eval:!doc.__islocal"
+		},
+		{
+			"fieldname": "asn_trace_summary",
+			"fieldtype": "HTML",
+			"label": "Latest item transitions",
 			"read_only": 1
 		},
 		{
