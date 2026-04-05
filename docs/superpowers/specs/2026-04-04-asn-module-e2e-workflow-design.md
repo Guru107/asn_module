@@ -1,7 +1,7 @@
 # ASN module — dedicated E2E workflow (Cypress + bench)
 
 **Status:** Approved (brainstorming session, 2026-04-04)  
-**References:** [production-entry-app `e2e.yml](https://github.com/Guru107/production-entry-app/blob/develop/.github/workflows/e2e.yml)`, `[run_ephemeral_e2e.sh](https://github.com/Guru107/production-entry-app/blob/develop/scripts/run_ephemeral_e2e.sh)`
+**References:** [`e2e.yml` (production-entry-app)](https://github.com/Guru107/production-entry-app/blob/develop/.github/workflows/e2e.yml), [`run_ephemeral_e2e.sh` (production-entry-app)](https://github.com/Guru107/production-entry-app/blob/develop/scripts/run_ephemeral_e2e.sh)
 
 ---
 
@@ -49,6 +49,7 @@ Matrix `**env`** must use **numeric** major versions (`15`, `16`) so bench comma
 | Node                                 | `20`          | `24`          |
 | Route prefix for Cypress             | `app`         | `desk`        |
 
+**Implementation note (asn_module):** The GitHub Actions matrix sets `frappe_route_prefix` to `app` for both Frappe 15 and 16 because `/desk` URLs broke smoke tests on v16; the table above documents the original *reference-app* convention. Revisit `desk` for v16 only after validating routes and selectors under `bench run-ui-tests`.
 
 Also expose `**FRAPPE_ROUTE_PREFIX`** (or `**CYPRESS_FRAPPE_ROUTE_PREFIX**`) per row for Cypress.
 

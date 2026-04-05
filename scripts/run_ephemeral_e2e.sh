@@ -21,7 +21,7 @@ if [ -z "$DB_ROOT_PASSWORD" ]; then
 	exit 1
 fi
 
-if [ -z "$SERVE_PORT" ] && [ "${CI:-}" = "true" ]; then
+if [ -z "$SERVE_PORT" ] && { [ "${CI:-}" = "true" ] || [ "${GITHUB_ACTIONS:-}" = "true" ]; }; then
 	SERVE_PORT="18002"
 fi
 if [ -z "$SERVE_PORT" ]; then
