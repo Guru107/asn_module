@@ -6,8 +6,8 @@ from frappe.tests.utils import FrappeTestCase
 
 from asn_module.templates.pages import asn_new
 from asn_module.templates.pages.asn_new_services import (
-	ParsedSingleRow,
 	ParsedBulkRow,
+	ParsedSingleRow,
 	PortalValidationError,
 	resolve_po_item,
 	validate_no_duplicate_po_sr_no,
@@ -62,6 +62,28 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(rows[0].purchase_order, "PO-0001")
 		self.assertEqual(rows[0].sr_no, "1")
 		self.assertEqual(rows[0].item_code, "ITEM-001")
+		self.assertEqual(rows[0].rate, 25)
+
+	def test_parse_bulk_csv_rows_accepts_empty_rate(self):
+		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,PO-0001,1,ITEM-001,10,\n"
+		request = SimpleNamespace(
+			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
+		)
+		with patch("asn_module.templates.pages.asn_new.frappe.request", request):
+			rows = asn_new._parse_bulk_csv_rows()
+		self.assertEqual(len(rows), 1)
+		self.assertIsNone(rows[0].rate)
+
+	def test_parse_bulk_csv_rows_rejects_negative_rate_when_provided(self):
+		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,PO-0001,1,ITEM-001,10,-1\n"
+		request = SimpleNamespace(
+			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
+		)
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			self.assertRaises(PortalValidationError),
+		):
+			asn_new._parse_bulk_csv_rows()
 
 	def test_parse_bulk_csv_rows_rejects_header_order_mismatch(self):
 		csv_content = b"supplier_invoice_no,purchase_order,sr_no,item_code,qty,rate\nINV-1,PO-0001,1,ITEM-001,10,25\n"

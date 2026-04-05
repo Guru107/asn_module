@@ -18,6 +18,7 @@ from asn_module.templates.pages.asn_new_services import (
 	error_entry,
 	fetch_purchase_order_items,
 	parse_non_negative_rate,
+	parse_optional_non_negative_rate,
 	parse_positive_qty,
 	resolve_po_item,
 	validate_bulk_group_count,
@@ -241,6 +242,11 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 					remaining_qty_by_name=running_remaining,
 				)
 				running_remaining[po_item.name] = frappe.utils.flt(running_remaining.get(po_item.name, 0)) - frappe.utils.flt(row.qty)
+				item_rate = (
+					frappe.utils.flt(row.rate)
+					if row.rate is not None
+					else frappe.utils.flt(getattr(po_item, "rate", None))
+				)
 				items.append(
 					{
 						"purchase_order": row.purchase_order,
@@ -248,7 +254,7 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 						"item_code": row.item_code,
 						"uom": po_item.uom,
 						"qty": row.qty,
-						"rate": row.rate,
+						"rate": item_rate,
 					}
 				)
 			except PortalValidationError as exc:
@@ -390,7 +396,7 @@ def _parse_bulk_csv_rows() -> list[ParsedBulkRow]:
 	for line_no, raw in enumerate(reader, start=2):
 		invoice_no = (raw.get("supplier_invoice_no") or "").strip()
 		missing = []
-		for field in ("supplier_invoice_no", "purchase_order", "sr_no", "item_code", "qty", "rate"):
+		for field in ("supplier_invoice_no", "purchase_order", "sr_no", "item_code", "qty"):
 			if (raw.get(field) or "").strip():
 				continue
 			missing.append(field)
@@ -407,8 +413,8 @@ def _parse_bulk_csv_rows() -> list[ParsedBulkRow]:
 
 		try:
 			qty = parse_positive_qty(raw.get("qty") or "", row_number=line_no, field="qty", invoice_no=invoice_no)
-			rate = parse_non_negative_rate(
-				raw.get("rate") or "", row_number=line_no, field="rate", invoice_no=invoice_no
+			rate = parse_optional_non_negative_rate(
+				raw.get("rate"), row_number=line_no, field="rate", invoice_no=invoice_no
 			)
 		except PortalValidationError as exc:
 			errors.extend(exc.errors)

@@ -53,7 +53,7 @@ class ParsedBulkRow:
 	sr_no: str
 	item_code: str
 	qty: float
-	rate: float
+	rate: float | None
 
 
 def error_entry(
@@ -140,6 +140,16 @@ def parse_non_negative_rate(
 				message=_("Row {0}: rate cannot be negative.").format(row_number),
 			)
 		]
+	)
+
+
+def parse_optional_non_negative_rate(
+	value: str | None, *, row_number: int, field: str, invoice_no: str | None = None
+) -> float | None:
+	if not (value or "").strip():
+		return None
+	return parse_non_negative_rate(
+		(value or "").strip(), row_number=row_number, field=field, invoice_no=invoice_no
 	)
 
 
