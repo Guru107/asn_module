@@ -1,17 +1,31 @@
-<a href="/{{ asn.route }}" class="list-group-item list-group-item-action">
-	<div class="d-flex justify-content-between">
-		<div>
-			<strong>{{ asn.name }}</strong>
-			<span class="text-muted ml-2">{{ asn.supplier_invoice_no }}</span>
+<div class="list-group-item py-2 px-3">
+	<div class="d-flex flex-wrap align-items-stretch gap-2">
+		<a href="/{{ asn.route }}" class="list-group-item-action flex-grow-1 text-decoration-none text-body asn-portal-row-link p-2 rounded">
+			<div class="d-flex justify-content-between">
+				<div>
+					<strong>{{ asn.name }}</strong>
+					<span class="text-muted ml-2">{{ asn.supplier_invoice_no }}</span>
+				</div>
+				<div>
+					<span class="badge badge-{{ 'success' if asn.status == 'Received' else 'warning' if asn.status == 'Partially Received' else 'info' }}">
+						{{ asn.status }}
+					</span>
+				</div>
+			</div>
+			<div class="text-muted small mt-1">
+				{{ _("Expected") }}: {{ frappe.format(asn.expected_delivery_date, {"fieldtype": "Date"}) }}
+				| {{ _("Items") }}: {{ asn.total_items }}
+			</div>
+		</a>
+		{% if asn.can_cancel_portal or asn.can_delete_portal %}
+		<div class="d-flex align-items-center gap-1">
+			{% if asn.can_cancel_portal %}
+			<button type="button" class="btn btn-sm btn-outline-danger asn-portal-cancel-btn" data-asn-name="{{ asn.name }}">{{ _("Cancel") }}</button>
+			{% endif %}
+			{% if asn.can_delete_portal %}
+			<button type="button" class="btn btn-sm btn-outline-secondary asn-portal-delete-btn" data-asn-name="{{ asn.name }}">{{ _("Delete") }}</button>
+			{% endif %}
 		</div>
-		<div>
-			<span class="badge badge-{{ 'success' if asn.status == 'Received' else 'warning' if asn.status == 'Partially Received' else 'info' }}">
-				{{ asn.status }}
-			</span>
-		</div>
+		{% endif %}
 	</div>
-	<div class="text-muted small mt-1">
-		{{ _("Expected") }}: {{ frappe.format(asn.expected_delivery_date, {"fieldtype": "Date"}) }}
-		| {{ _("Items") }}: {{ asn.total_items }}
-	</div>
-</a>
+</div>

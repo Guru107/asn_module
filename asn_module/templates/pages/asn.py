@@ -1,5 +1,8 @@
 import frappe
+from frappe import _
 from frappe.website.utils import cleanup_page_name
+
+from asn_module.supplier_asn_portal import purchase_receipt_exists_for_asn
 
 
 def get_context(context):
@@ -8,8 +11,8 @@ def get_context(context):
 	context.title = "ASN"
 
 	user = frappe.session.user
-	context.can_create_asn = frappe.has_permission("ASN", "create", user=user)
 	supplier = _get_supplier_for_user(user)
+	context.can_create_asn = bool(supplier)
 
 	if not supplier:
 		context.asn_list = []
@@ -17,18 +20,38 @@ def get_context(context):
 
 	asn_list = frappe.get_all(
 		"ASN",
-		filters={"supplier": supplier, "docstatus": ("!=", 2)},
-		fields=["name", "route", "supplier_invoice_no", "status", "expected_delivery_date", "asn_date"],
+		filters={"supplier": supplier},
+		fields=[
+			"name",
+			"route",
+			"supplier_invoice_no",
+			"status",
+			"expected_delivery_date",
+			"asn_date",
+			"docstatus",
+		],
 		order_by="creation desc",
 		limit_page_length=50,
 	)
+
+	asns_with_active_pr = set()
+	if asn_list and frappe.db.has_column("Purchase Receipt", "asn"):
+		for row in frappe.get_all(
+			"Purchase Receipt",
+			filters={"asn": ["in", [a.name for a in asn_list]]},
+			fields=["asn", "docstatus"],
+		):
+			if not row.asn:
+				continue
+			if row.docstatus != 2:
+				asns_with_active_pr.add(row.asn)
 
 	item_counts = {
 		row.parent: row.total_items
 		for row in frappe.get_all(
 			"ASN Item",
 			filters={"parent": ["in", [asn.name for asn in asn_list]]},
-			fields=["parent", "count(name) as total_items"],
+			fields=["parent", {"COUNT": "name", "as": "total_items"}],
 			group_by="parent",
 		)
 	}
@@ -37,8 +60,29 @@ def get_context(context):
 		if not asn.route:
 			asn.route = _ensure_asn_route(asn.name)
 		asn.total_items = item_counts.get(asn.name, 0)
+		asn.can_cancel_portal = (
+			asn.docstatus == 1 and asn.status == "Submitted" and asn.name not in asns_with_active_pr
+		)
+		asn.can_delete_portal = asn.docstatus == 2 and asn.name not in asns_with_active_pr
 
 	context.asn_list = asn_list
+
+
+def get_open_purchase_orders_for_supplier(supplier: str) -> list[frappe._dict]:
+	if not supplier:
+		return []
+
+	return frappe.get_all(
+		"Purchase Order",
+		filters={
+			"supplier": supplier,
+			"docstatus": 1,
+			"status": ["in", ["To Receive", "To Receive and Bill"]],
+		},
+		fields=["name", "transaction_date", "schedule_date", "status"],
+		order_by="transaction_date desc",
+		limit_page_length=200,
+	)
 
 
 def _get_supplier_for_user(user):
@@ -69,3 +113,74 @@ def _ensure_asn_route(asn_name: str) -> str:
 	route = f"asn/{cleanup_page_name(asn_name).replace('_', '-')}"
 	frappe.db.set_value("ASN", asn_name, "route", route, update_modified=False)
 	return route
+
+
+@frappe.whitelist(methods=["POST"])
+def cancel_portal_asn(asn_name: str | None = None):
+	"""Cancel a submitted ASN for the logged-in portal supplier, if no purchase receipt exists."""
+	asn_name = (asn_name or "").strip()
+	if not asn_name:
+		frappe.throw(_("ASN is required."))
+
+	supplier = _get_supplier_for_user(frappe.session.user)
+	if not supplier:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	doc = frappe.get_doc("ASN", asn_name)
+	if doc.supplier != supplier:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	if doc.docstatus != 1:
+		frappe.throw(_("Only submitted notices can be cancelled from the portal."))
+
+	if doc.status != "Submitted":
+		frappe.throw(
+			_(
+				"This notice cannot be cancelled from the portal in its current state. "
+				"Contact your buyer if you need help."
+			)
+		)
+
+	if purchase_receipt_exists_for_asn(doc.name):
+		frappe.throw(
+			_(
+				"A purchase receipt already exists for this notice, so it cannot be cancelled here. "
+				"Contact your buyer if the shipment was created by mistake."
+			)
+		)
+
+	doc.flags.ignore_permissions = True
+	doc.cancel()
+
+	return {"ok": True, "redirect": "/asn"}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_portal_asn(asn_name: str | None = None):
+	"""Permanently delete a cancelled ASN for the portal supplier when no purchase receipt references it."""
+	asn_name = (asn_name or "").strip()
+	if not asn_name:
+		frappe.throw(_("ASN is required."))
+
+	supplier = _get_supplier_for_user(frappe.session.user)
+	if not supplier:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	doc = frappe.get_doc("ASN", asn_name)
+	if doc.supplier != supplier:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	if doc.docstatus != 2:
+		frappe.throw(_("Only cancelled notices can be deleted from the portal."))
+
+	if purchase_receipt_exists_for_asn(doc.name):
+		frappe.throw(
+			_(
+				"A purchase receipt is still open or submitted for this notice, so it cannot be deleted here. "
+				"Contact your buyer if the receipt should be cancelled or removed first."
+			)
+		)
+
+	frappe.delete_doc("ASN", doc.name, ignore_permissions=True)
+
+	return {"ok": True, "redirect": "/asn"}

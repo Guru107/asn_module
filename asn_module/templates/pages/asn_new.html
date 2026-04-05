@@ -1,0 +1,1121 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<style>
+	/* Portal page may not load Bootstrap’s tab JS; tabs are driven by script below. */
+	.asn-new-page .nav-tabs .nav-link {
+		cursor: pointer;
+		border: 1px solid transparent;
+		border-top-left-radius: 0.375rem;
+		border-top-right-radius: 0.375rem;
+	}
+	.asn-new-page .nav-tabs .nav-link.active {
+		color: var(--bs-body-color, #212529);
+		background-color: var(--bs-body-bg, #fff);
+		border-color: var(--bs-border-color, #dee2e6) var(--bs-border-color, #dee2e6) transparent;
+		font-weight: 600;
+	}
+	.asn-new-page .tab-content > .tab-pane {
+		display: none;
+	}
+	.asn-new-page .tab-content > .tab-pane.active {
+		display: block;
+	}
+
+	/* Manual rows: grid layout so columns stay aligned without relying on Bootstrap JS/CSS depth */
+	.asn-new-manual-rows {
+		border: 1px solid var(--asn-new-border, #dee2e6);
+		border-radius: 0.5rem;
+		background: var(--asn-new-muted-bg, #f8f9fa);
+		overflow-x: auto;
+		overflow-y: visible;
+		-webkit-overflow-scrolling: touch;
+	}
+	.asn-new-manual-head {
+		display: none;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.02em;
+		color: var(--asn-new-muted, #6c757d);
+		border-bottom: 1px solid var(--asn-new-border, #dee2e6);
+		background: var(--asn-new-head-bg, #e9ecef);
+	}
+	@media (min-width: 768px) {
+		.asn-new-manual-head {
+			display: grid;
+			grid-template-columns: minmax(7rem, 1.15fr) 4.5rem minmax(6.5rem, 1.1fr) 4.5rem minmax(4rem, 0.75fr) minmax(5.25rem, 0.95fr) 2.75rem;
+			gap: 0.5rem 0.75rem;
+			align-items: end;
+			min-width: 48rem;
+		}
+	}
+	.asn-new-manual-body {
+		background: var(--bs-body-bg, #fff);
+		padding: 0.5rem 0.75rem 0.75rem;
+	}
+	.asn-new-manual-grid-row {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.65rem;
+		padding: 0.75rem 0;
+		border-bottom: 1px solid var(--asn-new-border, #dee2e6);
+	}
+	.asn-new-manual-grid-row:last-child {
+		border-bottom: none;
+		padding-bottom: 0;
+	}
+	@media (min-width: 768px) {
+		.asn-new-manual-grid-row {
+			grid-template-columns: minmax(7rem, 1.15fr) 4.5rem minmax(6.5rem, 1.1fr) 4.5rem minmax(4rem, 0.75fr) minmax(5.25rem, 0.95fr) 2.75rem;
+			gap: 0.5rem 0.75rem;
+			align-items: end;
+			padding: 0.5rem 0;
+			min-width: 48rem;
+		}
+		.asn-new-manual-grid-row .asn-new-cell-label {
+			display: none;
+		}
+	}
+	.asn-new-cell {
+		min-width: 0;
+	}
+	.asn-new-cell-label {
+		display: block;
+		font-size: 0.75rem;
+		font-weight: 600;
+		margin-bottom: 0.25rem;
+		color: var(--asn-new-muted, #6c757d);
+	}
+	.asn-new-manual-grid-row .form-control,
+	.asn-new-manual-grid-row .form-select {
+		width: 100%;
+		font-size: 0.875rem;
+	}
+	.asn-new-manual-grid-row .asn-new-remove {
+		justify-self: start;
+		align-self: end;
+	}
+	@media (min-width: 768px) {
+		.asn-new-manual-grid-row .asn-new-remove {
+			justify-self: center;
+		}
+	}
+
+	/* Bulk upload tab */
+	.asn-new-bulk-panel {
+		border: 1px solid var(--asn-new-border, #dee2e6);
+		border-radius: 0.5rem;
+		background: var(--bs-body-bg, #fff);
+		padding: 1.25rem 1.5rem 1.5rem;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+	}
+	.asn-new-bulk-title {
+		font-size: 1.1rem;
+		font-weight: 600;
+		margin-bottom: 0.5rem;
+	}
+	.asn-new-bulk-intro {
+		margin-bottom: 1rem;
+	}
+	.asn-new-bulk-intro .lead-in {
+		font-size: 0.9375rem;
+		line-height: 1.5;
+		margin-bottom: 0.75rem;
+	}
+	.asn-new-bulk-hints {
+		padding-left: 1.2rem;
+		margin-bottom: 0;
+		font-size: 0.8125rem;
+		line-height: 1.45;
+	}
+	.asn-new-bulk-hints li + li {
+		margin-top: 0.35rem;
+	}
+	.asn-new-bulk-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.75rem;
+		padding: 1rem 0;
+		margin-bottom: 0.25rem;
+		border-top: 1px solid var(--asn-new-border, #e9ecef);
+		border-bottom: 1px solid var(--asn-new-border, #e9ecef);
+	}
+	@media (min-width: 576px) {
+		.asn-new-bulk-toolbar {
+			flex-direction: row;
+			align-items: center;
+		}
+	}
+	.asn-new-bulk-toolbar .btn-download-template {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		font-weight: 600;
+		font-size: 1rem;
+		padding: 0.65rem 1.35rem;
+		min-height: 2.75rem;
+		border-width: 2px;
+		border-radius: 0.5rem;
+		box-shadow: 0 2px 6px rgba(13, 110, 253, 0.35);
+		transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+		cursor: pointer;
+	}
+	.asn-new-bulk-toolbar .btn-download-template:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(13, 110, 253, 0.45);
+		filter: brightness(1.03);
+	}
+	.asn-new-bulk-toolbar .btn-download-template:active {
+		transform: translateY(0);
+		box-shadow: 0 1px 4px rgba(13, 110, 253, 0.3);
+	}
+	.asn-new-bulk-toolbar .btn-download-template .asn-new-download-icon {
+		flex-shrink: 0;
+	}
+	@media (max-width: 575.98px) {
+		.asn-new-bulk-toolbar .btn-download-template {
+			width: 100%;
+		}
+	}
+	.asn-new-bulk-toolbar-hint {
+		font-size: 0.8125rem;
+		line-height: 1.4;
+	}
+	@media (min-width: 576px) {
+		.asn-new-bulk-toolbar-hint {
+			flex: 1;
+			min-width: 12rem;
+		}
+	}
+	.asn-new-bulk-file-block {
+		margin-top: 1.25rem;
+	}
+	.asn-new-bulk-file-block .field-label {
+		font-size: 0.875rem;
+		font-weight: 600;
+		margin-bottom: 0.5rem;
+		display: block;
+	}
+	.asn-new-bulk-drop {
+		position: relative;
+		border: 2px dashed var(--asn-new-border, #adb5bd);
+		border-radius: 0.5rem;
+		padding: 0;
+		min-height: 9.5rem;
+		background: linear-gradient(180deg, var(--asn-new-muted-bg, #f8f9fa) 0%, var(--bs-body-bg, #fff) 100%);
+		transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+		overflow: hidden;
+	}
+	.asn-new-bulk-drop:hover {
+		border-color: var(--bs-primary, #0d6efd);
+	}
+	.asn-new-bulk-drop:focus-within {
+		border-color: var(--bs-primary, #0d6efd);
+		border-style: solid;
+		box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+	}
+	.asn-new-bulk-drop.asn-new-bulk-drop--drag {
+		border-color: var(--bs-primary, #0d6efd);
+		border-style: solid;
+		background: rgba(13, 110, 253, 0.06);
+		box-shadow: inset 0 0 0 2px rgba(13, 110, 253, 0.12);
+	}
+	.asn-new-bulk-file-native {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		opacity: 0;
+		cursor: pointer;
+		z-index: 2;
+		font-size: 0;
+	}
+	.asn-new-bulk-file-face {
+		position: relative;
+		z-index: 1;
+		pointer-events: none;
+		padding: 1.5rem 1.25rem 1.25rem;
+		text-align: center;
+	}
+	.asn-new-bulk-file-icon-wrap {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 3rem;
+		height: 3rem;
+		border-radius: 0.5rem;
+		background: var(--bs-body-bg, #fff);
+		border: 1px solid var(--asn-new-border, #dee2e6);
+		margin-bottom: 0.75rem;
+		color: var(--bs-primary, #0d6efd);
+	}
+	.asn-new-bulk-file-icon-wrap svg {
+		display: block;
+	}
+	.asn-new-bulk-file-prompt {
+		font-size: 0.9375rem;
+		font-weight: 600;
+		color: var(--bs-body-color, #212529);
+		margin-bottom: 0.25rem;
+	}
+	.asn-new-bulk-file-prompt-sub {
+		font-size: 0.8125rem;
+		color: var(--asn-new-muted, #6c757d);
+		font-weight: 400;
+	}
+	.asn-new-bulk-file-name-display {
+		display: block;
+		margin: 0.85rem auto 0;
+		max-width: 100%;
+		padding: 0.4rem 0.75rem;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--bs-body-color, #212529);
+		background: var(--bs-body-bg, #fff);
+		border: 1px solid var(--asn-new-border, #dee2e6);
+		border-radius: 0.375rem;
+		width: fit-content;
+		max-width: min(100%, 28rem);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.asn-new-bulk-file-name-display.is-empty {
+		color: var(--asn-new-muted, #6c757d);
+		font-weight: 400;
+		font-style: italic;
+	}
+	.asn-new-bulk-drop .file-hint {
+		position: relative;
+		z-index: 1;
+		pointer-events: none;
+		font-size: 0.75rem;
+		color: var(--asn-new-muted, #6c757d);
+		margin: 0;
+		padding: 0.65rem 1rem 1rem;
+		text-align: center;
+		border-top: 1px solid var(--asn-new-border, #e9ecef);
+		background: var(--asn-new-muted-bg, #f8f9fa);
+	}
+	.asn-new-bulk-footer {
+		margin-top: 1.5rem;
+		padding-top: 1.25rem;
+		border-top: 1px solid var(--asn-new-border, #e9ecef);
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		align-items: center;
+		gap: 0.75rem;
+	}
+	.asn-new-bulk-footer .btn-submit-bulk {
+		font-weight: 600;
+		padding: 0.5rem 1.35rem;
+		border-radius: 0.375rem;
+	}
+
+	.asn-portal-wide-inner {
+		max-width: 1400px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	/* PO typeahead (replaces native datalist tooltip) */
+	.asn-po-typeahead {
+		position: relative;
+	}
+	.asn-po-suggestions {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 100%;
+		margin-top: 0.25rem;
+		max-height: 16rem;
+		overflow-y: auto;
+		z-index: 25;
+		background: var(--bs-body-bg, #fff);
+		border: 1px solid var(--asn-new-border, #ced4da);
+		border-radius: 0.5rem;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+	}
+	.asn-po-suggestions[hidden] {
+		display: none !important;
+	}
+	.asn-po-suggestion {
+		display: block;
+		width: 100%;
+		text-align: left;
+		padding: 0.55rem 0.85rem;
+		border: 0;
+		border-bottom: 1px solid var(--asn-new-border, #e9ecef);
+		background: transparent;
+		cursor: pointer;
+		font-size: 0.875rem;
+		line-height: 1.35;
+		color: var(--bs-body-color, #212529);
+		transition: background 0.1s ease;
+	}
+	.asn-po-suggestion:last-child {
+		border-bottom: 0;
+	}
+	.asn-po-suggestion:hover,
+	.asn-po-suggestion.is-active {
+		background: var(--asn-new-muted-bg, #e9ecef);
+	}
+	.asn-po-suggestion:focus {
+		outline: 2px solid var(--bs-primary, #0d6efd);
+		outline-offset: -2px;
+	}
+	.asn-po-suggestion-primary {
+		font-weight: 600;
+		display: block;
+	}
+	.asn-po-suggestion-meta {
+		font-size: 0.75rem;
+		color: var(--asn-new-muted, #6c757d);
+		margin-top: 0.15rem;
+		display: block;
+	}
+	.asn-po-suggestions-empty {
+		padding: 0.75rem 0.85rem;
+		color: var(--asn-new-muted, #6c757d);
+		font-size: 0.8125rem;
+	}
+</style>
+<div class="container-fluid asn-new-page px-3 px-md-4 px-xl-5">
+	<div class="row justify-content-center">
+		<div class="col-12 asn-portal-wide-inner">
+			<div class="d-flex justify-content-between align-items-center mb-3">
+				<h3>{{ _("Create ASN") }}</h3>
+				<a href="/asn" class="btn btn-light btn-sm">{{ _("Back to ASN List") }}</a>
+			</div>
+
+			<ul class="nav nav-tabs mb-3" role="tablist">
+				<li class="nav-item" role="presentation">
+					<button class="nav-link {% if active_tab != 'bulk' %}active{% endif %}" id="single-tab" type="button" role="tab" aria-controls="single-pane" aria-selected="{% if active_tab != 'bulk' %}true{% else %}false{% endif %}">
+						{{ _("Single ASN") }}
+					</button>
+				</li>
+				<li class="nav-item" role="presentation">
+					<button class="nav-link {% if active_tab == 'bulk' %}active{% endif %}" id="bulk-tab" type="button" role="tab" aria-controls="bulk-pane" aria-selected="{% if active_tab == 'bulk' %}true{% else %}false{% endif %}">
+						{{ _("Bulk ASN Upload") }}
+					</button>
+				</li>
+			</ul>
+
+			<div class="tab-content">
+				<div class="tab-pane {% if active_tab != 'bulk' %}active{% endif %}" id="single-pane" role="tabpanel">
+					{% if single_errors %}
+					<div class="alert alert-danger" role="alert">
+						<strong>{{ _("Please fix the following errors:") }}</strong>
+						<ul class="mb-0 mt-2">
+							{% for error in single_errors %}
+							<li>
+								{% if error.row_number %}
+								{{ _("Manual row {0}:").format(error.row_number) }}
+								{% endif %}
+								{{ error.message }}
+							</li>
+							{% endfor %}
+						</ul>
+					</div>
+					{% endif %}
+
+					<form method="post" id="single-asn-form">
+						<input type="hidden" name="csrf_token" value="{{ frappe.session.csrf_token }}">
+						<input type="hidden" name="mode" value="single">
+
+						<div class="mb-3">
+							<label class="form-label">{{ _("Supplier") }}</label>
+							<input class="form-control" value="{{ supplier }}" disabled>
+						</div>
+
+						<div class="row">
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Supplier Invoice No") }}</label>
+								<input class="form-control" name="supplier_invoice_no" maxlength="140" required>
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Supplier Invoice Date") }}</label>
+								<input type="date" class="form-control" name="supplier_invoice_date">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Expected Delivery Date") }}</label>
+								<input type="date" class="form-control" name="expected_delivery_date">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Supplier invoice amount") }}</label>
+								<input type="number" class="form-control" name="supplier_invoice_amount" min="0" step="0.01" required>
+							</div>
+						</div>
+
+						<div class="row">
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("LR No") }}</label>
+								<input class="form-control" name="lr_no" maxlength="140">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("LR Date") }}</label>
+								<input type="date" class="form-control" name="lr_date">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Transporter Name") }}</label>
+								<input class="form-control" name="transporter_name" maxlength="140">
+							</div>
+						</div>
+
+						<div class="row">
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Vehicle number") }} <span class="text-muted small">({{ _("optional") }})</span></label>
+								<input class="form-control" name="vehicle_number" maxlength="140" autocomplete="off">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Driver contact") }} <span class="text-muted small">({{ _("optional") }})</span></label>
+								<input class="form-control" name="driver_contact" maxlength="140" autocomplete="off">
+							</div>
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label" for="single-po-input">{{ _("Add Open Purchase Orders") }}</label>
+							<div
+								class="asn-po-typeahead"
+								id="asn-po-typeahead-root"
+								data-msg-no-match="{{ _('No matching purchase orders.') | e }}"
+							>
+								<div class="input-group">
+									<input
+										type="text"
+										class="form-control"
+										id="single-po-input"
+										placeholder="{{ _('Type to search…') }}"
+										autocomplete="off"
+										spellcheck="false"
+										role="combobox"
+										aria-autocomplete="list"
+										aria-expanded="false"
+										aria-controls="asn-po-suggestions"
+									>
+									<button type="button" class="btn btn-outline-secondary" id="add-po-btn">{{ _("Add") }}</button>
+								</div>
+								<div id="asn-po-suggestions" class="asn-po-suggestions" role="listbox" hidden></div>
+							</div>
+							<div id="selected-po-chips" class="d-flex flex-wrap gap-2 mt-2"></div>
+							<div id="selected-po-hidden-inputs"></div>
+						</div>
+
+						<hr>
+						<h5 class="mb-2">{{ _("Manual Rows") }}</h5>
+						<p class="text-muted small mb-2">{{ _("Add POs above, then one row per line item. Sr No must match the PO line.") }}</p>
+						<div class="asn-new-manual-rows">
+							<div class="asn-new-manual-head" aria-hidden="true">
+								<span>{{ _("PO") }}</span>
+								<span>{{ _("Sr No") }}</span>
+								<span>{{ _("Item") }}</span>
+								<span>{{ _("UOM") }}</span>
+								<span>{{ _("Qty") }}</span>
+								<span>{{ _("Rate") }}</span>
+								<span aria-hidden="true"></span>
+							</div>
+							<div id="single-manual-rows" class="asn-new-manual-body"></div>
+						</div>
+						<button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="add-single-row">{{ _("Add Row") }}</button>
+
+						<div class="mt-4">
+							<button type="submit" class="btn btn-primary">{{ _("Create and Submit ASN") }}</button>
+						</div>
+					</form>
+				</div>
+
+				<div class="tab-pane {% if active_tab == 'bulk' %}active{% endif %}" id="bulk-pane" role="tabpanel">
+					{% if bulk_success %}
+					<div class="alert alert-success">{{ bulk_success }}</div>
+					{% endif %}
+					{% if bulk_errors %}
+					<div class="alert alert-danger" role="alert">
+						<strong>{{ _("Bulk upload failed. No ASNs created.") }}</strong>
+						<ul class="mb-0 mt-2">
+							{% for error in bulk_errors %}
+							<li>
+								{% if error.invoice_no %}<strong>{{ _("Invoice") }} {{ error.invoice_no }}:</strong>{% endif %}
+								{% if error.row_number %}{{ _("Row {0}:").format(error.row_number) }}{% endif %}
+								{{ error.message }}
+							</li>
+							{% endfor %}
+						</ul>
+					</div>
+					{% endif %}
+
+					<form method="post" enctype="multipart/form-data" id="asn-bulk-upload-form">
+						<input type="hidden" name="csrf_token" value="{{ frappe.session.csrf_token }}">
+						<input type="hidden" name="mode" value="bulk">
+
+						<div class="asn-new-bulk-panel">
+							<div class="asn-new-bulk-intro">
+								<h5 class="asn-new-bulk-title">{{ _("Bulk upload from CSV") }}</h5>
+								<p class="lead-in text-muted mb-0">
+									{{ _("Upload a single CSV file. Rows with the same supplier invoice number are grouped into one ASN. The file is validated in full before any ASN is created.") }}
+								</p>
+								<ul class="asn-new-bulk-hints text-muted mt-2">
+									<li>{{ _("Download the template for the correct column order and a sample header row.") }}</li>
+									<li>{{ _("Use one row per line item; repeat invoice-level fields on each row in the same invoice group.") }}</li>
+									<li>{{ _("Leave the rate column blank to use the rate from the purchase order line; you can still override it by entering a value.") }}</li>
+								</ul>
+							</div>
+
+							<div class="asn-new-bulk-toolbar">
+								<button type="button" class="btn btn-primary btn-lg btn-download-template" id="asn-bulk-download-template" data-csv-headers="{{ bulk_csv_headers | join('|') | e }}">
+									<span class="asn-new-download-icon" aria-hidden="true">
+										<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16" focusable="false">
+											<path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+											<path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+										</svg>
+									</span>
+									{{ _("Download CSV template") }}
+								</button>
+								<span class="text-muted asn-new-bulk-toolbar-hint">{{ _("Template includes the header row only. Add your data in Excel or any editor, then upload the file below.") }}</span>
+							</div>
+
+							<div class="asn-new-bulk-file-block">
+								<label class="field-label" for="asn-bulk-file-input">{{ _("CSV file") }}</label>
+								<div class="asn-new-bulk-drop" id="asn-bulk-drop-zone">
+									<div class="asn-new-bulk-file-face">
+										<div class="asn-new-bulk-file-icon-wrap" aria-hidden="true">
+											<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16" focusable="false">
+												<path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.5z"/>
+											</svg>
+										</div>
+										<div class="asn-new-bulk-file-prompt">{{ _("Choose a CSV file") }}</div>
+										<div class="asn-new-bulk-file-prompt-sub">{{ _("Click this area or drag and drop your file") }}</div>
+										<span id="asn-bulk-file-name-display" class="asn-new-bulk-file-name-display is-empty" data-empty-label="{{ _('No file selected') | e }}">{{ _("No file selected") }}</span>
+									</div>
+									<p class="file-hint">{{ _(".csv only. Maximum size depends on your server limits.") }}</p>
+									<input class="asn-new-bulk-file-native" type="file" name="bulk_items_csv" id="asn-bulk-file-input" accept=".csv,text/csv" required>
+								</div>
+							</div>
+
+							<div class="asn-new-bulk-footer">
+								<button type="submit" class="btn btn-primary btn-submit-bulk">{{ _("Validate, create and submit ASNs") }}</button>
+							</div>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+(() => {
+	function initAsnNewTabs() {
+		const root = document.querySelector(".asn-new-page");
+		if (!root) return;
+		const singleTab = root.querySelector("#single-tab");
+		const bulkTab = root.querySelector("#bulk-tab");
+		const singlePane = root.querySelector("#single-pane");
+		const bulkPane = root.querySelector("#bulk-pane");
+		if (!singleTab || !bulkTab || !singlePane || !bulkPane) return;
+
+		function activate(which) {
+			const bulk = which === "bulk";
+			singleTab.classList.toggle("active", !bulk);
+			bulkTab.classList.toggle("active", bulk);
+			singleTab.setAttribute("aria-selected", String(!bulk));
+			bulkTab.setAttribute("aria-selected", String(bulk));
+			singlePane.classList.toggle("active", !bulk);
+			bulkPane.classList.toggle("active", bulk);
+		}
+
+		singleTab.addEventListener("click", (e) => {
+			e.preventDefault();
+			activate("single");
+		});
+		bulkTab.addEventListener("click", (e) => {
+			e.preventDefault();
+			activate("bulk");
+		});
+	}
+
+	initAsnNewTabs();
+
+	const selectedPoSet = new Set();
+	const poInput = document.getElementById("single-po-input");
+	const addPoBtn = document.getElementById("add-po-btn");
+	const chipsRoot = document.getElementById("selected-po-chips");
+	const hiddenInputsRoot = document.getElementById("selected-po-hidden-inputs");
+	const rowsRoot = document.getElementById("single-manual-rows");
+	const addRowBtn = document.getElementById("add-single-row");
+	const poSuggestionsBox = document.getElementById("asn-po-suggestions");
+	const poTypeaheadRoot = document.getElementById("asn-po-typeahead-root");
+	if (!poInput || !addPoBtn || !chipsRoot || !hiddenInputsRoot || !rowsRoot || !addRowBtn || !poSuggestionsBox || !poTypeaheadRoot) return;
+
+	const poNoMatchMsg = poTypeaheadRoot.dataset.msgNoMatch || "No matching purchase orders.";
+
+	let poSuggestionRows = [];
+	let poActiveSuggestion = -1;
+	let poSearchTimer = null;
+
+	function closePoSuggestions() {
+		poSuggestionRows = [];
+		poActiveSuggestion = -1;
+		poSuggestionsBox.innerHTML = "";
+		poSuggestionsBox.hidden = true;
+		poInput.setAttribute("aria-expanded", "false");
+	}
+
+	function highlightPoSuggestion(index) {
+		const items = poSuggestionsBox.querySelectorAll(".asn-po-suggestion");
+		const max = items.length;
+		if (max === 0) {
+			poActiveSuggestion = -1;
+			return;
+		}
+		const i = ((index % max) + max) % max;
+		poActiveSuggestion = i;
+		items.forEach((el, j) => {
+			const on = j === i;
+			el.classList.toggle("is-active", on);
+			el.setAttribute("aria-selected", on ? "true" : "false");
+		});
+		items[i].scrollIntoView({ block: "nearest" });
+	}
+
+	function renderPoSuggestionList(rows) {
+		poSuggestionsBox.innerHTML = "";
+		poSuggestionRows = rows;
+
+		if (!rows.length) {
+			const empty = document.createElement("div");
+			empty.className = "asn-po-suggestions-empty";
+			empty.textContent = poNoMatchMsg;
+			poSuggestionsBox.appendChild(empty);
+			poSuggestionsBox.hidden = false;
+			poInput.setAttribute("aria-expanded", "true");
+			poActiveSuggestion = -1;
+			return;
+		}
+
+		rows.forEach((entry) => {
+			const btn = document.createElement("button");
+			btn.type = "button";
+			btn.className = "asn-po-suggestion";
+			btn.setAttribute("role", "option");
+			btn.setAttribute("aria-selected", "false");
+			btn.dataset.poValue = entry.value || "";
+
+			const primary = document.createElement("span");
+			primary.className = "asn-po-suggestion-primary";
+			primary.textContent = entry.value || "";
+
+			const meta = document.createElement("span");
+			meta.className = "asn-po-suggestion-meta";
+			meta.textContent = entry.description || "";
+
+			btn.appendChild(primary);
+			btn.appendChild(meta);
+
+			btn.addEventListener("mousedown", (e) => {
+				e.preventDefault();
+				tryAddPurchaseOrder(entry.value || "");
+			});
+
+			poSuggestionsBox.appendChild(btn);
+		});
+
+		poSuggestionsBox.hidden = false;
+		poInput.setAttribute("aria-expanded", "true");
+		highlightPoSuggestion(0);
+	}
+
+	async function fetchAndShowPoSuggestions(searchText) {
+		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_purchase_orders?txt=${encodeURIComponent(searchText || "")}`;
+		const response = await fetch(url, { credentials: "same-origin" });
+		const payload = await response.json();
+		const rows = payload.message || [];
+		renderPoSuggestionList(rows);
+	}
+
+	function tryAddPurchaseOrder(raw) {
+		const po = (raw || "").trim();
+		if (!po) return;
+		selectedPoSet.add(po);
+		poInput.value = "";
+		closePoSuggestions();
+		renderPoChips();
+	}
+
+	function syncHiddenPoInputs() {
+		hiddenInputsRoot.innerHTML = "";
+		selectedPoSet.forEach((po) => {
+			const hidden = document.createElement("input");
+			hidden.type = "hidden";
+			hidden.name = "selected_purchase_orders";
+			hidden.value = po;
+			hiddenInputsRoot.appendChild(hidden);
+		});
+	}
+
+	function refreshRowPoSelects() {
+		const poOptions = Array.from(selectedPoSet.values());
+		rowsRoot.querySelectorAll("[data-field='purchase_order']").forEach((select) => {
+			const current = select.value;
+			select.innerHTML = `<option value="">Select PO</option>`;
+			poOptions.forEach((po) => {
+				const option = document.createElement("option");
+				option.value = po;
+				option.textContent = po;
+				select.appendChild(option);
+			});
+			if (current && selectedPoSet.has(current)) {
+				select.value = current;
+			} else {
+				select.value = "";
+			}
+		});
+	}
+
+	function renderPoChips() {
+		chipsRoot.innerHTML = "";
+		selectedPoSet.forEach((po) => {
+			const chip = document.createElement("span");
+			chip.className = "badge rounded-pill bg-light text-dark border";
+			chip.innerHTML = `${po} <button type="button" class="btn btn-sm p-0 ms-1 remove-po" data-po="${po}" aria-label="Remove">&times;</button>`;
+			chipsRoot.appendChild(chip);
+		});
+		syncHiddenPoInputs();
+		refreshRowPoSelects();
+	}
+
+	addPoBtn.addEventListener("click", () => {
+		if (!poSuggestionsBox.hidden && poSuggestionRows.length && poActiveSuggestion >= 0) {
+			const row = poSuggestionRows[poActiveSuggestion];
+			if (row && row.value) {
+				tryAddPurchaseOrder(row.value);
+				return;
+			}
+		}
+		if (!poSuggestionsBox.hidden && poSuggestionRows.length === 1) {
+			tryAddPurchaseOrder(poSuggestionRows[0].value);
+			return;
+		}
+		tryAddPurchaseOrder(poInput.value);
+	});
+
+	poInput.addEventListener("input", () => {
+		window.clearTimeout(poSearchTimer);
+		poSearchTimer = window.setTimeout(() => {
+			void fetchAndShowPoSuggestions(poInput.value);
+		}, 200);
+	});
+
+	poInput.addEventListener("focus", () => {
+		void fetchAndShowPoSuggestions(poInput.value);
+	});
+
+	poInput.addEventListener("blur", () => {
+		window.setTimeout(() => {
+			const ae = document.activeElement;
+			if (ae instanceof Node && poSuggestionsBox.contains(ae)) return;
+			closePoSuggestions();
+		}, 200);
+	});
+
+	poInput.addEventListener("keydown", (e) => {
+		const open = !poSuggestionsBox.hidden && poSuggestionRows.length > 0;
+
+		if (open && e.key === "ArrowDown") {
+			e.preventDefault();
+			highlightPoSuggestion(poActiveSuggestion + 1);
+			return;
+		}
+		if (open && e.key === "ArrowUp") {
+			e.preventDefault();
+			highlightPoSuggestion(poActiveSuggestion - 1);
+			return;
+		}
+		if (e.key === "Escape") {
+			if (!poSuggestionsBox.hidden) {
+				e.preventDefault();
+				closePoSuggestions();
+			}
+			return;
+		}
+		if (e.key === "Enter") {
+			e.preventDefault();
+			if (!poSuggestionsBox.hidden && poSuggestionRows.length && poActiveSuggestion >= 0) {
+				const row = poSuggestionRows[poActiveSuggestion];
+				if (row && row.value) {
+					tryAddPurchaseOrder(row.value);
+					return;
+				}
+			}
+			if (!poSuggestionsBox.hidden && poSuggestionRows.length === 1) {
+				tryAddPurchaseOrder(poSuggestionRows[0].value);
+				return;
+			}
+			const typed = poInput.value.trim();
+			if (typed) {
+				const exact = poSuggestionRows.find((r) => (r.value || "").toLowerCase() === typed.toLowerCase());
+				if (exact && exact.value) {
+					tryAddPurchaseOrder(exact.value);
+					return;
+				}
+			}
+			tryAddPurchaseOrder(poInput.value);
+		}
+	});
+
+	document.addEventListener("click", (event) => {
+		if (!(event.target instanceof Node)) return;
+		if (!poTypeaheadRoot.contains(event.target)) {
+			closePoSuggestions();
+		}
+	});
+
+	chipsRoot.addEventListener("click", (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		if (!event.target.classList.contains("remove-po")) return;
+		const po = event.target.dataset.po || "";
+		selectedPoSet.delete(po);
+		renderPoChips();
+	});
+
+	function rateToInputValue(rate) {
+		if (rate === null || rate === undefined || rate === "") return "";
+		return String(rate);
+	}
+
+	function srNoMatches(userSr, lineSr) {
+		const a = String(userSr).trim();
+		const b = String(lineSr ?? "").trim();
+		if (!a || !b) return false;
+		if (a === b) return true;
+		const na = Number(a);
+		const nb = Number(b);
+		return !Number.isNaN(na) && !Number.isNaN(nb) && na === nb;
+	}
+
+	async function loadItemOptionsForRow(row, searchTxt) {
+		const po = row.querySelector("[data-field='purchase_order']").value;
+		const itemInput = row.querySelector("[data-field='item_code']");
+		const datalist = row.querySelector("datalist");
+		if (!po || !itemInput || !datalist) return;
+
+		const txt = searchTxt !== undefined ? searchTxt : (itemInput.value || "");
+		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_purchase_order_items?purchase_order=${encodeURIComponent(po)}&txt=${encodeURIComponent(txt)}`;
+		const response = await fetch(url, { credentials: "same-origin" });
+		const payload = await response.json();
+		const itemRows = payload.message || [];
+		datalist.innerHTML = "";
+		itemRows.forEach((entry) => {
+			const option = document.createElement("option");
+			option.value = entry.value || "";
+			option.dataset.srNo = entry.sr_no != null ? String(entry.sr_no) : "";
+			option.dataset.uom = entry.uom || "";
+			option.dataset.rate = rateToInputValue(entry.rate);
+			datalist.appendChild(option);
+		});
+		row.dataset.itemOptions = JSON.stringify(itemRows);
+	}
+
+	async function resolveRowFromSrNo(row) {
+		const po = (row.querySelector("[data-field='purchase_order']")?.value || "").trim();
+		const srRaw = row.querySelector("[data-field='sr_no']")?.value || "";
+		const sr = srRaw.trim();
+		if (!po || !sr) return;
+
+		await loadItemOptionsForRow(row, "");
+		const options = JSON.parse(row.dataset.itemOptions || "[]");
+		const selected = options.find((entry) => srNoMatches(sr, entry.sr_no));
+		if (!selected) return;
+
+		row.querySelector("[data-field='item_code']").value = selected.value || "";
+		row.querySelector("[data-field='uom']").value = selected.uom || "";
+		row.querySelector("[data-field='rate']").value = rateToInputValue(selected.rate);
+	}
+
+	function clearDependentFields(row) {
+		row.querySelector("[data-field='sr_no']").value = "";
+		row.querySelector("[data-field='item_code']").value = "";
+		row.querySelector("[data-field='uom']").value = "";
+		row.querySelector("[data-field='rate']").value = "";
+	}
+
+	function createRowHtml(rowId) {
+		return `
+		<div class="single-row asn-new-manual-grid-row" data-row-id="${rowId}">
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">PO</label>
+				<select class="form-select" name="single_manual_purchase_order" data-field="purchase_order"></select>
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">Sr No</label>
+				<input class="form-control" name="single_manual_sr_no" data-field="sr_no" autocomplete="off">
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">Item</label>
+				<input class="form-control" list="single-item-list-${rowId}" name="single_manual_item_code" data-field="item_code" autocomplete="off">
+				<datalist id="single-item-list-${rowId}"></datalist>
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">UOM</label>
+				<input class="form-control" name="single_manual_uom" data-field="uom" autocomplete="off">
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">Qty</label>
+				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_qty" data-field="qty">
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">Rate</label>
+				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_rate" data-field="rate">
+			</div>
+			<div class="asn-new-cell asn-new-remove">
+				<button type="button" class="btn btn-outline-danger btn-sm remove-row" aria-label="Remove row">×</button>
+			</div>
+		</div>
+	`;
+	}
+
+	function addRow() {
+		const rowId = Date.now().toString();
+		rowsRoot.insertAdjacentHTML("beforeend", createRowHtml(rowId));
+		refreshRowPoSelects();
+	}
+
+	addRowBtn.addEventListener("click", addRow);
+	addRow();
+
+	rowsRoot.addEventListener("change", async (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		const row = event.target.closest(".single-row");
+		if (!row) return;
+
+		if (event.target.dataset.field === "purchase_order") {
+			clearDependentFields(row);
+			await loadItemOptionsForRow(row);
+			return;
+		}
+		if (event.target.dataset.field === "item_code") {
+			await loadItemOptionsForRow(row);
+			const options = JSON.parse(row.dataset.itemOptions || "[]");
+			const selected = options.find((entry) => entry.value === event.target.value);
+			if (!selected) return;
+			row.querySelector("[data-field='sr_no']").value =
+				selected.sr_no != null ? String(selected.sr_no) : row.querySelector("[data-field='sr_no']").value;
+			row.querySelector("[data-field='uom']").value = selected.uom || "";
+			row.querySelector("[data-field='rate']").value = rateToInputValue(selected.rate);
+		}
+	});
+
+	const srNoResolveTimers = new WeakMap();
+
+	rowsRoot.addEventListener("input", (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		if (event.target.dataset.field !== "sr_no") return;
+		const row = event.target.closest(".single-row");
+		if (!row) return;
+		const prev = srNoResolveTimers.get(row);
+		if (prev) clearTimeout(prev);
+		const t = window.setTimeout(() => {
+			srNoResolveTimers.delete(row);
+			void resolveRowFromSrNo(row);
+		}, 450);
+		srNoResolveTimers.set(row, t);
+	});
+
+	rowsRoot.addEventListener("focusout", async (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		if (event.target.dataset.field !== "sr_no") return;
+		const row = event.target.closest(".single-row");
+		if (!row) return;
+		const prev = srNoResolveTimers.get(row);
+		if (prev) {
+			clearTimeout(prev);
+			srNoResolveTimers.delete(row);
+		}
+		await resolveRowFromSrNo(row);
+	});
+
+	rowsRoot.addEventListener("click", (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		if (!event.target.classList.contains("remove-row")) return;
+		const allRows = rowsRoot.querySelectorAll(".single-row");
+		if (allRows.length <= 1) return;
+		event.target.closest(".single-row")?.remove();
+	});
+})();
+</script>
+<script>
+(() => {
+	const btn = document.getElementById("asn-bulk-download-template");
+	const fileInput = document.getElementById("asn-bulk-file-input");
+	const dropZone = document.getElementById("asn-bulk-drop-zone");
+	const nameDisplay = document.getElementById("asn-bulk-file-name-display");
+
+	if (btn) {
+		const raw = btn.getAttribute("data-csv-headers") || "";
+		const headers = raw.split("|").filter((h) => h.length > 0);
+		btn.addEventListener("click", () => {
+			if (!headers.length) return;
+			const line = `${headers.join(",")}\r\n`;
+			const blob = new Blob(["\ufeff", line], { type: "text/csv;charset=utf-8" });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = "asn_bulk_upload_template.csv";
+			a.rel = "noopener";
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+		});
+	}
+
+	if (!fileInput || !nameDisplay) return;
+	const emptyLabel = nameDisplay.getAttribute("data-empty-label") || "No file selected";
+
+	function syncFileNameDisplay() {
+		const file = fileInput.files && fileInput.files[0];
+		if (file) {
+			nameDisplay.textContent = file.name;
+			nameDisplay.classList.remove("is-empty");
+		} else {
+			nameDisplay.textContent = emptyLabel;
+			nameDisplay.classList.add("is-empty");
+		}
+	}
+
+	fileInput.addEventListener("change", syncFileNameDisplay);
+
+	if (dropZone) {
+		["dragenter", "dragover"].forEach((evt) => {
+			dropZone.addEventListener(evt, (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				dropZone.classList.add("asn-new-bulk-drop--drag");
+			});
+		});
+
+		dropZone.addEventListener("dragleave", (e) => {
+			if (e.relatedTarget instanceof Node && dropZone.contains(e.relatedTarget)) return;
+			dropZone.classList.remove("asn-new-bulk-drop--drag");
+		});
+
+		dropZone.addEventListener("drop", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			dropZone.classList.remove("asn-new-bulk-drop--drag");
+			const files = e.dataTransfer && e.dataTransfer.files;
+			if (!files || !files.length) return;
+			const dt = new DataTransfer();
+			dt.items.add(files[0]);
+			fileInput.files = dt.files;
+			fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+		});
+	}
+})();
+</script>
+{% endblock %}

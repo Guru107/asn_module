@@ -363,6 +363,20 @@ class TestASN(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			asn.insert(ignore_permissions=True)
 
+	def test_validate_sets_supplier_invoice_amount_from_line_totals_when_zero(self):
+		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
+		asn = make_test_asn(purchase_order=po, qty=2)
+		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
+		asn.validate()
+		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 200)
+
+	def test_validate_preserves_nonzero_supplier_invoice_amount(self):
+		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
+		asn = make_test_asn(purchase_order=po, qty=2)
+		asn.supplier_invoice_amount = 250
+		asn.validate()
+		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 250)
+
 	def test_insert_defaults_status_to_draft(self):
 		asn = make_test_asn()
 		doc = asn.insert(ignore_permissions=True)
@@ -409,6 +423,106 @@ class TestASN(FrappeTestCase):
 		asn.reload()
 
 		self.assertEqual(asn.status, "Cancelled")
+
+	def test_cancel_removes_scan_code_registry_rows(self):
+		if not frappe.db.exists("DocType", "Scan Code"):
+			return
+
+		asn = make_test_asn()
+		asn.insert(ignore_permissions=True)
+
+		with real_asn_attachment_context():
+			asn.submit()
+
+		asn.reload()
+		linked = frappe.get_all(
+			"Scan Code",
+			filters={"source_doctype": "ASN", "source_name": asn.name},
+			pluck="name",
+		)
+		self.assertGreaterEqual(len(linked), 1)
+
+		asn.cancel()
+
+		remaining = frappe.get_all(
+			"Scan Code",
+			filters={"source_doctype": "ASN", "source_name": asn.name},
+			pluck="name",
+		)
+		self.assertEqual(remaining, [])
+
+	def test_delete_cancelled_asn_when_no_purchase_receipt_linked(self):
+		asn = make_test_asn()
+		asn.insert(ignore_permissions=True)
+
+		with _mock_asn_attachments():
+			asn.submit()
+
+		asn.cancel()
+		name = asn.name
+		frappe.delete_doc("ASN", name)
+
+		self.assertFalse(frappe.db.exists("ASN", name))
+
+	def test_on_trash_raises_when_purchase_receipt_still_linked(self):
+		asn = make_test_asn()
+		asn.insert(ignore_permissions=True)
+
+		with (
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.frappe.db.has_column",
+				return_value=True,
+			),
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.frappe.db.get_value",
+				return_value="PR-TEST-001",
+			),
+		):
+			with self.assertRaises(frappe.LinkExistsError):
+				asn.on_trash()
+
+	def test_on_trash_deletes_asn_transition_log_rows(self):
+		asn = make_test_asn()
+		asn.insert(ignore_permissions=True)
+
+		with (
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.frappe.db.exists",
+				return_value=True,
+			),
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.delete") as mock_delete,
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.frappe.db.has_column",
+				return_value=False,
+			),
+		):
+			asn.on_trash()
+
+		self.assertEqual(mock_delete.call_count, 2)
+		mock_delete.assert_any_call("Scan Code", {"source_doctype": "ASN", "source_name": asn.name})
+		mock_delete.assert_any_call("ASN Transition Log", {"asn": asn.name})
+
+	def test_before_cancel_deletes_linked_draft_purchase_receipts(self):
+		asn = make_test_asn()
+		asn.insert(ignore_permissions=True)
+
+		with _mock_asn_attachments():
+			asn.submit()
+
+		with (
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.frappe.db.has_column",
+				return_value=True,
+			),
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.frappe.get_all",
+				return_value=["PR-DRAFT-1"],
+			),
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.delete_doc") as mock_delete,
+		):
+			asn.cancel()
+
+		mock_delete.assert_called_once_with("Purchase Receipt", "PR-DRAFT-1")
 
 	def test_update_receipt_status_sets_partially_received_and_updates_discrepancy_qty(self):
 		asn = make_test_asn_with_two_items(qty=5)

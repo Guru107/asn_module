@@ -10,13 +10,16 @@ from barcode.writer import ImageWriter
 from asn_module.qr_engine.scan_codes import format_scan_code_for_display, get_or_create_scan_code
 
 # Printability: compact QR modules, barcode tuned for narrow invoice columns.
+# ImageWriter paints text with anchor="md" (vertical center on ypos), so roughly half the
+# glyph sits above ypos — keep text_distance large enough that the label clears the bars.
 _QR_SCALE = 4
 _BARCODE_OPTIONS = {
 	"module_width": 0.22,
 	"module_height": 12.0,
 	"quiet_zone": 6.5,
 	"font_size": 11,
-	"text_distance": 3.0,
+	"text_distance": 6.5,
+	"margin_bottom": 3.0,
 }
 
 
