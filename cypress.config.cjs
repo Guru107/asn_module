@@ -31,7 +31,12 @@ function resolveSupportFile() {
 module.exports = {
   e2e: {
     supportFile: resolveSupportFile(),
-    specPattern: "cypress/integration/**/*.js",
+    specPattern: (() => {
+      const suite = process.env.E2E_SUITE || "smoke";
+      if (suite === "nightly") return "cypress/integration/nightly/**/*.js";
+      if (suite === "all") return "cypress/integration/**/*.js";
+      return "cypress/integration/smoke/**/*.js";
+    })(),
     video: true,
     screenshotOnRunFailure: true,
     env: {

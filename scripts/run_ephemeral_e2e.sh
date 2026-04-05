@@ -116,8 +116,11 @@ export CYPRESS_adminPassword="${CYPRESS_adminPassword:-$EPHEMERAL_ADMIN_PASSWORD
 
 echo "Running Cypress (mode=${E2E_MODE})..."
 case "$E2E_MODE" in
-smoke | ci)
-	bench --site "$SITE_NAME" run-ui-tests asn_module --headless --browser electron
+smoke)
+	E2E_SUITE=smoke bench --site "$SITE_NAME" run-ui-tests asn_module --headless --browser electron
+	;;
+ci)
+	E2E_SUITE=nightly bench --site "$SITE_NAME" run-ui-tests asn_module --headless --browser electron
 	;;
 *)
 	echo "Unknown mode: $E2E_MODE (use smoke or ci)" >&2
