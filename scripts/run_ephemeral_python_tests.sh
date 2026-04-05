@@ -57,7 +57,7 @@ fi
 bench --site "$SITE_NAME" set-config allow_tests true
 bench --site "$SITE_NAME" execute asn_module.utils.test_setup.before_tests
 
-run_tests_cmd=(bench --site "$SITE_NAME" run-tests --app asn_module)
+run_tests_cmd=("$(which bench)" --site "$SITE_NAME" run-tests --app asn_module)
 if [ "${ERPNEXT_VERSION:-}" = "16" ]; then
 	run_tests_cmd+=(--lightmode)
 fi
@@ -66,4 +66,6 @@ if [ "$#" -gt 0 ]; then
 	run_tests_cmd+=(--module "$1")
 fi
 
-"${run_tests_cmd[@]}"
+coverage run "${run_tests_cmd[@]}"
+coverage report
+coverage xml -o coverage.xml
