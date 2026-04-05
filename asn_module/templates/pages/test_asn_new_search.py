@@ -77,3 +77,61 @@ class TestASNNewSearch(FrappeTestCase):
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0]["value"], "ITEM-001")
 		self.assertEqual(rows[0]["sr_no"], "1")
+
+	def test_get_supplier_raises_when_none(self):
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="no-supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value=None),
+			self.assertRaises(frappe.PermissionError),
+		):
+			asn_new_search._get_supplier()
+
+	def test_search_open_purchase_orders_empty_txt_returns_all(self):
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
+				return_value=[
+					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05"),
+					SimpleNamespace(name="PO-0002", status="To Receive", transaction_date="2026-04-06"),
+				],
+			),
+		):
+			rows = asn_new_search.search_open_purchase_orders(txt="")
+		self.assertEqual(len(rows), 2)
+
+	def test_search_purchase_order_items_with_txt_filter(self):
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
+				return_value=[
+					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+				],
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.get_all",
+				return_value=[
+					SimpleNamespace(name="POI-1", idx=1, item_code="ITEM-001", uom="Nos", rate=10),
+					SimpleNamespace(name="POI-2", idx=2, item_code="OTHER-002", uom="Nos", rate=20),
+				],
+			),
+		):
+			rows = asn_new_search.search_purchase_order_items(purchase_order="PO-0001", txt="ITEM")
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["value"], "ITEM-001")
