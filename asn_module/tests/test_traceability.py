@@ -32,7 +32,7 @@ class TestIdempotencyKey(FrappeTestCase):
 
 class TestEmitAsnItemTransition(FrappeTestCase):
 	def test_creates_row(self):
-		asn = f"ASN-TR-{frappe.generate_hash(length=6)}"
+		asn = "ASN-TR-" + frappe.generate_hash(length=6)
 		name = emit_asn_item_transition(
 			asn=asn,
 			asn_item="ASN-ITEM-001",
@@ -47,7 +47,7 @@ class TestEmitAsnItemTransition(FrappeTestCase):
 		self.assertEqual(doc.state, "Received")
 
 	def test_deduplicates_on_replay(self):
-		asn = f"ASN-TR-D-{frappe.generate_hash(length=6)}"
+		asn = "ASN-TR-D-" + frappe.generate_hash(length=6)
 		first = emit_asn_item_transition(
 			asn=asn,
 			state="Submitted",
@@ -68,7 +68,7 @@ class TestEmitAsnItemTransition(FrappeTestCase):
 		self.assertIsNone(result)
 
 	def test_different_ref_name_same_state_creates_new_row(self):
-		asn = f"ASN-TR-RN-{frappe.generate_hash(length=6)}"
+		asn = "ASN-TR-RN-" + frappe.generate_hash(length=6)
 		first = emit_asn_item_transition(
 			asn=asn,
 			state="Received",
@@ -88,7 +88,7 @@ class TestEmitAsnItemTransition(FrappeTestCase):
 
 class TestGetLatestTransitionRowsForAsn(FrappeTestCase):
 	def test_returns_latest_per_item(self):
-		asn = f"ASN-LT-{frappe.generate_hash(length=6)}"
+		asn = "ASN-LT-" + frappe.generate_hash(length=6)
 		emit_asn_item_transition(
 			asn=asn,
 			asn_item="ITEM-1",
@@ -115,11 +115,11 @@ class TestGetLatestTransitionRowsForAsn(FrappeTestCase):
 		self.assertEqual(rows, [])
 
 	def test_respects_limit(self):
-		asn = f"ASN-LTL-{frappe.generate_hash(length=6)}"
+		asn = "ASN-LTL-" + frappe.generate_hash(length=6)
 		for i in range(5):
 			emit_asn_item_transition(
 				asn=asn,
-				asn_item=f"LIMIT-ITEM-{i}",
+				asn_item="LIMIT-ITEM-" + str(i),
 				state="Submitted",
 			)
 		rows = get_latest_transition_rows_for_asn(asn, limit=3)
