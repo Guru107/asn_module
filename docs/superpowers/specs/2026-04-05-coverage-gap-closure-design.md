@@ -10,7 +10,7 @@
 
 - Configure `coverage.py` to measure Python line coverage for `asn_module` in CI and locally.
 - **Measure baseline** before writing new tests to validate the 95% target is reachable.
-- Add direct unit tests for 7 untested core modules (~38 new test methods).
+- Add direct unit tests for 11 modules with coverage gaps (~65-75 new test methods).
 - Complete remaining realistic integration test tasks (Tasks 2-3 from `2026-04-04-realistic-integration-tests-design.md`).
 - Implement Cypress API-backed nightly E2E specs (per `2026-04-04-cypress-api-backed-e2e-design.md`).
 
@@ -37,6 +37,7 @@ omit = [
     "*/config/*",
     "*/__init__.py",
     "asn_module/setup.py",
+    "*/templates/pages/test_*.py",
 ]
 
 [tool.coverage.report]
@@ -114,14 +115,19 @@ This file already contains `test_execute_returns_columns_and_rows_without_filter
 - `search` text filter
 - Limit clamping (>500 clamped to 500, <1 clamped to 1)
 
-### 5d. `commands.py` (2-3 tests)
+### 5d. `commands.py` (5-6 tests)
 
 **New file:** `asn_module/tests/test_commands.py`
 
-FrappeTestCase tests:
-- `verify_scan_code_registry`: all valid returns `ok: True`
+FrappeTestCase tests for `verify_scan_code_registry`:
+- All valid returns `ok: True`
 - Orphan scan code returns `ok: False` with orphan listed
 - Permission check (unpermitted user raises PermissionError)
+
+FrappeTestCase tests for `verify_qr_action_registry`:
+- All canonical actions present returns `ok: True`
+- Missing action detected returns `ok: False` with missing list populated
+- Mismatched `handler_method` detected returns `ok: False` with mismatched list populated
 
 ### 5e. `handlers/utils.py` (3 tests)
 
@@ -141,14 +147,61 @@ FrappeTestCase tests:
 - Idempotent: calling twice does not duplicate rows
 - Each action maps to a valid handler dotted path (importable)
 
-### 5g. `templates/pages/asn.py` (3-4 incremental tests)
+### 5g. `templates/pages/asn.py` (0-3 incremental tests)
 
-**Existing file:** `asn_module/templates/pages/test_asn.py` (7 tests exist)
+**Existing file:** `asn_module/templates/pages/test_asn.py` (17 tests exist after PR #5)
 
-Review existing coverage. If `get_context`, `has_website_permission`, or `_ensure_asn_route` have uncovered branches, add incremental tests:
-- `has_website_permission`: supplier sees own ASN, blocked from other supplier's ASN
-- `_ensure_asn_route`: route generation for valid/invalid ASN
-- `get_context`: context populated with expected keys
+The portal list/detail page now has thorough test coverage including cancel and delete portal endpoints. Review baseline coverage; add incremental tests only if uncovered branches remain in `get_context`, `has_website_permission`, or `_ensure_asn_route`.
+
+### 5h. `templates/pages/asn_new_services.py` (15-20 tests)
+
+**New file:** `asn_module/templates/pages/test_asn_new_services.py`
+
+This is the **largest untested module** (404 lines, 20+ public functions, zero dedicated test file). Currently only exercised indirectly through `test_asn_new.py`.
+
+Pure function tests (no DB):
+- `parse_positive_qty`: positive, zero, negative, empty, non-numeric
+- `parse_non_negative_rate`: zero OK, negative raises, empty raises
+- `parse_optional_non_negative_rate`: None/empty returns None, negative raises, valid returns float
+- `parse_required_supplier_invoice_amount`: valid, zero, negative, empty
+- `normalize_group_value`: whitespace, None, normal
+- `normalize_group_field`: field mapping correctness
+
+FrappeTestCase tests (real DB):
+- `get_supplier_open_purchase_orders`: returns only open POs for logged-in supplier
+- `validate_selected_purchase_orders`: empty list raises, invalid PO raises, valid POs pass
+- `fetch_purchase_order_items`: returns items with correct fields, respects PO filter
+- `validate_qty_within_remaining`: within limit OK, exactly at limit OK, over limit raises
+- `enforce_bulk_limits`: within limit OK, over limit raises
+- `validate_bulk_group_count`: within limit OK, exceeds raises
+- `validate_invoice_group_consistency`: matching group OK, field mismatch raises
+
+### 5i. `templates/pages/asn_new.py` (8-12 incremental tests)
+
+**Existing file to extend:** `asn_module/templates/pages/test_asn_new.py` (13 tests exist)
+
+Existing tests cover parser edge cases and error paths well. Add incremental tests for untested happy paths and branches:
+- `get_context` success path for `mode == "single"` (POST with valid data)
+- `get_context` success path for `mode == "bulk"` (POST with valid CSV)
+- `get_context` when request method is GET (early return, renders form)
+- `_create_single_asn` happy path through `_insert_and_submit_asn`
+- `_create_bulk_asns` happy path (at least one valid group)
+- `_parse_single_rows` with missing required fields (error accumulation)
+- `_request_supplier_invoice_amount`: valid, zero, negative, empty
+- `_default_asn_route`: returns expected URL format
+
+### 5j. `templates/pages/asn_new_search.py` (2-3 incremental tests)
+
+**Existing file to extend:** `asn_module/templates/pages/test_asn_new_search.py` (3 tests exist)
+
+Add incremental tests for uncovered branches:
+- `_get_supplier` when supplier is None (raises permission error)
+- `search_open_purchase_orders` with empty `txt` (returns all matching POs)
+- `search_purchase_order_items` with `txt` filter matching item names
+
+### 5k. `supplier_asn_portal.py` — no new tests needed
+
+This module (43 lines) already has adequate coverage from `asn_module/tests/test_supplier_asn_portal.py` (4 tests). Only trivial branches (empty string input) are uncovered. No spec section needed.
 
 ---
 
@@ -205,7 +258,7 @@ If building dispatchable context exceeds ~3-4 `cy.call` hops, add one whiteliste
 
 1. **Coverage tooling** (Section 3) — configure and verify invocation works
 2. **Baseline measurement** (Section 4) — run coverage, identify actual gaps, validate 95% is reachable
-3. **Unit tests** (Section 5) — biggest coverage lift (~38 new tests across 7 modules)
+3. **Unit tests** (Section 5) — biggest coverage lift (~65-75 new tests across 11 modules)
 4. **Integration test gaps** (Section 6) — complete `2026-04-04-realistic-integration-tests-design.md` Tasks 2-3
 5. **Cypress E2E** (Section 7) — complete `2026-04-04-cypress-api-backed-e2e-design.md`, does not affect Python coverage
 
@@ -234,5 +287,7 @@ If building dispatchable context exceeds ~3-4 `cy.call` hops, add one whiteliste
   **Mitigation:** Narrow patch to `generate_barcode` only; document as exception
 - **Risk:** Cypress nightly flakiness
   **Mitigation:** API-seed approach reduces UI interaction surface; condition-based waits; artifacts on failure
+- **Risk:** Portal code (~1,000 new lines in `asn_new.py` + `asn_new_services.py`) dominates the coverage denominator
+  **Mitigation:** Sections 5h-5i add 23-32 dedicated tests; `asn_new_services.py` has the highest line count and is prioritized first in implementation
 - **Risk:** Install-time code (`setup.py`, `setup_actions.py`) runs before coverage starts
   **Mitigation:** `setup_actions.py` is tested directly via unit tests (Section 5f); `setup.py` (10 lines, `after_install` entry point) is omitted from coverage scope since it only runs at install time
