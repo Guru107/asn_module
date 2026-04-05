@@ -77,6 +77,8 @@ if [ "$fixtures_exit" -ne 0 ]; then
 fi
 
 bench --site "$SITE_NAME" set-config allow_tests true
+# Ensure Cypress baseUrl resolves to the runtime serve port in CI.
+bench --site "$SITE_NAME" set-config host_name "http://${SITE_NAME}:${SERVE_PORT}"
 bench --site "$SITE_NAME" execute asn_module.utils.test_setup.before_tests
 
 bench use "$SITE_NAME"
