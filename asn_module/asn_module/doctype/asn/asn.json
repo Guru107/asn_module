@@ -154,7 +154,8 @@
 		{
 			"fieldname": "supplier_invoice_amount",
 			"fieldtype": "Currency",
-			"label": "Supplier Invoice Amount"
+			"label": "Supplier Invoice Amount",
+			"reqd": 1
 		},
 		{
 			"fieldname": "qr_section",

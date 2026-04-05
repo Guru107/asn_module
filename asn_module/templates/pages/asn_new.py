@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 import frappe
 from frappe import _
+from frappe.exceptions import ValidationError as FrappeValidationError
+from frappe.utils import cstr
 from frappe.website.utils import cleanup_page_name
 
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
@@ -20,12 +22,14 @@ from asn_module.templates.pages.asn_new_services import (
 	parse_non_negative_rate,
 	parse_optional_non_negative_rate,
 	parse_positive_qty,
+	parse_required_supplier_invoice_amount,
 	resolve_po_item,
 	validate_bulk_group_count,
 	validate_invoice_group_consistency,
 	validate_no_duplicate_po_sr_no,
 	validate_qty_within_remaining,
 	validate_selected_purchase_orders,
+	validate_supplier_invoices_not_reused,
 )
 
 BULK_CSV_HEADERS = [
@@ -35,6 +39,9 @@ BULK_CSV_HEADERS = [
 	"lr_no",
 	"lr_date",
 	"transporter_name",
+	"vehicle_number",
+	"driver_contact",
+	"supplier_invoice_amount",
 	"purchase_order",
 	"sr_no",
 	"item_code",
@@ -76,7 +83,9 @@ def get_context(context):
 	try:
 		if mode == "single":
 			result = _create_single_asn(supplier)
-			route = frappe.db.get_value("ASN", result.asn_names[0], "route") or _default_asn_route(result.asn_names[0])
+			route = frappe.db.get_value("ASN", result.asn_names[0], "route") or _default_asn_route(
+				result.asn_names[0]
+			)
 			frappe.local.flags.redirect_location = f"/{route.lstrip('/')}"
 			raise frappe.Redirect
 		if mode == "bulk":
@@ -88,11 +97,19 @@ def get_context(context):
 			return
 		raise PortalValidationError([error_entry(field="mode", message=_("Invalid submit mode."))])
 	except PortalValidationError as exc:
-		frappe.local.response["http_status_code"] = 417
 		if context.active_tab == "bulk":
 			context.bulk_errors = exc.errors
 		else:
 			context.single_errors = exc.errors
+	except FrappeValidationError as exc:
+		msg = cstr(getattr(exc, "message", None) or (exc.args[0] if exc.args else "") or exc).strip()
+		if not msg:
+			msg = _("We could not save your notice. Please check the form and try again.")
+		entry = error_entry(message=msg, field="asn")
+		if context.active_tab == "bulk":
+			context.bulk_errors = [entry]
+		else:
+			context.single_errors = [entry]
 
 
 def _create_single_asn(supplier: str) -> CreateResult:
@@ -102,6 +119,7 @@ def _create_single_asn(supplier: str) -> CreateResult:
 		selected_purchase_orders=selected_purchase_orders,
 		field="selected_purchase_orders",
 	)
+	validate_supplier_invoices_not_reused(supplier, [_request_value("supplier_invoice_no")])
 	rows = _parse_single_rows()
 	if not rows:
 		raise PortalValidationError(
@@ -134,9 +152,9 @@ def _create_single_asn(supplier: str) -> CreateResult:
 					error_entry(
 						row_number=row.row_number,
 						field="sr_no",
-						message=_(
-							"Manual row {0}: duplicate purchase_order + sr_no is not allowed."
-						).format(row.row_number),
+						message=_("Manual row {0}: duplicate purchase_order + sr_no is not allowed.").format(
+							row.row_number
+						),
 					)
 				]
 			)
@@ -157,7 +175,9 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			invoice_no=None,
 			remaining_qty_by_name=running_remaining,
 		)
-		running_remaining[po_item.name] = frappe.utils.flt(running_remaining.get(po_item.name, 0)) - frappe.utils.flt(row.qty)
+		running_remaining[po_item.name] = frappe.utils.flt(
+			running_remaining.get(po_item.name, 0)
+		) - frappe.utils.flt(row.qty)
 		items.append(
 			{
 				"purchase_order": row.purchase_order,
@@ -178,6 +198,9 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			"lr_no": _request_value("lr_no"),
 			"lr_date": _request_value("lr_date"),
 			"transporter_name": _request_value("transporter_name"),
+			"vehicle_number": _request_value("vehicle_number"),
+			"driver_contact": _request_value("driver_contact"),
+			"supplier_invoice_amount": _request_supplier_invoice_amount(),
 		},
 		items=items,
 	)
@@ -201,6 +224,7 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 	for row in rows:
 		invoice_groups[row.supplier_invoice_no].append(row)
 	validate_bulk_group_count(invoice_groups)
+	validate_supplier_invoices_not_reused(supplier, sorted(invoice_groups.keys()))
 
 	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(all_purchase_orders)
 	running_remaining = dict(remaining_qty_by_name)
@@ -222,6 +246,9 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 			"lr_no": invoice_rows[0].lr_no,
 			"lr_date": invoice_rows[0].lr_date,
 			"transporter_name": invoice_rows[0].transporter_name,
+			"vehicle_number": invoice_rows[0].vehicle_number,
+			"driver_contact": invoice_rows[0].driver_contact,
+			"supplier_invoice_amount": invoice_rows[0].supplier_invoice_amount,
 		}
 		items = []
 		for row in invoice_rows:
@@ -241,7 +268,9 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 					invoice_no=invoice_no,
 					remaining_qty_by_name=running_remaining,
 				)
-				running_remaining[po_item.name] = frappe.utils.flt(running_remaining.get(po_item.name, 0)) - frappe.utils.flt(row.qty)
+				running_remaining[po_item.name] = frappe.utils.flt(
+					running_remaining.get(po_item.name, 0)
+				) - frappe.utils.flt(row.qty)
 				item_rate = (
 					frappe.utils.flt(row.rate)
 					if row.rate is not None
@@ -274,19 +303,21 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 
 
 def _insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
-	asn = frappe.get_doc(
-		{
-			"doctype": "ASN",
-			"supplier": supplier,
-			"supplier_invoice_no": header.get("supplier_invoice_no"),
-			"supplier_invoice_date": header.get("supplier_invoice_date"),
-			"expected_delivery_date": header.get("expected_delivery_date"),
-			"lr_no": header.get("lr_no"),
-			"lr_date": header.get("lr_date"),
-			"transporter_name": header.get("transporter_name"),
-			"items": items,
-		}
-	)
+	doc_payload = {
+		"doctype": "ASN",
+		"supplier": supplier,
+		"supplier_invoice_no": header.get("supplier_invoice_no"),
+		"supplier_invoice_date": header.get("supplier_invoice_date"),
+		"expected_delivery_date": header.get("expected_delivery_date"),
+		"lr_no": header.get("lr_no"),
+		"lr_date": header.get("lr_date"),
+		"transporter_name": header.get("transporter_name"),
+		"vehicle_number": header.get("vehicle_number"),
+		"driver_contact": header.get("driver_contact"),
+		"items": items,
+	}
+	doc_payload["supplier_invoice_amount"] = header["supplier_invoice_amount"]
+	asn = frappe.get_doc(doc_payload)
 	asn.flags.ignore_permissions = True
 	asn.insert(ignore_permissions=True)
 	asn.flags.ignore_permissions = True
@@ -412,9 +443,16 @@ def _parse_bulk_csv_rows() -> list[ParsedBulkRow]:
 			continue
 
 		try:
-			qty = parse_positive_qty(raw.get("qty") or "", row_number=line_no, field="qty", invoice_no=invoice_no)
+			qty = parse_positive_qty(
+				raw.get("qty") or "", row_number=line_no, field="qty", invoice_no=invoice_no
+			)
 			rate = parse_optional_non_negative_rate(
 				raw.get("rate"), row_number=line_no, field="rate", invoice_no=invoice_no
+			)
+			supplier_invoice_amount = parse_required_supplier_invoice_amount(
+				raw.get("supplier_invoice_amount"),
+				row_number=line_no,
+				invoice_no=invoice_no,
 			)
 		except PortalValidationError as exc:
 			errors.extend(exc.errors)
@@ -429,6 +467,9 @@ def _parse_bulk_csv_rows() -> list[ParsedBulkRow]:
 				lr_no=(raw.get("lr_no") or "").strip(),
 				lr_date=(raw.get("lr_date") or "").strip(),
 				transporter_name=(raw.get("transporter_name") or "").strip(),
+				vehicle_number=(raw.get("vehicle_number") or "").strip(),
+				driver_contact=(raw.get("driver_contact") or "").strip(),
+				supplier_invoice_amount=supplier_invoice_amount,
 				purchase_order=(raw.get("purchase_order") or "").strip(),
 				sr_no=(raw.get("sr_no") or "").strip(),
 				item_code=(raw.get("item_code") or "").strip(),
@@ -450,6 +491,30 @@ def _request_list(fieldname: str) -> list[str]:
 
 def _request_value(fieldname: str) -> str:
 	return (frappe.form_dict.get(fieldname) or "").strip()
+
+
+def _request_supplier_invoice_amount() -> float:
+	raw = (frappe.form_dict.get("supplier_invoice_amount") or "").strip()
+	if not raw:
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="supplier_invoice_amount",
+					message=_("Supplier invoice amount is required."),
+				)
+			]
+		)
+	val = frappe.utils.flt(raw)
+	if val < 0:
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="supplier_invoice_amount",
+					message=_("Supplier invoice amount cannot be negative."),
+				)
+			]
+		)
+	return val
 
 
 def _safe_get(values: list[str], idx: int) -> str:

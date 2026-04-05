@@ -2,6 +2,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from frappe.exceptions import ValidationError as FrappeValidationError
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.templates.pages import asn_new
@@ -11,6 +12,7 @@ from asn_module.templates.pages.asn_new_services import (
 	PortalValidationError,
 	resolve_po_item,
 	validate_no_duplicate_po_sr_no,
+	validate_supplier_invoices_not_reused,
 )
 
 
@@ -51,7 +53,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(rows[0].rate, 25)
 
 	def test_parse_bulk_csv_rows_accepts_strict_template(self):
-		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,PO-0001,1,ITEM-001,10,25\n"
+		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,250,PO-0001,1,ITEM-001,10,25\n"
 		request = SimpleNamespace(
 			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
 		)
@@ -63,9 +65,10 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(rows[0].sr_no, "1")
 		self.assertEqual(rows[0].item_code, "ITEM-001")
 		self.assertEqual(rows[0].rate, 25)
+		self.assertEqual(rows[0].supplier_invoice_amount, 250)
 
 	def test_parse_bulk_csv_rows_accepts_empty_rate(self):
-		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,PO-0001,1,ITEM-001,10,\n"
+		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,250,PO-0001,1,ITEM-001,10,\n"
 		request = SimpleNamespace(
 			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
 		)
@@ -75,7 +78,18 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertIsNone(rows[0].rate)
 
 	def test_parse_bulk_csv_rows_rejects_negative_rate_when_provided(self):
-		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,PO-0001,1,ITEM-001,10,-1\n"
+		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,250,PO-0001,1,ITEM-001,10,-1\n"
+		request = SimpleNamespace(
+			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
+		)
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			self.assertRaises(PortalValidationError),
+		):
+			asn_new._parse_bulk_csv_rows()
+
+	def test_parse_bulk_csv_rows_rejects_empty_supplier_invoice_amount(self):
+		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,,PO-0001,1,ITEM-001,10,25\n"
 		request = SimpleNamespace(
 			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
 		)
@@ -86,7 +100,9 @@ class TestASNNewPortalPage(FrappeTestCase):
 			asn_new._parse_bulk_csv_rows()
 
 	def test_parse_bulk_csv_rows_rejects_header_order_mismatch(self):
-		csv_content = b"supplier_invoice_no,purchase_order,sr_no,item_code,qty,rate\nINV-1,PO-0001,1,ITEM-001,10,25\n"
+		csv_content = (
+			b"supplier_invoice_no,purchase_order,sr_no,item_code,qty,rate\nINV-1,PO-0001,1,ITEM-001,10,25\n"
+		)
 		request = SimpleNamespace(
 			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
 		)
@@ -96,21 +112,60 @@ class TestASNNewPortalPage(FrappeTestCase):
 		):
 			asn_new._parse_bulk_csv_rows()
 
-	def test_get_context_rejects_invalid_mode_with_417(self):
+	def test_get_context_rejects_invalid_mode_inline(self):
 		context = SimpleNamespace()
 		request = SimpleNamespace(method="POST", files={})
 		with (
 			patch("asn_module.templates.pages.asn_new.frappe.request", request),
 			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"mode": "invalid"}),
-			patch("asn_module.templates.pages.asn_new.frappe.session", SimpleNamespace(user="supplier@example.com")),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch("asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
+			),
 			patch("asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(response={})),
 		):
 			asn_new.get_context(context)
 		self.assertEqual(context.active_tab, "single")
 		self.assertTrue(context.single_errors)
 		self.assertEqual(context.single_errors[0]["field"], "mode")
+
+	def test_get_context_maps_frappe_validation_error_to_bulk_errors(self):
+		context = SimpleNamespace()
+
+		def _boom(*_a, **_k):
+			raise FrappeValidationError("Quantity exceeds what is left on the purchase order.")
+
+		request = SimpleNamespace(method="POST", files={})
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"mode": "bulk"}),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
+			),
+			patch("asn_module.templates.pages.asn_new._create_bulk_asns", side_effect=_boom),
+			patch("asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(response={})),
+		):
+			asn_new.get_context(context)
+		self.assertEqual(context.active_tab, "bulk")
+		self.assertTrue(context.bulk_errors)
+		self.assertIn("Quantity exceeds", context.bulk_errors[0]["message"])
+		self.assertEqual(context.bulk_errors[0]["field"], "asn")
+
+	def test_validate_supplier_invoices_not_reused_raises_portal_error(self):
+		with patch("asn_module.templates.pages.asn_new_services.frappe.db.exists", return_value="ASN-00001"):
+			with self.assertRaises(PortalValidationError) as ctx:
+				validate_supplier_invoices_not_reused("Supp-001", ["INV-DUP"])
+		msgs = " ".join(e.get("message", "") for e in ctx.exception.errors)
+		self.assertIn("INV-DUP", msgs)
 
 	def test_service_rejects_duplicate_po_sr_no_in_same_invoice_group(self):
 		rows = [
@@ -122,6 +177,9 @@ class TestASNNewPortalPage(FrappeTestCase):
 				lr_no="",
 				lr_date="",
 				transporter_name="",
+				vehicle_number="",
+				driver_contact="",
+				supplier_invoice_amount=100,
 				purchase_order="PO-0001",
 				sr_no="10",
 				item_code="ITEM-001",
@@ -136,6 +194,9 @@ class TestASNNewPortalPage(FrappeTestCase):
 				lr_no="",
 				lr_date="",
 				transporter_name="",
+				vehicle_number="",
+				driver_contact="",
+				supplier_invoice_amount=100,
 				purchase_order="PO-0001",
 				sr_no="10",
 				item_code="ITEM-001",
@@ -174,8 +235,24 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 	def test_create_single_asn_rejects_duplicate_po_sr_no(self):
 		rows = [
-			ParsedSingleRow(row_number=1, purchase_order="PO-0001", sr_no="1", item_code="ITEM-001", uom="Nos", qty=1, rate=10),
-			ParsedSingleRow(row_number=2, purchase_order="PO-0001", sr_no="1", item_code="ITEM-001", uom="Nos", qty=1, rate=10),
+			ParsedSingleRow(
+				row_number=1,
+				purchase_order="PO-0001",
+				sr_no="1",
+				item_code="ITEM-001",
+				uom="Nos",
+				qty=1,
+				rate=10,
+			),
+			ParsedSingleRow(
+				row_number=2,
+				purchase_order="PO-0001",
+				sr_no="1",
+				item_code="ITEM-001",
+				uom="Nos",
+				qty=1,
+				rate=10,
+			),
 		]
 		with (
 			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001"]),
@@ -194,8 +271,24 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 	def test_create_single_asn_rejects_cumulative_qty_exceeding_remaining(self):
 		rows = [
-			ParsedSingleRow(row_number=1, purchase_order="PO-0001", sr_no="1", item_code="ITEM-001", uom="Nos", qty=6, rate=10),
-			ParsedSingleRow(row_number=2, purchase_order="PO-0001", sr_no="2", item_code="ITEM-002", uom="Nos", qty=5, rate=10),
+			ParsedSingleRow(
+				row_number=1,
+				purchase_order="PO-0001",
+				sr_no="1",
+				item_code="ITEM-001",
+				uom="Nos",
+				qty=6,
+				rate=10,
+			),
+			ParsedSingleRow(
+				row_number=2,
+				purchase_order="PO-0001",
+				sr_no="2",
+				item_code="ITEM-002",
+				uom="Nos",
+				qty=5,
+				rate=10,
+			),
 		]
 		with (
 			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001"]),

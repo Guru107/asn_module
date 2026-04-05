@@ -447,6 +447,10 @@
 								<label class="form-label">{{ _("Expected Delivery Date") }}</label>
 								<input type="date" class="form-control" name="expected_delivery_date">
 							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Supplier invoice amount") }}</label>
+								<input type="number" class="form-control" name="supplier_invoice_amount" min="0" step="0.01" required>
+							</div>
 						</div>
 
 						<div class="row">
@@ -461,6 +465,17 @@
 							<div class="col-md-4 mb-3">
 								<label class="form-label">{{ _("Transporter Name") }}</label>
 								<input class="form-control" name="transporter_name" maxlength="140">
+							</div>
+						</div>
+
+						<div class="row">
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Vehicle number") }} <span class="text-muted small">({{ _("optional") }})</span></label>
+								<input class="form-control" name="vehicle_number" maxlength="140" autocomplete="off">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label class="form-label">{{ _("Driver contact") }} <span class="text-muted small">({{ _("optional") }})</span></label>
+								<input class="form-control" name="driver_contact" maxlength="140" autocomplete="off">
 							</div>
 						</div>
 

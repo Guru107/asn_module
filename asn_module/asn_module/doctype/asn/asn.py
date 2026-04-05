@@ -11,14 +11,24 @@ from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
+from asn_module.supplier_asn_portal import asn_eligible_for_supplier_portal_cancel
 from asn_module.traceability import emit_asn_item_transition, get_latest_transition_rows_for_asn
 
 
 class ASN(WebsiteGenerator):
+	def get_context(self, context):
+		# WebsiteGenerator (Frappe v16) does not implement get_context on the MRO; only set portal context.
+		context.no_cache = 1
+		context.show_sidebar = True
+		context.doc = self
+		context.title = self.name
+		context.can_cancel_portal = asn_eligible_for_supplier_portal_cancel(self)
+
 	def validate(self):
-		super().validate()
 		self._validate_items_present()
 		self._validate_item_qty()
+		self._sync_supplier_invoice_amount_from_items()
+		super().validate()
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
 
@@ -103,6 +113,13 @@ class ASN(WebsiteGenerator):
 				continue
 
 			frappe.throw(_("Row {0}: Quantity must be greater than 0").format(row.idx))
+
+	def _sync_supplier_invoice_amount_from_items(self):
+		"""When header amount is unset (0), derive it from line qty * rate so the portal/detail view is not stuck at 0."""
+		if flt(self.supplier_invoice_amount) != 0:
+			return
+		total = sum(flt(row.qty) * flt(row.rate) for row in (self.items or []))
+		self.supplier_invoice_amount = total
 
 	def _validate_supplier_invoice_unique(self):
 		if not self.supplier_invoice_no:

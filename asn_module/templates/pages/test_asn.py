@@ -1,12 +1,17 @@
-from pathlib import Path
 import importlib
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.templates.pages.asn import _get_supplier_for_user, get_context, has_website_permission
+from asn_module.templates.pages.asn import (
+	_get_supplier_for_user,
+	cancel_portal_asn,
+	get_context,
+	has_website_permission,
+)
 
 
 class TestASNPortalPage(FrappeTestCase):
@@ -65,6 +70,7 @@ class TestASNPortalPage(FrappeTestCase):
 					"status": "Submitted",
 					"expected_delivery_date": "2026-04-05",
 					"asn_date": "2026-04-02",
+					"docstatus": 1,
 				}
 			)
 		]
@@ -78,6 +84,7 @@ class TestASNPortalPage(FrappeTestCase):
 				"asn_module.templates.pages.asn.frappe.get_all",
 				side_effect=[
 					asn_rows,
+					[],
 					[frappe._dict({"parent": "ASN-0001", "total_items": 2})],
 				],
 			) as get_all,
@@ -91,7 +98,8 @@ class TestASNPortalPage(FrappeTestCase):
 		self.assertEqual(len(context.asn_list), 1)
 		self.assertEqual(context.asn_list[0].route, "asn/asn-0001")
 		self.assertEqual(context.asn_list[0].total_items, 2)
-		self.assertEqual(get_all.call_count, 2)
+		self.assertTrue(context.asn_list[0].can_cancel_portal)
+		self.assertEqual(get_all.call_count, 3)
 		self.assertIn("route", get_all.call_args_list[0].kwargs["fields"])
 		self.assertIn({"COUNT": "name", "as": "total_items"}, get_all.call_args_list[1].kwargs["fields"])
 		self.assertEqual(get_all.call_args_list[1].kwargs["group_by"], "parent")
@@ -109,3 +117,66 @@ class TestASNPortalPage(FrappeTestCase):
 			get_context(context)
 
 		self.assertEqual(context.asn_list, [])
+
+	def test_get_context_disables_cancel_when_purchase_receipt_exists(self):
+		context = SimpleNamespace()
+		asn_rows = [
+			frappe._dict(
+				{
+					"name": "ASN-0001",
+					"route": "asn/asn-0001",
+					"supplier_invoice_no": "INV-001",
+					"status": "Submitted",
+					"expected_delivery_date": "2026-04-05",
+					"asn_date": "2026-04-02",
+					"docstatus": 1,
+				}
+			)
+		]
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn.frappe.get_all",
+				side_effect=[
+					asn_rows,
+					[frappe._dict({"asn": "ASN-0001"})],
+					[frappe._dict({"parent": "ASN-0001", "total_items": 1})],
+				],
+			),
+			patch("asn_module.templates.pages.asn.frappe.db.set_value"),
+		):
+			get_context(context)
+		self.assertFalse(context.asn_list[0].can_cancel_portal)
+
+	def test_cancel_portal_asn_rejects_without_supplier_portal_user(self):
+		with (
+			patch("asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="x@y.com")),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value=None),
+		):
+			with self.assertRaises(frappe.PermissionError):
+				cancel_portal_asn("ASN-0001")
+
+	def test_cancel_portal_asn_calls_cancel_when_eligible(self):
+		doc = SimpleNamespace(supplier="Supp-001", docstatus=1, status="Submitted", name="ASN-0001")
+		doc.flags = SimpleNamespace(ignore_permissions=False)
+		cancelled: list[bool] = []
+
+		def _cancel():
+			cancelled.append(True)
+
+		doc.cancel = _cancel
+
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch("asn_module.templates.pages.asn.frappe.get_doc", return_value=doc),
+			patch("asn_module.templates.pages.asn.purchase_receipt_exists_for_asn", return_value=False),
+		):
+			out = cancel_portal_asn("ASN-0001")
+		self.assertTrue(cancelled)
+		self.assertEqual(out.get("redirect"), "/asn")

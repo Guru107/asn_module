@@ -363,6 +363,20 @@ class TestASN(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			asn.insert(ignore_permissions=True)
 
+	def test_validate_sets_supplier_invoice_amount_from_line_totals_when_zero(self):
+		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
+		asn = make_test_asn(purchase_order=po, qty=2)
+		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
+		asn.validate()
+		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 200)
+
+	def test_validate_preserves_nonzero_supplier_invoice_amount(self):
+		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
+		asn = make_test_asn(purchase_order=po, qty=2)
+		asn.supplier_invoice_amount = 250
+		asn.validate()
+		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 250)
+
 	def test_insert_defaults_status_to_draft(self):
 		asn = make_test_asn()
 		doc = asn.insert(ignore_permissions=True)

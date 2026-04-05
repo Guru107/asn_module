@@ -10,13 +10,20 @@ from asn_module.templates.pages import asn_new_search
 class TestASNNewSearch(FrappeTestCase):
 	def test_search_open_purchase_orders_returns_supplier_open_pos(self):
 		with (
-			patch("asn_module.templates.pages.asn_new_search.frappe.session", SimpleNamespace(user="s@example.com")),
-			patch("asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"
+			),
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
 				return_value=[
 					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05"),
-					SimpleNamespace(name="PO-0002", status="To Receive and Bill", transaction_date="2026-04-06"),
+					SimpleNamespace(
+						name="PO-0002", status="To Receive and Bill", transaction_date="2026-04-06"
+					),
 				],
 			),
 		):
@@ -26,11 +33,18 @@ class TestASNNewSearch(FrappeTestCase):
 
 	def test_search_purchase_order_items_rejects_po_outside_supplier_scope(self):
 		with (
-			patch("asn_module.templates.pages.asn_new_search.frappe.session", SimpleNamespace(user="s@example.com")),
-			patch("asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"
+			),
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
-				return_value=[SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")],
+				return_value=[
+					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+				],
 			),
 			self.assertRaises(frappe.PermissionError),
 		):
@@ -38,11 +52,18 @@ class TestASNNewSearch(FrappeTestCase):
 
 	def test_search_purchase_order_items_filters_by_po_and_text(self):
 		with (
-			patch("asn_module.templates.pages.asn_new_search.frappe.session", SimpleNamespace(user="s@example.com")),
-			patch("asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"
+			),
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
-				return_value=[SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")],
+				return_value=[
+					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+				],
 			),
 			patch(
 				"asn_module.templates.pages.asn_new_search.frappe.get_all",

@@ -18,6 +18,9 @@ INVOICE_GROUP_FIELDS = (
 	"lr_no",
 	"lr_date",
 	"transporter_name",
+	"vehicle_number",
+	"driver_contact",
+	"supplier_invoice_amount",
 )
 
 
@@ -49,6 +52,9 @@ class ParsedBulkRow:
 	lr_no: str
 	lr_date: str
 	transporter_name: str
+	vehicle_number: str
+	driver_contact: str
+	supplier_invoice_amount: float
 	purchase_order: str
 	sr_no: str
 	item_code: str
@@ -74,6 +80,35 @@ def error_entry(
 def get_supplier_open_purchase_orders(supplier: str) -> dict[str, frappe._dict]:
 	open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
 	return {row.name: row for row in open_purchase_orders}
+
+
+def validate_supplier_invoices_not_reused(supplier: str, invoice_numbers: list[str]):
+	"""Raise PortalValidationError if any invoice number is already on a non-cancelled ASN."""
+	errors: list[dict] = []
+	for raw in invoice_numbers:
+		inv = (raw or "").strip()
+		if not inv:
+			continue
+		filters = {
+			"supplier": supplier,
+			"supplier_invoice_no": inv,
+			"docstatus": ("!=", 2),
+		}
+		if not frappe.db.exists("ASN", filters):
+			continue
+		errors.append(
+			error_entry(
+				invoice_no=inv,
+				field="supplier_invoice_no",
+				message=_(
+					"Supplier invoice number {0} is already used on another notice. "
+					"Use a different number, or cancel that notice from your ASN list if it is still submitted "
+					"and no purchase receipt has been created yet."
+				).format(inv),
+			)
+		)
+	if errors:
+		raise PortalValidationError(errors)
 
 
 def validate_selected_purchase_orders(
@@ -137,7 +172,7 @@ def parse_non_negative_rate(
 				row_number=row_number,
 				field=field,
 				invoice_no=invoice_no,
-				message=_("Row {0}: rate cannot be negative.").format(row_number),
+				message=_("Row {0}: {1} cannot be negative.").format(row_number, field),
 			)
 		]
 	)
@@ -150,6 +185,26 @@ def parse_optional_non_negative_rate(
 		return None
 	return parse_non_negative_rate(
 		(value or "").strip(), row_number=row_number, field=field, invoice_no=invoice_no
+	)
+
+
+def parse_required_supplier_invoice_amount(
+	value: str | None, *, row_number: int, invoice_no: str | None = None
+) -> float:
+	raw = (value or "").strip()
+	if not raw:
+		raise PortalValidationError(
+			[
+				error_entry(
+					row_number=row_number,
+					field="supplier_invoice_amount",
+					invoice_no=invoice_no,
+					message=_("Row {0}: supplier_invoice_amount is required.").format(row_number),
+				)
+			]
+		)
+	return parse_non_negative_rate(
+		raw, row_number=row_number, field="supplier_invoice_amount", invoice_no=invoice_no
 	)
 
 
@@ -225,9 +280,9 @@ def resolve_po_item(
 					row_number=row_number,
 					field="item_code",
 					invoice_no=invoice_no,
-					message=_(
-						"Row {0}: item_code {1} does not match PO line item_code {2}."
-					).format(row_number, item_code, row.item_code),
+					message=_("Row {0}: item_code {1} does not match PO line item_code {2}.").format(
+						row_number, item_code, row.item_code
+					),
 				)
 			]
 		)
@@ -263,6 +318,13 @@ def normalize_group_value(value: str | None) -> str:
 	return (value or "").strip()
 
 
+def normalize_group_field(field: str, value: str | None) -> str:
+	if field == "supplier_invoice_amount":
+		raw = (value or "").strip()
+		return "" if not raw else str(flt(raw))
+	return normalize_group_value(value)
+
+
 def enforce_bulk_limits(rows: list[ParsedBulkRow]):
 	if len(rows) > MAX_BULK_ROWS:
 		raise PortalValidationError(
@@ -288,15 +350,21 @@ def validate_bulk_group_count(invoice_groups: dict[str, list[ParsedBulkRow]]):
 	)
 
 
+def _invoice_group_compare_value(row: ParsedBulkRow, field: str) -> str:
+	if field == "supplier_invoice_amount":
+		return normalize_group_field("supplier_invoice_amount", str(row.supplier_invoice_amount))
+	return normalize_group_field(field, getattr(row, field))
+
+
 def validate_invoice_group_consistency(invoice_no: str, rows: list[ParsedBulkRow]):
 	if not rows:
 		return
 
-	base = {field: normalize_group_value(getattr(rows[0], field)) for field in INVOICE_GROUP_FIELDS}
+	base = {field: _invoice_group_compare_value(rows[0], field) for field in INVOICE_GROUP_FIELDS}
 	errors: list[dict] = []
 	for row in rows[1:]:
 		for field in INVOICE_GROUP_FIELDS:
-			current = normalize_group_value(getattr(row, field))
+			current = _invoice_group_compare_value(row, field)
 			if current == base[field]:
 				continue
 			errors.append(
@@ -304,9 +372,9 @@ def validate_invoice_group_consistency(invoice_no: str, rows: list[ParsedBulkRow
 					row_number=row.row_number,
 					invoice_no=invoice_no,
 					field=field,
-					message=_(
-						"Row {0}: {1} mismatch for invoice {2}; expected '{3}', found '{4}'."
-					).format(row.row_number, field, invoice_no, base[field], current),
+					message=_("Row {0}: {1} mismatch for invoice {2}; expected '{3}', found '{4}'.").format(
+						row.row_number, field, invoice_no, base[field], current
+					),
 				)
 			)
 
@@ -327,9 +395,9 @@ def validate_no_duplicate_po_sr_no(rows: list[ParsedBulkRow], *, invoice_no: str
 				row_number=row.row_number,
 				invoice_no=invoice_no,
 				field="sr_no",
-				message=_(
-					"Row {0}: duplicate purchase_order + sr_no in invoice group {1}."
-				).format(row.row_number, invoice_no),
+				message=_("Row {0}: duplicate purchase_order + sr_no in invoice group {1}.").format(
+					row.row_number, invoice_no
+				),
 			)
 		)
 	if errors:

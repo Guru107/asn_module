@@ -45,7 +45,9 @@ def verify_qr_action_registry():
 		current_rows[row.action_key] = {
 			"handler_method": row.handler_method,
 			"source_doctype": row.source_doctype,
-			"allowed_roles": sorted([role.strip() for role in (row.allowed_roles or "").split(",") if role.strip()]),
+			"allowed_roles": sorted(
+				[role.strip() for role in (row.allowed_roles or "").split(",") if role.strip()]
+			),
 		}
 
 	canonical_rows = {}
@@ -81,9 +83,9 @@ def verify_qr_action_registry():
 		}
 
 	frappe.msgprint(
-		_(
-			"QR Action Registry drift detected. missing={0}, unexpected={1}, mismatched={2}"
-		).format(len(missing), len(unexpected), len(mismatched)),
+		_("QR Action Registry drift detected. missing={0}, unexpected={1}, mismatched={2}").format(
+			len(missing), len(unexpected), len(mismatched)
+		),
 		title=_("QR Action Registry check"),
 		indicator="orange",
 	)

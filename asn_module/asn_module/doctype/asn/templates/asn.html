@@ -1,36 +1,252 @@
 {% extends "templates/web.html" %}
 
 {% block page_content %}
-<div class="container">
-	<div class="row">
-		<div class="col-md-12">
-			<h1 class="mb-3">{{ doc.name }}</h1>
-			<div class="mb-3 text-muted">
-				{{ _("Supplier Invoice") }}: {{ doc.supplier_invoice_no or "-" }}
+<style>
+	.asn-detail-portal {
+		max-width: 900px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+	.asn-detail-portal .asn-ro-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		color: #6c757d;
+		margin-bottom: 0.15rem;
+	}
+	.asn-detail-portal .asn-ro-value {
+		margin-bottom: 1rem;
+	}
+	.asn-detail-portal h2 {
+		font-size: 1.35rem;
+		font-weight: 600;
+	}
+	.asn-detail-portal .asn-section-title {
+		font-size: 1rem;
+		font-weight: 600;
+		margin-top: 1.5rem;
+		margin-bottom: 0.75rem;
+		padding-bottom: 0.35rem;
+		border-bottom: 1px solid #dee2e6;
+	}
+	.asn-detail-items th {
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		color: #6c757d;
+	}
+</style>
+<div class="container py-3">
+	<div class="asn-detail-portal">
+		<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+			<div>
+				<h2 class="mb-1">{{ doc.name }}</h2>
+				<div class="text-muted small">{{ _("Read-only view") }}</div>
 			</div>
-			<div class="mb-3">
-				<span class="badge badge-{{ 'success' if doc.status == 'Received' else 'warning' if doc.status == 'Partially Received' else 'info' }}">
+			<div>
+				<span class="badge badge-{{ 'success' if doc.status == 'Received' else 'warning' if doc.status == 'Partially Received' else 'secondary' if doc.status == 'Cancelled' else 'info' }}">
 					{{ doc.status }}
 				</span>
 			</div>
-			<div class="mb-4">
-				{{ _("Expected Delivery") }}:
-				{{ frappe.format(doc.expected_delivery_date, {"fieldtype": "Date"}) if doc.expected_delivery_date else "-" }}
+		</div>
+
+		<h3 class="asn-section-title">{{ _("Supplier & dates") }}</h3>
+		<div class="row">
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("Supplier") }}</div>
+				<div class="asn-ro-value">{{ doc.supplier or "-" }}</div>
 			</div>
-			<div class="list-group">
-				{% for item in doc.items %}
-				<div class="list-group-item">
-					<div class="d-flex justify-content-between">
-						<div>
-							<strong>{{ item.item_code }}</strong>
-							<div class="text-muted small">{{ item.item_name or "" }}</div>
-						</div>
-						<div>{{ item.qty }} {{ item.uom }}</div>
-					</div>
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("ASN date") }}</div>
+				<div class="asn-ro-value">
+					{% if doc.asn_date %}{{ frappe.format(doc.asn_date, {"fieldtype": "Date"}) }}{% else %}-{% endif %}
 				</div>
-				{% endfor %}
+			</div>
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("Expected delivery") }}</div>
+				<div class="asn-ro-value">
+					{% if doc.expected_delivery_date %}{{ frappe.format(doc.expected_delivery_date, {"fieldtype": "Date"}) }}{% else %}-{% endif %}
+				</div>
 			</div>
 		</div>
+
+		<h3 class="asn-section-title">{{ _("Supplier invoice") }}</h3>
+		<div class="row">
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("Invoice number") }}</div>
+				<div class="asn-ro-value">{{ doc.supplier_invoice_no or "-" }}</div>
+			</div>
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("Invoice date") }}</div>
+				<div class="asn-ro-value">
+					{% if doc.supplier_invoice_date %}{{ frappe.format(doc.supplier_invoice_date, {"fieldtype": "Date"}) }}{% else %}-{% endif %}
+				</div>
+			</div>
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("Invoice amount") }}</div>
+				<div class="asn-ro-value">
+					{% if doc.supplier_invoice_amount is not none and doc.supplier_invoice_amount != '' %}
+						{{ frappe.format(doc.supplier_invoice_amount, {"fieldtype": "Currency"}) }}
+					{% else %}
+						-
+					{% endif %}
+				</div>
+			</div>
+		</div>
+
+		<h3 class="asn-section-title">{{ _("Transport") }}</h3>
+		<div class="row">
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("LR No") }}</div>
+				<div class="asn-ro-value">{{ doc.lr_no or "-" }}</div>
+			</div>
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("LR date") }}</div>
+				<div class="asn-ro-value">
+					{% if doc.lr_date %}{{ frappe.format(doc.lr_date, {"fieldtype": "Date"}) }}{% else %}-{% endif %}
+				</div>
+			</div>
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("Transporter name") }}</div>
+				<div class="asn-ro-value">{{ doc.transporter_name or "-" }}</div>
+			</div>
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("Vehicle number") }}</div>
+				<div class="asn-ro-value">{{ doc.vehicle_number or "-" }}</div>
+			</div>
+			<div class="col-md-6">
+				<div class="asn-ro-label">{{ _("Driver contact") }}</div>
+				<div class="asn-ro-value">{{ doc.driver_contact or "-" }}</div>
+			</div>
+		</div>
+
+		{% if doc.remarks %}
+		<h3 class="asn-section-title">{{ _("Remarks") }}</h3>
+		<div class="asn-ro-value text-muted" style="white-space: pre-wrap;">{{ doc.remarks }}</div>
+		{% endif %}
+
+		<h3 class="asn-section-title">{{ _("Line items") }}</h3>
+		<div class="table-responsive">
+			<table class="table table-sm table-bordered asn-detail-items">
+				<thead class="thead-light">
+					<tr>
+						<th>{{ _("PO") }}</th>
+						<th>{{ _("Item") }}</th>
+						<th class="text-right">{{ _("Qty") }}</th>
+						<th>{{ _("UOM") }}</th>
+						<th class="text-right">{{ _("Rate") }}</th>
+						<th class="text-right">{{ _("Received") }}</th>
+						<th class="text-right">{{ _("Variance") }}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for item in doc.items %}
+					<tr>
+						<td>{{ item.purchase_order or "-" }}</td>
+						<td>
+							<strong>{{ item.item_code }}</strong>
+							{% if item.item_name %}<div class="text-muted small">{{ item.item_name }}</div>{% endif %}
+							{% if item.batch_no %}<div class="small">{{ _("Batch") }}: {{ item.batch_no }}</div>{% endif %}
+							{% if item.serial_nos %}<div class="small">{{ _("Serial") }}: {{ item.serial_nos }}</div>{% endif %}
+						</td>
+						<td class="text-right">{{ frappe.format(item.qty, {"fieldtype": "Float"}) }}</td>
+						<td>{{ item.uom or "-" }}</td>
+						<td class="text-right">
+							{% if item.rate is not none %}{{ frappe.format(item.rate, {"fieldtype": "Currency"}) }}{% else %}-{% endif %}
+						</td>
+						<td class="text-right">{{ frappe.format(item.received_qty or 0, {"fieldtype": "Float"}) }}</td>
+						<td class="text-right">{{ frappe.format(item.discrepancy_qty or 0, {"fieldtype": "Float"}) }}</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
+
+		{% if doc.qr_code or doc.barcode %}
+		<h3 class="asn-section-title">{{ _("Scan codes") }}</h3>
+		<div class="row">
+			{% if doc.qr_code %}
+			<div class="col-md-6 mb-3">
+				<div class="asn-ro-label">{{ _("QR code") }}</div>
+				<img src="{{ doc.qr_code }}" alt="{{ _('ASN QR') }}" class="img-fluid border rounded" style="max-height: 200px;">
+			</div>
+			{% endif %}
+			{% if doc.barcode %}
+			<div class="col-md-6 mb-3">
+				<div class="asn-ro-label">{{ _("Barcode") }}</div>
+				<img src="{{ doc.barcode }}" alt="{{ _('ASN barcode') }}" class="img-fluid border rounded" style="max-height: 120px;">
+			</div>
+			{% endif %}
+			{% if doc.scan_code_label %}
+			<div class="col-12">
+				<div class="asn-ro-label">{{ _("Scan code label") }}</div>
+				<div class="asn-ro-value font-monospace small">{{ doc.scan_code_label }}</div>
+			</div>
+			{% endif %}
+		</div>
+		{% endif %}
+
+		{% if can_cancel_portal %}
+		<div class="mt-4">
+			<a href="/asn" class="btn btn-light btn-sm mr-2">{{ _("Back to list") }}</a>
+			<button type="button" class="btn btn-outline-danger btn-sm" id="asn-portal-cancel-detail" data-asn-name="{{ doc.name }}">{{ _("Cancel this notice") }}</button>
+		</div>
+		{% else %}
+		<div class="mt-4">
+			<a href="/asn" class="btn btn-light btn-sm">{{ _("Back to list") }}</a>
+		</div>
+		{% endif %}
 	</div>
 </div>
+{% if can_cancel_portal %}
+<script>
+(() => {
+	const csrf = {{ frappe.session.csrf_token | tojson }};
+	const confirmMsg = {{ _("Cancel this shipping notice? This cannot be undone. You can submit a new notice with a different supplier invoice number if you need to replace it.") | tojson }};
+	const genericErr = {{ _("This notice could not be cancelled. Try again or contact your buyer for help.") | tojson }};
+	const methodPath = "/api/method/asn_module.templates.pages.asn.cancel_portal_asn";
+	const btn = document.getElementById("asn-portal-cancel-detail");
+	if (!btn) return;
+
+	function parseServerError(data) {
+		if (!data || !data._server_messages) return null;
+		try {
+			const arr = JSON.parse(data._server_messages);
+			for (const row of arr) {
+				const o = typeof row === "string" ? JSON.parse(row) : row;
+				if (o && o.message) return o.message;
+			}
+		} catch (e) { /* ignore */ }
+		return null;
+	}
+
+	btn.addEventListener("click", async () => {
+		const asnName = btn.getAttribute("data-asn-name") || "";
+		if (!asnName || !confirm(confirmMsg)) return;
+		try {
+			const res = await fetch(methodPath, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json",
+					"X-Frappe-CSRF-Token": csrf,
+				},
+				credentials: "same-origin",
+				body: JSON.stringify({ asn_name: asnName }),
+			});
+			const data = await res.json();
+			const inner = data.message !== undefined ? data.message : data;
+			if (!res.ok || data.exc || (inner && inner.exc)) {
+				alert(parseServerError(data) || genericErr);
+				return;
+			}
+			const redirect = typeof inner === "object" && inner.redirect ? inner.redirect : "/asn";
+			window.location.href = redirect;
+		} catch (e) {
+			alert(genericErr);
+		}
+	});
+})();
+</script>
+{% endif %}
 {% endblock %}
