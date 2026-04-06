@@ -1,10 +1,11 @@
 import frappe
+from frappe import _
 
 
 @frappe.whitelist()
 def seed_minimal_asn():
 	if not frappe.conf.get("allow_tests"):
-		frappe.throw("Only available in test mode")
+		frappe.throw(_("Only available in test mode"))
 	frappe.only_for("System Manager")
 
 	from asn_module.asn_module.doctype.asn.test_asn import (
@@ -29,7 +30,7 @@ def seed_minimal_asn():
 @frappe.whitelist()
 def seed_scan_station_context():
 	if not frappe.conf.get("allow_tests"):
-		frappe.throw("Only available in test mode")
+		frappe.throw(_("Only available in test mode"))
 	frappe.only_for("System Manager")
 
 	from asn_module.asn_module.doctype.asn.test_asn import (
