@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -31,14 +33,38 @@ class _ReportTestBase(FrappeTestCase):
 			asn=self._asn_name,
 			asn_item=self._asn_item,
 			item_code=self._item_code,
+			state="Test",
+			transition_status="OK",
 			ref_doctype="ASN",
 			ref_name=self._asn_name,
 		)
 		defaults.update(kwargs)
-		return emit_asn_item_transition(**defaults)
+		doc = frappe.get_doc(
+			{
+				"doctype": "ASN Transition Log",
+				**defaults,
+				"event_ts": frappe.utils.now_datetime(),
+				"actor": frappe.session.user,
+			}
+		)
+		doc.flags.ignore_links = True
+		doc.insert(ignore_permissions=True)
+		return doc.name
 
 
 class TestTransitionTraceFilters(_ReportTestBase):
+	def test_execute_filters_by_ref_doctype(self):
+		self._emit(state="RefDoctype Test", ref_doctype="Purchase Receipt", ref_name=self._asn2_name)
+		self._emit(state="RefDoctype Test ASN", ref_doctype="ASN", ref_name=self._asn_name)
+
+		_columns, rows = execute({"ref_doctype": "ASN"})
+
+		self.assertIsInstance(rows, list)
+		self.assertTrue(len(rows) > 0, "Expected at least one row with ref_doctype=ASN")
+		for row in rows:
+			ref_display = row[6]
+			self.assertIn("ASN", ref_display, f"Expected 'ASN' in ref_display, got: {ref_display}")
+
 	def test_execute_filters_by_ref_name(self):
 		target_name = self._asn2_name
 
