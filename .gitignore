@@ -57,3 +57,5 @@ cypress/screenshots/
 
 # Aider AI Chat
 .aider*
+
+.coverage
