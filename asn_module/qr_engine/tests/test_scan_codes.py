@@ -23,6 +23,7 @@ class _ScanCodeTestMixin:
 			make_test_asn,
 		)
 		from asn_module.utils.test_setup import before_tests
+
 		before_tests()
 		po = create_purchase_order(qty=10)
 		asn = make_test_asn(purchase_order=po, qty=10)
@@ -225,7 +226,6 @@ class TestVerifyRegistryRowPointsToExistingSource(FrappeTestCase, _ScanCodeTestM
 		doc = frappe.get_doc("Scan Code", name)
 		self.assertFalse(verify_registry_row_points_to_existing_source(doc))
 
-
 	def test_empty_source_name_returns_false(self):
 		name = self._make_scan_code_direct(
 			action_key="create_purchase_receipt",
@@ -240,4 +240,3 @@ class TestVerifyRegistryRowPointsToExistingSource(FrappeTestCase, _ScanCodeTestM
 		doc = frappe.get_doc("Scan Code", name)
 		with patch("asn_module.qr_engine.scan_codes.frappe.db.exists", side_effect=Exception("db error")):
 			self.assertFalse(verify_registry_row_points_to_existing_source(doc))
-

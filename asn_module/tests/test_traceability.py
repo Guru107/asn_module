@@ -95,7 +95,9 @@ class TestGetLatestTransitionRowsForAsn(_TraceabilityTestBase):
 		po2 = create_purchase_order(qty=5)
 		asn2 = make_test_asn(purchase_order=po2, qty=5)
 		asn2.insert(ignore_permissions=True)
-		self._emit(state="Submitted", asn=asn2.name, asn_item=asn2.items[0].name, item_code=asn2.items[0].item_code)
+		self._emit(
+			state="Submitted", asn=asn2.name, asn_item=asn2.items[0].name, item_code=asn2.items[0].item_code
+		)
 		rows = get_latest_transition_rows_for_asn(self._asn_name)
 		items = {row.asn_item for row in rows}
 		self.assertEqual(len(rows), 1)

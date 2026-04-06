@@ -67,4 +67,3 @@ class TestAsnItemTransitionTraceReport(_ReportTestBase):
 	def test_limit_clamped_to_500(self):
 		columns, _rows = execute({"limit_page_length": 999})
 		self.assertEqual(len(columns), 10)
-

@@ -23,6 +23,8 @@ context("Scan Station nightly", () => {
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
 		cy.get(".scan-input").clear();
 		cy.get(".scan-input").type(seededData.scan_code + "{enter}");
-		cy.get(".scan-result, .scan-success, .scan-error", { timeout: 20000 }).should("be.visible");
+		cy.get(".scan-result, .scan-success, .scan-error", { timeout: 20000 }).should(
+			"be.visible"
+		);
 	});
 });

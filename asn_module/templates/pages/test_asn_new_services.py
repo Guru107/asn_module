@@ -67,14 +67,10 @@ class TestParseOptionalNonNegativeRate(FrappeTestCase):
 
 class TestParseRequiredSupplierInvoiceAmount(FrappeTestCase):
 	def test_valid(self):
-		self.assertEqual(
-			parse_required_supplier_invoice_amount("250", row_number=1), 250.0
-		)
+		self.assertEqual(parse_required_supplier_invoice_amount("250", row_number=1), 250.0)
 
 	def test_zero_ok(self):
-		self.assertEqual(
-			parse_required_supplier_invoice_amount("0", row_number=1), 0.0
-		)
+		self.assertEqual(parse_required_supplier_invoice_amount("0", row_number=1), 0.0)
 
 	def test_negative_raises(self):
 		with self.assertRaises(PortalValidationError):

@@ -26,7 +26,9 @@ class TestVerifyScanCodeRegistry(FrappeTestCase):
 			}
 		)
 		doc.insert(ignore_permissions=True, ignore_links=True, ignore_mandatory=True)
-		frappe.db.set_value("Scan Code", doc.name, "source_name", "NONEXISTENT-DOC-XYZ", update_modified=False)
+		frappe.db.set_value(
+			"Scan Code", doc.name, "source_name", "NONEXISTENT-DOC-XYZ", update_modified=False
+		)
 		return doc.name
 
 	def test_all_valid_returns_ok(self):
