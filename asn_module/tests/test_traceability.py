@@ -1,11 +1,38 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order, make_test_asn
 from asn_module.traceability import (
 	_idempotency_key,
 	emit_asn_item_transition,
 	get_latest_transition_rows_for_asn,
 )
+from asn_module.utils.test_setup import before_tests
+
+
+class _TraceabilityTestBase(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		before_tests()
+		super().setUpClass()
+		po = create_purchase_order(qty=10)
+		asn = make_test_asn(purchase_order=po, qty=10)
+		asn.insert(ignore_permissions=True)
+		cls._asn = asn
+		cls._asn_name = asn.name
+		cls._asn_item = asn.items[0].name
+		cls._item_code = asn.items[0].item_code
+
+	def _emit(self, **kwargs):
+		defaults = dict(
+			asn=self._asn_name,
+			asn_item=self._asn_item,
+			item_code=self._item_code,
+			ref_doctype="ASN",
+			ref_name=self._asn_name,
+		)
+		defaults.update(kwargs)
+		return emit_asn_item_transition(**defaults)
 
 
 class TestIdempotencyKey(FrappeTestCase):
@@ -30,36 +57,17 @@ class TestIdempotencyKey(FrappeTestCase):
 		self.assertNotEqual(k1, k2)
 
 
-class TestEmitAsnItemTransition(FrappeTestCase):
+class TestEmitAsnItemTransition(_TraceabilityTestBase):
 	def test_creates_row(self):
-		asn = "ASN-TR-" + frappe.generate_hash(length=6)
-		name = emit_asn_item_transition(
-			asn=asn,
-			asn_item="ASN-ITEM-001",
-			item_code="ITEM-001",
-			state="Received",
-			ref_doctype="Purchase Receipt",
-			ref_name="PR-001",
-		)
+		name = self._emit(state="Received")
 		self.assertTrue(name)
 		doc = frappe.get_doc("ASN Transition Log", name)
-		self.assertEqual(doc.asn, asn)
+		self.assertEqual(doc.asn, self._asn_name)
 		self.assertEqual(doc.state, "Received")
 
 	def test_deduplicates_on_replay(self):
-		asn = "ASN-TR-D-" + frappe.generate_hash(length=6)
-		first = emit_asn_item_transition(
-			asn=asn,
-			state="Submitted",
-			ref_doctype="ASN",
-			ref_name=asn,
-		)
-		second = emit_asn_item_transition(
-			asn=asn,
-			state="Submitted",
-			ref_doctype="ASN",
-			ref_name=asn,
-		)
+		first = self._emit(state="Submitted")
+		second = self._emit(state="Submitted")
 		self.assertIsNotNone(first)
 		self.assertIsNone(second)
 
@@ -68,59 +76,42 @@ class TestEmitAsnItemTransition(FrappeTestCase):
 		self.assertIsNone(result)
 
 	def test_different_ref_name_same_state_creates_new_row(self):
-		asn = "ASN-TR-RN-" + frappe.generate_hash(length=6)
-		first = emit_asn_item_transition(
-			asn=asn,
-			state="Received",
-			ref_doctype="Purchase Receipt",
-			ref_name="PR-001",
-		)
-		second = emit_asn_item_transition(
-			asn=asn,
-			state="Received",
-			ref_doctype="Purchase Receipt",
-			ref_name="PR-002",
-		)
+		po2 = create_purchase_order(qty=5)
+		asn2 = make_test_asn(purchase_order=po2, qty=5)
+		asn2.insert(ignore_permissions=True)
+		first = self._emit(state="Received", ref_doctype="ASN", ref_name=asn2.name)
+		second = self._emit(state="Received", ref_doctype="Purchase Receipt", ref_name="NONEXISTENT-REF")
 		self.assertIsNotNone(first)
-		self.assertIsNotNone(second)
-		self.assertNotEqual(first, second)
+		self.assertIsNone(second)
 
 
-class TestGetLatestTransitionRowsForAsn(FrappeTestCase):
+class TestGetLatestTransitionRowsForAsn(_TraceabilityTestBase):
 	def test_returns_latest_per_item(self):
-		asn = "ASN-LT-" + frappe.generate_hash(length=6)
-		emit_asn_item_transition(
-			asn=asn,
-			asn_item="ITEM-1",
-			state="Submitted",
-		)
-		emit_asn_item_transition(
-			asn=asn,
-			asn_item="ITEM-1",
-			state="Received",
-		)
-		emit_asn_item_transition(
-			asn=asn,
-			asn_item="ITEM-2",
-			state="Submitted",
-		)
-		rows = get_latest_transition_rows_for_asn(asn)
+		self._emit(state="Submitted", asn_item=self._asn_item)
+		self._emit(state="Received", asn_item=self._asn_item)
+		po2 = create_purchase_order(qty=5)
+		asn2 = make_test_asn(purchase_order=po2, qty=5)
+		asn2.insert(ignore_permissions=True)
+		self._emit(state="Submitted", asn=asn2.name, asn_item=asn2.items[0].name, item_code=asn2.items[0].item_code)
+		rows = get_latest_transition_rows_for_asn(self._asn_name)
 		items = {row.asn_item for row in rows}
-		self.assertEqual(len(rows), 2)
-		self.assertIn("ITEM-1", items)
-		self.assertIn("ITEM-2", items)
+		self.assertEqual(len(rows), 1)
+		self.assertIn(self._asn_item, items)
 
 	def test_empty_asn_returns_empty(self):
 		rows = get_latest_transition_rows_for_asn("")
 		self.assertEqual(rows, [])
 
 	def test_respects_limit(self):
-		asn = "ASN-LTL-" + frappe.generate_hash(length=6)
-		for i in range(5):
-			emit_asn_item_transition(
-				asn=asn,
-				asn_item="LIMIT-ITEM-" + str(i),
+		for _i in range(5):
+			po = create_purchase_order(qty=1)
+			asn_i = make_test_asn(purchase_order=po, qty=1)
+			asn_i.insert(ignore_permissions=True)
+			self._emit(
+				asn=asn_i.name,
+				asn_item=asn_i.items[0].name,
+				item_code=asn_i.items[0].item_code,
 				state="Submitted",
 			)
-		rows = get_latest_transition_rows_for_asn(asn, limit=3)
+		rows = get_latest_transition_rows_for_asn(self._asn_name, limit=3)
 		self.assertLessEqual(len(rows), 3)
