@@ -66,58 +66,95 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 
 	def test_ambiguous_qi_raises_validation_error(self):
 		fixture = TestCreateStockTransfer()
-		item_code = fixture._ensure_item()
-		purchase_order = create_purchase_order(
-			transaction_date="2026-03-30",
-			schedule_date="2026-03-31",
-			item_schedule_date="2026-03-31",
-			item_code=item_code,
-			qty=10,
+		original_setting = frappe.db.get_single_value(
+			"Stock Settings", "allow_to_make_quality_inspection_after_purchase_or_delivery"
 		)
-		company = purchase_order.company
-		destination_warehouse = fixture._ensure_destination_warehouse(company)
-		fixture._ensure_item_default(item_code, company, destination_warehouse)
-
-		pr = frappe.get_doc(
-			{
-				"doctype": "Purchase Receipt",
-				"supplier": purchase_order.supplier,
-				"company": company,
-				"items": [
-					{
-						"item_code": item_code,
-						"qty": 5,
-						"rate": purchase_order.items[0].rate,
-						"purchase_order": purchase_order.name,
-						"purchase_order_item": purchase_order.items[0].name,
-						"warehouse": purchase_order.items[0].warehouse,
-					},
-					{
-						"item_code": item_code,
-						"qty": 5,
-						"rate": purchase_order.items[0].rate,
-						"purchase_order": purchase_order.name,
-						"purchase_order_item": purchase_order.items[0].name,
-						"warehouse": purchase_order.items[0].warehouse,
-					},
-				],
-			}
+		frappe.db.set_value(
+			"Stock Settings",
+			"Stock Settings",
+			"allow_to_make_quality_inspection_after_purchase_or_delivery",
+			1,
 		)
-		pr.insert(ignore_permissions=True)
-
-		qi = fixture._make_quality_inspection(pr.name, item_code, "Rejected")
-		with (
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.quality_inspection._attach_qr_to_doc"),
-			patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
-		):
-			qi.submit()
-
-		with self.assertRaises(frappe.ValidationError) as context:
-			create_from_quality_inspection(
-				source_doctype="Quality Inspection",
-				source_name=qi.name,
-				payload={"action": "create_purchase_return"},
+		try:
+			item_code = "_Test ASN Item No Inspect"
+			if not frappe.db.exists("Item", item_code):
+				item_group = frappe.db.get_value("Item Group", {}, "name") or "All Item Groups"
+				uom = frappe.db.get_value("UOM", {}, "name") or "Nos"
+				frappe.get_doc(
+					{
+						"doctype": "Item",
+						"item_code": item_code,
+						"item_name": item_code,
+						"item_group": item_group,
+						"stock_uom": uom,
+					}
+				).insert(ignore_permissions=True)
+			purchase_order = create_purchase_order(
+				transaction_date="2026-03-30",
+				schedule_date="2026-03-31",
+				item_schedule_date="2026-03-31",
+				item_code=item_code,
+				qty=10,
 			)
+			company = purchase_order.company
+			destination_warehouse = fixture._ensure_destination_warehouse(company)
+			fixture._ensure_item_default(item_code, company, destination_warehouse)
 
-		self.assertIn("Multiple", str(context.exception))
+			pr = frappe.get_doc(
+				{
+					"doctype": "Purchase Receipt",
+					"supplier": purchase_order.supplier,
+					"company": company,
+					"items": [
+						{
+							"item_code": item_code,
+							"qty": 5,
+							"rate": purchase_order.items[0].rate,
+							"purchase_order": purchase_order.name,
+							"purchase_order_item": purchase_order.items[0].name,
+							"warehouse": purchase_order.items[0].warehouse,
+						},
+						{
+							"item_code": item_code,
+							"qty": 5,
+							"rate": purchase_order.items[0].rate,
+							"purchase_order": purchase_order.name,
+							"purchase_order_item": purchase_order.items[0].name,
+							"warehouse": purchase_order.items[0].warehouse,
+						},
+					],
+				}
+			)
+			pr.insert(ignore_permissions=True)
+
+			qi = fixture._make_quality_inspection(pr.name, item_code, "Rejected")
+			with (
+				patch(
+					"asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}
+				),
+				patch("asn_module.handlers.quality_inspection._attach_qr_to_doc"),
+				patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
+			):
+				qi.submit()
+
+			pr.reload()
+			pr.items[0].quality_inspection = qi.name
+			pr.items[1].quality_inspection = qi.name
+			pr.save(ignore_permissions=True)
+			pr.submit()
+
+			with self.assertRaises(frappe.ValidationError) as context:
+				create_from_quality_inspection(
+					source_doctype="Quality Inspection",
+					source_name=qi.name,
+					payload={"action": "create_purchase_return"},
+				)
+
+			self.assertIn("Multiple", str(context.exception))
+		finally:
+			frappe.db.set_value(
+				"Stock Settings",
+				"Stock Settings",
+				"allow_to_make_quality_inspection_after_purchase_or_delivery",
+				original_setting,
+			)
