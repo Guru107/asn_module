@@ -66,6 +66,8 @@ if [ "$#" -gt 0 ]; then
 	run_tests_cmd+=(--module "$1")
 fi
 
-coverage run "${run_tests_cmd[@]}"
-coverage report
-coverage xml -o coverage.xml
+pip install coverage > /dev/null 2>&1 || true
+
+COVERAGE_RCFILE="$APP_ROOT/pyproject.toml" python -m coverage run "${run_tests_cmd[@]}"
+COVERAGE_RCFILE="$APP_ROOT/pyproject.toml" python -m coverage report
+COVERAGE_RCFILE="$APP_ROOT/pyproject.toml" python -m coverage xml -o coverage.xml

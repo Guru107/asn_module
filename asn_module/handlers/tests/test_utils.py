@@ -18,6 +18,8 @@ class TestAttachQrToDoc(FrappeTestCase):
 		cls._asn.insert(ignore_permissions=True)
 
 	def test_creates_file_attached_to_target(self):
+		# PNG magic header only — attach_qr_to_doc saves the base64 bytes without
+		# validating image content, so a minimal header is sufficient for testing.
 		minimal_png = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
 		qr_result = {"image_base64": minimal_png}
 		attach_qr_to_doc(self._asn, qr_result, "qr")
