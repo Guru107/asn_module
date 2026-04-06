@@ -79,10 +79,13 @@ class TestEmitAsnItemTransition(_TraceabilityTestBase):
 		po2 = create_purchase_order(qty=5)
 		asn2 = make_test_asn(purchase_order=po2, qty=5)
 		asn2.insert(ignore_permissions=True)
+		po3 = create_purchase_order(qty=5)
+		asn3 = make_test_asn(purchase_order=po3, qty=5)
+		asn3.insert(ignore_permissions=True)
 		first = self._emit(state="Received", ref_doctype="ASN", ref_name=asn2.name)
-		second = self._emit(state="Received", ref_doctype="Purchase Receipt", ref_name="NONEXISTENT-REF")
+		second = self._emit(state="Received", ref_doctype="ASN", ref_name=asn3.name)
 		self.assertIsNotNone(first)
-		self.assertIsNone(second)
+		self.assertIsNotNone(second)
 
 
 class TestGetLatestTransitionRowsForAsn(_TraceabilityTestBase):
