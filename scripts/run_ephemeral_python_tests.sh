@@ -66,10 +66,8 @@ if [ "$#" -gt 0 ]; then
 	run_tests_cmd+=(--module "$1")
 fi
 
-pip install "coverage>=7,<8" > /dev/null 2>&1 || true
-
-export COVERAGE_RCFILE="$APP_ROOT/pyproject.toml"
-python -m coverage run "${run_tests_cmd[@]}" || true
-python -m coverage combine
-python -m coverage report || true
-python -m coverage xml -o coverage.xml || true
+# Run tests as the exit gate — always exit 0 from this script so CI uses
+# the test result as the authoritative signal. Coverage collection via
+# coverage.py subprocess injection is unreliable with bench (Frappe spawns
+# workers); CI uses Frappe's --coverage flag instead.
+"${run_tests_cmd[@]}"
