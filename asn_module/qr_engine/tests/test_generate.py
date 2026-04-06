@@ -55,3 +55,18 @@ class TestGenerate(UnitTestCase):
 		self.assertIn("human_readable", result)
 		self.assertIn("image_base64", result)
 		self.assertTrue(result["image_base64"])
+	def test_generate_barcode_falls_back_on_type_error(self):
+		"""If barcode writer raises TypeError on options, try without options."""
+		import io
+		with patch("asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"):
+			with patch("asn_module.qr_engine.generate.barcode") as mock_barcode:
+				mock_code = mock_barcode.get.return_value
+				mock_code.writer.return_value = mock_barcode.get.return_value.writer.return_value
+				mock_code.write.side_effect = [TypeError("bad options"), None]
+				result = generate_barcode(
+					action="create_purchase_receipt",
+					source_doctype="ASN",
+					source_name="ASN-00001",
+				)
+			self.assertEqual(result["scan_code"], "FIXEDCODE123")
+

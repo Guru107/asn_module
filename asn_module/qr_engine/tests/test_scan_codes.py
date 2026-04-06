@@ -224,3 +224,20 @@ class TestVerifyRegistryRowPointsToExistingSource(FrappeTestCase, _ScanCodeTestM
 		)
 		doc = frappe.get_doc("Scan Code", name)
 		self.assertFalse(verify_registry_row_points_to_existing_source(doc))
+
+
+	def test_empty_source_name_returns_false(self):
+		name = self._make_scan_code_direct(
+			action_key="create_purchase_receipt",
+			source_doctype="ASN",
+			source_name="",
+		)
+		doc = frappe.get_doc("Scan Code", name)
+		self.assertFalse(verify_registry_row_points_to_existing_source(doc))
+
+	def test_exception_during_db_check_returns_false(self):
+		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		doc = frappe.get_doc("Scan Code", name)
+		with patch("asn_module.qr_engine.scan_codes.frappe.db.exists", side_effect=Exception("db error")):
+			self.assertFalse(verify_registry_row_points_to_existing_source(doc))
+
