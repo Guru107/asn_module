@@ -13,8 +13,10 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 	def setUpClass(cls):
 		before_tests()
 		if not frappe.db.has_column("Quality Inspection", "purchase_receipt_item"):
+			frappe.db.commit()
 			frappe.db.sql(
-				"ALTER TABLE `tabQuality Inspection` ADD COLUMN `purchase_receipt_item` VARCHAR(255)"
+				"ALTER TABLE `tabQuality Inspection` ADD COLUMN `purchase_receipt_item` VARCHAR(255)",
+				ignore_ddl=True,
 			)
 		super().setUpClass()
 
