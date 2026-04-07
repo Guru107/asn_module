@@ -69,11 +69,6 @@ def seed_supplier_context():
 		frappe.throw(_("Only available in test mode"))
 	frappe.only_for("System Manager")
 
-	from asn_module.templates.pages.asn import (
-		_get_supplier_for_user,
-		get_open_purchase_orders_for_supplier,
-	)
-
 	supplier = frappe.get_doc(
 		{
 			"doctype": "Supplier",
@@ -122,13 +117,27 @@ def seed_asn_with_items():
 
 	from asn_module.asn_module.doctype.asn.test_asn import (
 		create_purchase_order,
-		make_test_asn_with_two_items,
+		make_test_asn,
 		real_asn_attachment_context,
 	)
 
 	po = create_purchase_order(qty=10)
-	asn = make_test_asn_with_two_items(purchase_order=po, qty=5)
+	asn = make_test_asn(purchase_order=po, qty=10)
 	asn.insert(ignore_permissions=True)
+
+	po2 = create_purchase_order(qty=5)
+	po2_item = po2.items[0]
+	asn.append(
+		"items",
+		{
+			"item_code": po2_item.item_code,
+			"qty": 5,
+			"rate": po2_item.rate,
+			"uom": po2_item.uom,
+			"stock_uom": po2_item.stock_uom,
+		},
+	)
+	asn.save(ignore_permissions=True)
 	with real_asn_attachment_context():
 		asn.submit()
 
