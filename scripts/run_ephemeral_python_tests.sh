@@ -70,4 +70,18 @@ fi
 # the test result as the authoritative signal. Coverage collection via
 # coverage.py subprocess injection is unreliable with bench (Frappe spawns
 # workers); CI uses Frappe's --coverage flag instead.
+if [ "${CI:-}" = "true" ]; then
+	run_tests_cmd+=(--coverage)
+fi
+
 "${run_tests_cmd[@]}"
+
+# In CI, capture test exit code separately since the script always exits 0.
+# This lets CI enforce fail_under = 90 in pyproject.toml.
+if [ "${CI:-}" = "true" ]; then
+	test_exit=$?
+	if [ $test_exit -ne 0 ]; then
+		echo "Tests failed with exit code $test_exit" >&2
+	fi
+	exit $test_exit
+fi

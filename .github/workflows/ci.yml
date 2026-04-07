@@ -104,7 +104,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           chmod +x scripts/run_ephemeral_python_tests.sh
-          BENCH_ROOT=/home/runner/frappe-bench DB_ROOT_PASSWORD=root scripts/run_ephemeral_python_tests.sh
+          BENCH_ROOT=/home/runner/frappe-bench DB_ROOT_PASSWORD=root CI=true scripts/run_ephemeral_python_tests.sh
         env:
           TYPE: server
 
