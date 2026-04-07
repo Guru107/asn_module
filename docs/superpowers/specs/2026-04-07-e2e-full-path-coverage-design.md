@@ -18,16 +18,18 @@
 
 ### 2.1 Pages in scope
 
-| Page | Route | Suite | Notes |
-|------|-------|-------|-------|
-| ASN list | `/asn` | smoke + nightly | Already covered |
-| Scan station | `/scan-station` | smoke + nightly | Already covered |
-| ASN portal (view) | `/asn` (portal) | smoke + nightly | Portal view of ASN list |
-| New ASN (single) | `/purchasing/asn-new` | smoke + nightly | Portal creation, single mode |
-| New ASN (bulk) | `/purchasing/asn-new` | smoke + nightly | Same route, bulk mode |
-| ASN New Services | `/purchasing/asn-new-services` | smoke + nightly | Invoice validation helpers |
-| ASN detail (desk) | `/asn/<name>` | smoke | Open submitted ASN, verify fields |
-| Transition trace (desk) | `/report/asn-item-transition-trace` | smoke | Report page load + basic filter |
+
+| Page                    | Route                               | Suite           | Notes                             |
+| ----------------------- | ----------------------------------- | --------------- | --------------------------------- |
+| ASN list                | `/asn`                              | smoke + nightly | Already covered                   |
+| Scan station            | `/scan-station`                     | smoke + nightly | Already covered                   |
+| ASN portal (view)       | `/asn` (portal)                     | smoke + nightly | Portal view of ASN list           |
+| New ASN (single)        | `/purchasing/asn-new`               | smoke + nightly | Portal creation, single mode      |
+| New ASN (bulk)          | `/purchasing/asn-new`               | smoke + nightly | Same route, bulk mode             |
+| ASN New Services        | `/purchasing/asn-new-services`      | smoke + nightly | Invoice validation helpers        |
+| ASN detail (desk)       | `/asn/<name>`                       | smoke           | Open submitted ASN, verify fields |
+| Transition trace (desk) | `/report/asn-item-transition-trace` | smoke           | Report page load + basic filter   |
+
 
 ### 2.2 Out of scope
 
@@ -64,10 +66,12 @@ cypress/
 ### 3.2 Seed helpers (`asn_module/utils/cypress_helpers.py`)
 
 Existing helpers:
+
 - `seed_minimal_asn()` — creates submitted ASN + PO
 - `seed_scan_station_context()` — creates ASN + scan code for dispatch flow
 
 New helpers needed for portal and report coverage:
+
 - `seed_supplier_context()` — creates supplier + portal user + PO (for portal pages)
 - `seed_asn_with_items()` — creates ASN with multiple items (for detail/transition trace)
 - `seed_quality_inspection_context()` — creates PO, ASN, PR, QI (for QI-related error paths)
@@ -75,11 +79,13 @@ New helpers needed for portal and report coverage:
 ### 3.3 Data strategy (Hybrid)
 
 **Server-seeded (via `cy.call()`):**
+
 - Supplier + portal user + open PO
 - ASN header + items (for desk detail view)
 - Scan code + dispatched ASN (for scan station)
 
 **UX-flow (real user steps):**
+
 - Portal ASN creation (single + bulk): fill form, submit, verify success/error
 - All validation error states on portal pages
 
@@ -90,28 +96,34 @@ New helpers needed for portal and report coverage:
 ### 4.1 Smoke suite (critical paths only)
 
 #### `asn_desk_smoke.js`
+
 - Opens ASN list without console errors *(already exists)*
 - **New:** opens ASN detail for a submitted ASN, shows key fields
 - **New:** shows no-access message for non-portal users on portal route
 
 #### `scan_station_smoke.js`
+
 - Renders scan input, rejects legacy token *(already exists)*
 - **New:** after seeding, accepts valid scan code and shows success feedback
 
 #### `asn_portal_smoke.js` (NEW)
+
 - Portal user can see their ASN list
 - Opens ASN detail from portal list
 
 #### `asn_new_portal_smoke.js` (NEW)
+
 - Single mode: rejects empty form, accepts valid single ASN submission
 - Bulk mode: rejects empty CSV, accepts valid bulk CSV submission
 
 #### `asn_new_services_smoke.js` (NEW)
+
 - Invoice number reuse is rejected with clear error
 - Quantity exceeding remaining is rejected
 - All PO SR No duplicates in same invoice group rejected
 
 #### `transition_trace_smoke.js` (NEW)
+
 - Report page loads and renders
 - Basic date filter works
 - No errors in console on load
@@ -119,11 +131,13 @@ New helpers needed for portal and report coverage:
 ### 4.2 Nightly suite (all error branches)
 
 #### `asn_desk_nightly.js`
+
 - Seeded ASN appears in list view
 - Filter by status (Open, Submitted, Received, Closed)
 - Open ASN detail shows correct fields
 
 #### `scan_station_nightly.js`
+
 - All invalid token formats rejected with specific messages
 - Unknown scan code rejected
 - Valid scan code → success + scan result displayed
@@ -131,11 +145,13 @@ New helpers needed for portal and report coverage:
 - Dispatch flow with rejected QI → error state
 
 #### `asn_portal_nightly.js`
+
 - Non-supplier user denied access
 - ASN with status Closed hides submit action
 - ASN items show correct remaining qty
 
 #### `asn_new_portal_nightly.js`
+
 - Single mode: each PortalValidationError branch covered
   - Missing supplier
   - Zero qty
@@ -148,6 +164,7 @@ New helpers needed for portal and report coverage:
   - Supplier invoice amount mismatch
 
 #### `asn_new_services_nightly.js`
+
 - `validate_supplier_invoices_not_reused` — duplicate invoice rejected
 - `validate_qty_within_remaining` — over-limit rejected
 - `validate_no_duplicate_po_sr_no` — duplicate in group rejected
@@ -159,7 +176,7 @@ New helpers needed for portal and report coverage:
 
 - v15: `routePrefix = "app"` → URLs start with `/app/...`
 - v16: `routePrefix = "app"` → URLs start with `/app/...` (confirmed working for both in current suite)
-- Helper: `const route = (path) => \`/${Cypress.env("routePrefix")}/\${path.replace(/^\\//, "")}\``
+- Helper: `const route = (path) => \`/${Cypress.env("routePrefix")}/{path.replace(/^//, "")}`
 
 ---
 
@@ -168,6 +185,7 @@ New helpers needed for portal and report coverage:
 ### 5.1 `seed_supplier_context()`
 
 Creates:
+
 - Supplier doc
 - Portal user with Supplier role
 - 2 POs with items (open, partially received)
@@ -177,6 +195,7 @@ Returns: `{ supplier, portal_user, purchase_orders: [{name, items}] }`
 ### 5.2 `seed_asn_with_items()`
 
 Creates:
+
 - Supplier + portal user
 - PO with multiple items
 - ASN with multiple items (submitted)
@@ -186,6 +205,7 @@ Returns: `{ asn_name, item_count, items: [{name, item_code, qty}] }`
 ### 5.3 `seed_quality_inspection_context()`
 
 Creates:
+
 - PO, ASN, PR (submitted), QI (Accepted + Rejected per item)
 
 Returns: `{ asn_name, pr_name, qi_accepted, qi_rejected }`
@@ -215,20 +235,22 @@ Returns: `{ asn_name, pr_name, qi_accepted, qi_rejected }`
 
 ## 8. File changes
 
-| File | Change |
-|------|--------|
-| `asn_module/utils/cypress_helpers.py` | Add 3 new seed helpers |
-| `cypress/integration/smoke/asn_desk_smoke.js` | Expand (detail view) |
-| `cypress/integration/smoke/scan_station_smoke.js` | Expand (valid scan) |
-| `cypress/integration/smoke/asn_portal_smoke.js` | **NEW** |
-| `cypress/integration/smoke/asn_new_portal_smoke.js` | **NEW** |
-| `cypress/integration/smoke/asn_new_services_smoke.js` | **NEW** |
-| `cypress/integration/smoke/transition_trace_smoke.js` | **NEW** |
-| `cypress/integration/nightly/asn_desk_nightly.js` | Expand |
-| `cypress/integration/nightly/scan_station_nightly.js` | Expand (all error states) |
-| `cypress/integration/nightly/asn_portal_nightly.js` | **NEW** |
-| `cypress/integration/nightly/asn_new_portal_nightly.js` | **NEW** |
-| `cypress/integration/nightly/asn_new_services_nightly.js` | **NEW** |
+
+| File                                                      | Change                    |
+| --------------------------------------------------------- | ------------------------- |
+| `asn_module/utils/cypress_helpers.py`                     | Add 3 new seed helpers    |
+| `cypress/integration/smoke/asn_desk_smoke.js`             | Expand (detail view)      |
+| `cypress/integration/smoke/scan_station_smoke.js`         | Expand (valid scan)       |
+| `cypress/integration/smoke/asn_portal_smoke.js`           | **NEW**                   |
+| `cypress/integration/smoke/asn_new_portal_smoke.js`       | **NEW**                   |
+| `cypress/integration/smoke/asn_new_services_smoke.js`     | **NEW**                   |
+| `cypress/integration/smoke/transition_trace_smoke.js`     | **NEW**                   |
+| `cypress/integration/nightly/asn_desk_nightly.js`         | Expand                    |
+| `cypress/integration/nightly/scan_station_nightly.js`     | Expand (all error states) |
+| `cypress/integration/nightly/asn_portal_nightly.js`       | **NEW**                   |
+| `cypress/integration/nightly/asn_new_portal_nightly.js`   | **NEW**                   |
+| `cypress/integration/nightly/asn_new_services_nightly.js` | **NEW**                   |
+
 
 ---
 
