@@ -1,6 +1,5 @@
-from unittest.mock import patch
-
 from copy import deepcopy
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -85,9 +84,10 @@ class TestVerifyQrActionRegistry(FrappeTestCase):
 	def test_mismatched_handler_detected(self):
 		reg = frappe.get_doc("QR Action Registry")
 		saved_actions = deepcopy(reg.actions)
-		if row.action_key == "confirm_putaway":
-			row.handler_method = "wrong.handler.path"
-			break
+		for row in reg.actions:
+			if row.action_key == "confirm_putaway":
+				row.handler_method = "wrong.handler.path"
+				break
 		reg.save(ignore_permissions=True)
 		try:
 			result = verify_qr_action_registry()
