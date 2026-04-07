@@ -26,4 +26,11 @@ context("ASN desk nightly", () => {
 		cy.get(".page-head", { timeout: 20000 }).should("exist");
 		cy.get(".frappe-control[data-fieldname='supplier']", { timeout: 15000 }).should("exist");
 	});
+
+	it("filter by status Submitted shows submitted ASNs", () => {
+		cy.visit(route("asn"), { failOnStatusCode: false });
+		cy.get(".filter-section .input-with-select", { timeout: 20000 }).should("exist");
+		cy.get(".filter-section").contains("Submitted").click();
+		cy.get(".list-row", { timeout: 15000 }).should("have.length.greaterThan", 0);
+	});
 });

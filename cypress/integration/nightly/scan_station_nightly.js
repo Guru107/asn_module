@@ -27,4 +27,12 @@ context("Scan Station nightly", () => {
 			"be.visible"
 		);
 	});
+
+	it("dispatch with rejected QI shows error feedback", () => {
+		cy.visit(route("scan-station"), { failOnStatusCode: false });
+		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
+		cy.get(".scan-input").clear();
+		cy.get(".scan-input").type("INVALID-REJECTED{enter}");
+		cy.get(".scan-error", { timeout: 15000 }).should("be.visible");
+	});
 });
