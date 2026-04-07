@@ -61,3 +61,112 @@ def seed_scan_station_context():
 		"scan_code": scan_code_value,
 		"scan_code_name": scan_code_name,
 	}
+
+
+@frappe.whitelist()
+def seed_supplier_context():
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
+	from asn_module.templates.pages.asn import (
+		_get_supplier_for_user,
+		get_open_purchase_orders_for_supplier,
+	)
+
+	supplier = frappe.get_doc(
+		{
+			"doctype": "Supplier",
+			"supplier_name": "Test Supplier E2E",
+			"supplier_group": "All Supplier Groups",
+			"supplier_type": "Individual",
+		}
+	).insert(ignore_permissions=True)
+
+	portal_user = frappe.get_doc(
+		{
+			"doctype": "User",
+			"email": "supplier_e2e@test.com",
+			"first_name": "Supplier",
+			"send_welcome_email": 0,
+			"user_type": "Website User",
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.set_value("User", portal_user.name, "enabled", 1)
+
+	frappe.permissions.add_user_permission("Supplier", supplier.name, portal_user.name)
+	portal_user_doc = frappe.get_doc("User", portal_user.name)
+	portal_user_doc.append("roles", {"doctype": "Has Role", "role": "Supplier"})
+	portal_user_doc.save(ignore_permissions=True)
+
+	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+
+	po1 = create_purchase_order(qty=10, supplier=supplier.name)
+	po2 = create_purchase_order(qty=5, supplier=supplier.name)
+
+	return {
+		"supplier": supplier.name,
+		"portal_user": portal_user.name,
+		"purchase_orders": [
+			{"name": po1.name, "items": [i.as_dict() for i in po1.items]},
+			{"name": po2.name, "items": [i.as_dict() for i in po2.items]},
+		],
+	}
+
+
+@frappe.whitelist()
+def seed_asn_with_items():
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
+	from asn_module.asn_module.doctype.asn.test_asn import (
+		create_purchase_order,
+		make_test_asn_with_two_items,
+		real_asn_attachment_context,
+	)
+
+	po = create_purchase_order(qty=10)
+	asn = make_test_asn_with_two_items(purchase_order=po, qty=5)
+	asn.insert(ignore_permissions=True)
+	with real_asn_attachment_context():
+		asn.submit()
+
+	return {
+		"asn_name": asn.name,
+		"item_count": len(asn.items),
+		"items": [{"name": i.name, "item_code": i.item_code, "qty": i.qty} for i in asn.items],
+	}
+
+
+@frappe.whitelist()
+def seed_quality_inspection_context():
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
+	from asn_module.asn_module.doctype.asn.test_asn import (
+		create_purchase_order,
+		make_test_asn,
+		real_asn_attachment_context,
+	)
+	from asn_module.handlers.tests.test_stock_transfer import TestCreateStockTransfer
+
+	fixture = TestCreateStockTransfer()
+	po = create_purchase_order(qty=10)
+	asn = make_test_asn(purchase_order=po, qty=10)
+	asn.insert(ignore_permissions=True)
+
+	pr = fixture._make_purchase_receipt_with_qi(
+		"Accepted", submit_quality_inspection=False, submit_purchase_receipt=False
+	)
+	pr_name = pr[0].name
+	accepted_qi = fixture._make_quality_inspection(pr_name, asn.items[0].item_code, "Accepted")
+	rejected_qi = fixture._make_quality_inspection(pr_name, asn.items[0].item_code, "Rejected")
+
+	return {
+		"asn_name": asn.name,
+		"pr_name": pr_name,
+		"qi_accepted": accepted_qi.name,
+		"qi_rejected": rejected_qi.name,
+	}
