@@ -1,7 +1,6 @@
 """Integration tests for error branches in ``asn_module/qr_engine/dispatch.py``."""
 
 import secrets
-
 from unittest.mock import patch
 
 import frappe

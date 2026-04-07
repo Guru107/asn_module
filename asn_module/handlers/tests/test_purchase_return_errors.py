@@ -50,7 +50,7 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 		self.assertEqual(return_pr.items[0].purchase_receipt_item, pr.items[0].name)
 
 	def test_qi_item_not_found_in_pr_raises(self):
-		pr, qi = self._make_rejected_purchase_receipt_with_qi()
+		_pr, qi = self._make_rejected_purchase_receipt_with_qi()
 		frappe.set_user("Administrator")
 		frappe.db.set_value("Quality Inspection", qi.name, "purchase_receipt_item", "NONEXISTENT-ROW")
 		frappe.db.set_value("Quality Inspection", qi.name, "item_code", "NONEXISTENT-ITEM")

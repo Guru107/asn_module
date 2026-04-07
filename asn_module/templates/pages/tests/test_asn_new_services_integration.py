@@ -44,7 +44,7 @@ class TestAsnNewServicesIntegration(FrappeTestCase):
 				for row in rows:
 					self.assertEqual(row.parent, po.name)
 
-			for poi_name, remaining in remaining_qty_by_name.items():
+			for _poi_name, remaining in remaining_qty_by_name.items():
 				self.assertIsInstance(remaining, float)
 				self.assertGreaterEqual(remaining, 0)
 
