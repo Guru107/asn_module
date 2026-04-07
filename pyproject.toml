@@ -60,3 +60,24 @@ typing-modules = ["frappe.types.DF"]
 quote-style = "double"
 indent-style = "tab"
 docstring-code-format = true
+
+[tool.coverage.run]
+source = ["asn_module"]
+omit = [
+	"*/tests/*",
+	"*/patches/*",
+	"*/config/*",
+	"*/__init__.py",
+	"asn_module/setup.py",
+	"*/templates/pages/test_*.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_empty = true
+exclude_lines = [
+	"pragma: no cover",
+	"if __name__ == .__main__.",
+	"raise NotImplementedError",
+]

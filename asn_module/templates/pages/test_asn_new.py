@@ -2,6 +2,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import frappe
 from frappe.exceptions import ValidationError as FrappeValidationError
 from frappe.tests.utils import FrappeTestCase
 
@@ -307,3 +308,63 @@ class TestASNNewPortalPage(FrappeTestCase):
 		):
 			with self.assertRaises(PortalValidationError):
 				asn_new._create_single_asn("Supp-001")
+
+	def test_get_context_returns_early_on_get(self):
+		context = SimpleNamespace()
+		request = SimpleNamespace(method="GET", files={})
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
+			),
+		):
+			asn_new.get_context(context)
+		self.assertEqual(context.title, "New ASN")
+		self.assertEqual(context.single_errors, [])
+
+	def test_request_supplier_invoice_amount_valid(self):
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace()),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"supplier_invoice_amount": "100"}),
+		):
+			result = asn_new._request_supplier_invoice_amount()
+		self.assertEqual(result, 100.0)
+
+	def test_request_supplier_invoice_amount_negative_raises(self):
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace()),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"supplier_invoice_amount": "-10"}),
+			self.assertRaises(PortalValidationError),
+		):
+			asn_new._request_supplier_invoice_amount()
+
+	def test_request_supplier_invoice_amount_empty_raises(self):
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace()),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"supplier_invoice_amount": ""}),
+			self.assertRaises(PortalValidationError),
+		):
+			asn_new._request_supplier_invoice_amount()
+
+	def test_default_asn_route_format(self):
+		route = asn_new._default_asn_route("ASN-001")
+		self.assertTrue(route.startswith("asn/"))
+
+	def test_get_context_rejects_non_supplier(self):
+		context = SimpleNamespace()
+		request = SimpleNamespace(method="GET", files={})
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="non-supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value=None),
+			self.assertRaises(frappe.PermissionError),
+		):
+			asn_new.get_context(context)
