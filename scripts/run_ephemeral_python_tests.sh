@@ -87,9 +87,7 @@ set +e
 test_exit=$?
 set -e
 
-if [ "${CI:-}" = "true" ]; then
-	if [ $test_exit -ne 0 ]; then
-		echo "Tests failed with exit code $test_exit" >&2
-	fi
-	exit $test_exit
+if [ $test_exit -ne 0 ]; then
+	echo "Tests failed with exit code $test_exit" >&2
 fi
+exit $test_exit
