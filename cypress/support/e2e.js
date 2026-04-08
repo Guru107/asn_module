@@ -4,14 +4,18 @@
 require("../../../frappe/cypress/support/e2e.js");
 
 Cypress.Commands.add("call_api", (method, args = {}) => {
-	return cy.request({
-		url: `/api/method/${method}`,
-		method: "POST",
-		body: args,
-		form: true,
-		headers: {
-			Accept: "application/json",
-		},
-		failOnStatusCode: true,
-	});
+	const hasArgs = Object.keys(args || {}).length > 0;
+	return cy
+		.request({
+			url: `/api/method/${method}`,
+			method: hasArgs ? "POST" : "GET",
+			body: hasArgs ? args : undefined,
+			form: hasArgs,
+			headers: { Accept: "application/json" },
+			failOnStatusCode: true,
+		})
+		.then((response) => {
+			// Keep specs simple: return method payload directly.
+			return response.body && response.body.message ? response.body.message : response.body;
+		});
 });
