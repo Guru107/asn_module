@@ -60,19 +60,12 @@ bench --site "$SITE_NAME" install-app erpnext
 bench --site "$SITE_NAME" install-app asn_module
 bench build --app asn_module
 
-# Frappe/ERPNext app installation can already seed setup records.
-# Re-running setup-wizard fixtures on top of an already seeded tree can
-# trigger nested-set recursion and leave the site in a partial state.
-if bench --site "$SITE_NAME" execute frappe.db.exists --args '["Item Group","All Item Groups"]' | grep -qi "true"; then
-	echo "ERPNext item fixtures already present; skipping setup wizard fixture install."
-else
-	echo "Installing ERPNext setup wizard fixtures for India..."
-	bench --site "$SITE_NAME" execute erpnext.setup.setup_wizard.operations.install_fixtures.install --args '["India"]'
-fi
-
 bench --site "$SITE_NAME" set-config allow_tests true
 # Ensure Cypress baseUrl resolves to the runtime serve port in CI.
 bench --site "$SITE_NAME" set-config host_name "http://${SITE_NAME}:${SERVE_PORT}"
+# `before_tests` handles ERPNext baseline setup deterministically for this app.
+# Avoid setup-wizard fixture replays here because they intermittently trigger
+# nested-set recursion and pollute CI logs without adding test coverage value.
 bench --site "$SITE_NAME" execute asn_module.utils.test_setup.before_tests
 
 bench use "$SITE_NAME"
