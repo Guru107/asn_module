@@ -40,6 +40,17 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 		if frappe.db.exists("Scan Code", code):
 			frappe.delete_doc("Scan Code", code, force=True, ignore_permissions=True)
 
+	def tearDown(self):
+		# Keep this suite isolated: these error-path tests intentionally create
+		# scan codes with a non-existent source document.
+		for name in frappe.get_all(
+			"Scan Code",
+			filters={"source_doctype": "ASN", "source_name": "Fake-ASN-For-Test"},
+			pluck="name",
+		):
+			frappe.delete_doc("Scan Code", name, force=True, ignore_permissions=True)
+		super().tearDown()
+
 	def test_handler_returning_string_raises_validation_error(self):
 		code = self._create_scan_code("create_purchase_receipt", "ASN", "Fake-ASN-For-Test")
 		self.addCleanup(self._cleanup_scan_code, code)
