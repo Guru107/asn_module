@@ -8,7 +8,7 @@ context("ASN portal nightly", () => {
 
 	before(() => {
 		cy.login();
-		cy.call("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
+		cy.call_api("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
 			seededData = result.message || result;
 		});
 	});

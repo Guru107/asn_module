@@ -18,3 +18,16 @@ if (!frappeSupport) {
 }
 // eslint-disable-next-line import/no-dynamic-require, global-require
 require(frappeSupport);
+
+Cypress.Commands.add("call_api", (method, args = {}) => {
+	return cy.request({
+		url: `/api/method/${method}`,
+		method: "POST",
+		body: args,
+		form: true,
+		headers: {
+			Accept: "application/json",
+		},
+		failOnStatusCode: true,
+	});
+});

@@ -8,9 +8,11 @@ context("Scan Station nightly", () => {
 
 	before(() => {
 		cy.login();
-		cy.call("asn_module.utils.cypress_helpers.seed_scan_station_context").then((result) => {
-			seededData = result.message || result;
-		});
+		cy.call_api("asn_module.utils.cypress_helpers.seed_scan_station_context").then(
+			(result) => {
+				seededData = result.message || result;
+			}
+		);
 	});
 
 	it("renders scan input", () => {

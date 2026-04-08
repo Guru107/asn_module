@@ -8,7 +8,7 @@ context("ASN New portal nightly — single mode errors", () => {
 
 	before(() => {
 		cy.login();
-		cy.call("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
+		cy.call_api("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
 			seededData = result.message || result;
 		});
 	});
@@ -49,7 +49,7 @@ context("ASN New portal nightly — bulk mode errors", () => {
 
 	before(() => {
 		cy.login();
-		cy.call("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
+		cy.call_api("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
 			seededData = result.message || result;
 		});
 	});

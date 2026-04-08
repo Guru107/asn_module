@@ -8,7 +8,7 @@ context("ASN desk nightly", () => {
 
 	before(() => {
 		cy.login();
-		cy.call("asn_module.utils.cypress_helpers.seed_minimal_asn").then((result) => {
+		cy.call_api("asn_module.utils.cypress_helpers.seed_minimal_asn").then((result) => {
 			seededData = result.message || result;
 		});
 	});
