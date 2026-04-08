@@ -60,20 +60,14 @@ bench --site "$SITE_NAME" install-app erpnext
 bench --site "$SITE_NAME" install-app asn_module
 bench build --app asn_module
 
-set +e
-fixtures_output="$(
-	bench --site "$SITE_NAME" execute erpnext.setup.setup_wizard.operations.install_fixtures.install --args '["India"]' 2>&1
-)"
-fixtures_exit=$?
-set -e
-
-if [ "$fixtures_exit" -ne 0 ]; then
-	if printf '%s' "$fixtures_output" | grep -q "NestedSetRecursionError\|Item cannot be added to its own descendants"; then
-		echo "Warning: setup wizard fixture install hit nested-set recursion; continuing with test bootstrap."
-	else
-		printf '%s\n' "$fixtures_output" >&2
-		exit "$fixtures_exit"
-	fi
+# Frappe/ERPNext app installation can already seed setup records.
+# Re-running setup-wizard fixtures on top of an already seeded tree can
+# trigger nested-set recursion and leave the site in a partial state.
+if bench --site "$SITE_NAME" execute frappe.db.exists --args '["Item Group","All Item Groups"]' | grep -qi "true"; then
+	echo "ERPNext item fixtures already present; skipping setup wizard fixture install."
+else
+	echo "Installing ERPNext setup wizard fixtures for India..."
+	bench --site "$SITE_NAME" execute erpnext.setup.setup_wizard.operations.install_fixtures.install --args '["India"]'
 fi
 
 bench --site "$SITE_NAME" set-config allow_tests true

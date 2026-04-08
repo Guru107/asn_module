@@ -9,7 +9,13 @@ context("Transition trace smoke", () => {
 	});
 
 	it("report page loads and renders", () => {
-		cy.visit(route("report/asn-item-transition-trace"), { failOnStatusCode: false });
-		cy.get(".page-head, .page-content, .report-page", { timeout: 20000 }).should("exist");
+		cy.visit(route("query-report/ASN%20Item%20Transition%20Trace"), {
+			failOnStatusCode: false,
+		});
+		cy.location("pathname", { timeout: 20000 }).should(
+			"include",
+			"/query-report/ASN%20Item%20Transition%20Trace"
+		);
+		cy.get(".query-report, .report-wrapper, .page-form", { timeout: 20000 }).should("exist");
 	});
 });
