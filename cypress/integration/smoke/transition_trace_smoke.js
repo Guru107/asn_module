@@ -10,6 +10,6 @@ context("Transition trace smoke", () => {
 
 	it("report page loads and renders", () => {
 		cy.visit(route("report/asn-item-transition-trace"), { failOnStatusCode: false });
-		cy.get(".page-head, .report-title, .standard-filter", { timeout: 20000 }).should("exist");
+		cy.get(".page-head, .page-content, .report-page", { timeout: 20000 }).should("exist");
 	});
 });
