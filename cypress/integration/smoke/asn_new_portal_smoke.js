@@ -1,13 +1,21 @@
 context("ASN New portal smoke", () => {
+	let portalUser;
+	let portalPassword;
+
 	before(() => {
 		cy.seed_context("asn_module.utils.cypress_helpers.seed_supplier_context").then(
 			(seededData) => {
-				cy.login(seededData.portal_user, seededData.portal_password);
-				cy.request("/api/method/frappe.auth.get_logged_user")
-					.its("body.message")
-					.should("eq", seededData.portal_user);
+				portalUser = seededData.portal_user;
+				portalPassword = seededData.portal_password;
 			}
 		);
+	});
+
+	beforeEach(() => {
+		cy.login(portalUser, portalPassword);
+		cy.request("/api/method/frappe.auth.get_logged_user")
+			.its("body.message")
+			.should("eq", portalUser);
 	});
 
 	it("renders single-mode form without errors", () => {
