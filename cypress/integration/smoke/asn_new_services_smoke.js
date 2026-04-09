@@ -13,8 +13,12 @@ context("ASN New Services smoke", () => {
 	it("asn-new page renders without errors", () => {
 		cy.visit("/asn_new", { failOnStatusCode: false });
 		cy.get(".asn-new-page", { timeout: 20000 }).should("exist");
-		cy.get("#single-tab", { timeout: 20000 }).should("be.visible");
-		cy.get("#bulk-tab", { timeout: 20000 }).should("be.visible");
+		cy.get("#single-tab", { timeout: 20000 })
+			.should("be.visible")
+			.and("have.attr", "href", "#single");
+		cy.get("#bulk-tab", { timeout: 20000 })
+			.should("be.visible")
+			.and("have.attr", "href", "#bulk");
 		cy.get("form#single-asn-form input[name='mode'][value='single']", {
 			timeout: 20000,
 		}).should("exist");

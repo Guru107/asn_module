@@ -22,7 +22,10 @@ context("ASN New portal smoke", () => {
 	it("renders bulk-mode form without errors", () => {
 		cy.visit("/asn_new", { failOnStatusCode: false });
 		cy.get(".asn-new-page", { timeout: 20000 }).should("exist");
-		cy.get(".nav-link[aria-controls='bulk-pane']", { timeout: 20000 }).click();
+		cy.get(".nav-link[aria-controls='bulk-pane']", { timeout: 20000 })
+			.should("have.attr", "href", "#bulk")
+			.click();
+		cy.location("hash", { timeout: 20000 }).should("eq", "#bulk");
 		cy.get("form#asn-bulk-upload-form", { timeout: 20000 }).should("exist");
 		cy.get("form#asn-bulk-upload-form input#asn-bulk-file-input", {
 			timeout: 20000,
