@@ -396,14 +396,14 @@
 
 			<ul class="nav nav-tabs mb-3" role="tablist">
 				<li class="nav-item" role="presentation">
-					<button class="nav-link {% if active_tab != 'bulk' %}active{% endif %}" id="single-tab" type="button" role="tab" aria-controls="single-pane" aria-selected="{% if active_tab != 'bulk' %}true{% else %}false{% endif %}">
+					<a class="nav-link {% if active_tab != 'bulk' %}active{% endif %}" id="single-tab" href="#single" role="tab" aria-controls="single-pane" aria-selected="{% if active_tab != 'bulk' %}true{% else %}false{% endif %}">
 						{{ _("Single ASN") }}
-					</button>
+					</a>
 				</li>
 				<li class="nav-item" role="presentation">
-					<button class="nav-link {% if active_tab == 'bulk' %}active{% endif %}" id="bulk-tab" type="button" role="tab" aria-controls="bulk-pane" aria-selected="{% if active_tab == 'bulk' %}true{% else %}false{% endif %}">
+					<a class="nav-link {% if active_tab == 'bulk' %}active{% endif %}" id="bulk-tab" href="#bulk" role="tab" aria-controls="bulk-pane" aria-selected="{% if active_tab == 'bulk' %}true{% else %}false{% endif %}">
 						{{ _("Bulk ASN Upload") }}
-					</button>
+					</a>
 				</li>
 			</ul>
 
@@ -619,7 +619,15 @@
 		const bulkPane = root.querySelector("#bulk-pane");
 		if (!singleTab || !bulkTab || !singlePane || !bulkPane) return;
 
-		function activate(which) {
+		function tabFromHash() {
+			const hash = (window.location.hash || "").toLowerCase();
+			if (hash === "#bulk" || hash === "#bulk-pane") return "bulk";
+			if (hash === "#single" || hash === "#single-pane") return "single";
+			return null;
+		}
+
+		function activate(which, opts = {}) {
+			const { updateHash = false } = opts;
 			const bulk = which === "bulk";
 			singleTab.classList.toggle("active", !bulk);
 			bulkTab.classList.toggle("active", bulk);
@@ -627,15 +635,32 @@
 			bulkTab.setAttribute("aria-selected", String(bulk));
 			singlePane.classList.toggle("active", !bulk);
 			bulkPane.classList.toggle("active", bulk);
+			if (updateHash) {
+				const nextHash = bulk ? "#bulk" : "#single";
+				if (window.location.hash !== nextHash) {
+					history.replaceState(null, "", nextHash);
+				}
+			}
 		}
 
 		singleTab.addEventListener("click", (e) => {
 			e.preventDefault();
-			activate("single");
+			activate("single", { updateHash: true });
 		});
 		bulkTab.addEventListener("click", (e) => {
 			e.preventDefault();
-			activate("bulk");
+			activate("bulk", { updateHash: true });
+		});
+
+		const initialTab = tabFromHash();
+		if (initialTab) {
+			activate(initialTab);
+		}
+		window.addEventListener("hashchange", () => {
+			const target = tabFromHash();
+			if (target) {
+				activate(target);
+			}
 		});
 	}
 
