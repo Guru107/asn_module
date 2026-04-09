@@ -7,10 +7,11 @@ context("ASN portal nightly", () => {
 	let seededData;
 
 	before(() => {
-		cy.login();
-		cy.call_api("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
-			seededData = result.message || result;
-		});
+		cy.seed_context("asn_module.utils.cypress_helpers.seed_supplier_context").then(
+			(result) => {
+				seededData = result;
+			}
+		);
 	});
 
 	it("ASN items show correct remaining qty", () => {

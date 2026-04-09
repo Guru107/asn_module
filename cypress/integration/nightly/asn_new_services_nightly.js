@@ -7,10 +7,11 @@ context("ASN New Services nightly — validation error branches", () => {
 	let seededData;
 
 	before(() => {
-		cy.login();
-		cy.call_api("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
-			seededData = result.message || result;
-		});
+		cy.seed_context("asn_module.utils.cypress_helpers.seed_supplier_context").then(
+			(result) => {
+				seededData = result;
+			}
+		);
 	});
 
 	it("rejects duplicate PO SR No in same invoice group", () => {

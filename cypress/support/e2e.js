@@ -19,3 +19,15 @@ Cypress.Commands.add("call_api", (method, args = {}) => {
 			return response.body && response.body.message ? response.body.message : response.body;
 		});
 });
+
+Cypress.Commands.add("seed_context", (method, args = {}) => {
+	const routePrefix = (Cypress.env("routePrefix") || "app").replace(/^\/+/, "") || "app";
+	return cy
+		.login()
+		.visit(`/${routePrefix}`, { failOnStatusCode: false })
+		.window()
+		.its("frappe.csrf_token")
+		.should("be.a", "string")
+		.then(() => cy.call(method, args))
+		.then((result) => (result && result.message ? result.message : result));
+});

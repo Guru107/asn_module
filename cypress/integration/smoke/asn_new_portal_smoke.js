@@ -1,10 +1,13 @@
 context("ASN New portal smoke", () => {
 	before(() => {
-		cy.login();
-		cy.call("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
-			const seededData = result.message || result;
-			cy.login(seededData.portal_user, seededData.portal_password);
-		});
+		cy.seed_context("asn_module.utils.cypress_helpers.seed_supplier_context").then(
+			(seededData) => {
+				cy.login(seededData.portal_user, seededData.portal_password);
+				cy.request("/api/method/frappe.auth.get_logged_user")
+					.its("body.message")
+					.should("eq", seededData.portal_user);
+			}
+		);
 	});
 
 	it("renders single-mode form without errors", () => {
