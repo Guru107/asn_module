@@ -1,7 +1,10 @@
 context("ASN New Services smoke", () => {
 	before(() => {
 		cy.login();
-		cy.call_api("asn_module.utils.cypress_helpers.seed_supplier_context");
+		cy.call("asn_module.utils.cypress_helpers.seed_supplier_context").then((result) => {
+			const seededData = result.message || result;
+			cy.login(seededData.portal_user, seededData.portal_password);
+		});
 	});
 
 	it("asn-new page renders without errors", () => {
