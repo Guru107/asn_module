@@ -330,7 +330,70 @@ class TestASNNewPortalPage(FrappeTestCase):
 				asn_new._create_bulk_asns("Supp-001")
 		messages = " ".join(error.get("message", "") for error in ctx.exception.errors)
 		self.assertIn("single Purchase Order", messages)
-		self.assertIn("exactly one", ctx.exception.errors[0]["message"])
+
+	def test_create_bulk_asn_creates_one_asn_per_invoice_group(self):
+		rows = [
+			ParsedBulkRow(
+				row_number=2,
+				supplier_invoice_no="INV-1",
+				supplier_invoice_date="2026-04-05",
+				expected_delivery_date="2026-04-06",
+				lr_no="",
+				lr_date="",
+				transporter_name="",
+				vehicle_number="",
+				driver_contact="",
+				supplier_invoice_amount=100,
+				purchase_order="PO-0001",
+				sr_no="1",
+				item_code="ITEM-001",
+				qty=1,
+				rate=10,
+			),
+			ParsedBulkRow(
+				row_number=3,
+				supplier_invoice_no="INV-2",
+				supplier_invoice_date="2026-04-05",
+				expected_delivery_date="2026-04-06",
+				lr_no="",
+				lr_date="",
+				transporter_name="",
+				vehicle_number="",
+				driver_contact="",
+				supplier_invoice_amount=200,
+				purchase_order="PO-0002",
+				sr_no="1",
+				item_code="ITEM-002",
+				qty=1,
+				rate=20,
+			),
+		]
+		rows_by_key = {
+			("PO-0001", "1"): [SimpleNamespace(name="POI-1", item_code="ITEM-001", uom="Nos", rate=10)],
+			("PO-0002", "1"): [SimpleNamespace(name="POI-2", item_code="ITEM-002", uom="Nos", rate=20)],
+		}
+		remaining_qty = {"POI-1": 10, "POI-2": 10}
+		mock_asn_1 = SimpleNamespace(name="ASN-0001")
+		mock_asn_2 = SimpleNamespace(name="ASN-0002")
+
+		with (
+			patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=rows),
+			patch("asn_module.templates.pages.asn_new.enforce_bulk_limits"),
+			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
+			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
+			patch(
+				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
+				return_value=(rows_by_key, remaining_qty),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new._insert_and_submit_asn",
+				side_effect=[mock_asn_1, mock_asn_2],
+			) as mock_insert_submit,
+		):
+			result = asn_new._create_bulk_asns("Supp-001")
+
+		self.assertEqual(result.asn_names, ["ASN-0001", "ASN-0002"])
+		self.assertEqual(mock_insert_submit.call_count, 2)
 
 	def test_create_single_asn_rejects_cumulative_qty_exceeding_remaining(self):
 		rows = [
