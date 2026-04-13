@@ -26,6 +26,7 @@ from asn_module.templates.pages.asn_new_services import (
 	resolve_po_item,
 	validate_bulk_group_count,
 	validate_invoice_group_consistency,
+	validate_invoice_group_single_purchase_order,
 	validate_no_duplicate_po_sr_no,
 	validate_qty_within_remaining,
 	validate_selected_purchase_orders,
@@ -243,6 +244,7 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 	for invoice_no, invoice_rows in invoice_groups.items():
 		try:
 			validate_invoice_group_consistency(invoice_no, invoice_rows)
+			validate_invoice_group_single_purchase_order(invoice_no, invoice_rows)
 			validate_no_duplicate_po_sr_no(invoice_rows, invoice_no=invoice_no)
 		except PortalValidationError as exc:
 			errors.extend(exc.errors)

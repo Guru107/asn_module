@@ -278,6 +278,58 @@ class TestASNNewPortalPage(FrappeTestCase):
 			with self.assertRaises(PortalValidationError) as ctx:
 				asn_new._create_single_asn("Supp-001")
 		self.assertEqual(ctx.exception.errors[0]["field"], "selected_purchase_orders")
+
+	def test_create_bulk_asn_rejects_multiple_purchase_orders_in_invoice_group(self):
+		rows = [
+			ParsedBulkRow(
+				row_number=2,
+				supplier_invoice_no="INV-MIX",
+				supplier_invoice_date="2026-04-05",
+				expected_delivery_date="2026-04-06",
+				lr_no="",
+				lr_date="",
+				transporter_name="",
+				vehicle_number="",
+				driver_contact="",
+				supplier_invoice_amount=100,
+				purchase_order="PO-0001",
+				sr_no="1",
+				item_code="ITEM-001",
+				qty=1,
+				rate=10,
+			),
+			ParsedBulkRow(
+				row_number=3,
+				supplier_invoice_no="INV-MIX",
+				supplier_invoice_date="2026-04-05",
+				expected_delivery_date="2026-04-06",
+				lr_no="",
+				lr_date="",
+				transporter_name="",
+				vehicle_number="",
+				driver_contact="",
+				supplier_invoice_amount=100,
+				purchase_order="PO-0002",
+				sr_no="1",
+				item_code="ITEM-002",
+				qty=1,
+				rate=10,
+			),
+		]
+		with (
+			patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=rows),
+			patch("asn_module.templates.pages.asn_new.enforce_bulk_limits"),
+			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
+			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
+			patch(
+				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
+				return_value=({}, {}),
+			),
+		):
+			with self.assertRaises(PortalValidationError) as ctx:
+				asn_new._create_bulk_asns("Supp-001")
+		messages = " ".join(error.get("message", "") for error in ctx.exception.errors)
+		self.assertIn("single Purchase Order", messages)
 		self.assertIn("exactly one", ctx.exception.errors[0]["message"])
 
 	def test_create_single_asn_rejects_cumulative_qty_exceeding_remaining(self):
