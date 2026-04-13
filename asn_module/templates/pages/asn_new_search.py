@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
+from frappe.utils import flt
 
+from asn_module.asn_module.doctype.asn.asn import _get_shipped_qty_by_po_item
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
 
 
@@ -43,19 +45,31 @@ def search_purchase_order_items(
 	rows = frappe.get_all(
 		"Purchase Order Item",
 		filters={"parent": purchase_order},
-		fields=["name", "idx", "item_code", "uom", "rate"],
+		fields=["name", "idx", "item_code", "item_name", "uom", "rate", "qty"],
 		limit_page_length=0,
 	)
+	shipped_qty_by_item = _get_shipped_qty_by_po_item([row.name for row in rows])
 	filtered = []
 	for row in rows:
-		if txt and txt not in (row.item_code or "").lower():
+		if txt:
+			haystack = [
+				(row.item_code or "").lower(),
+				(row.item_name or "").lower(),
+				str(row.idx or "").lower(),
+			]
+			if not any(txt in value for value in haystack):
+				continue
+		remaining_qty = flt(row.qty) - flt(shipped_qty_by_item.get(row.name, 0))
+		if remaining_qty <= 0:
 			continue
 		filtered.append(
 			{
 				"value": row.item_code,
+				"item_name": row.item_name,
 				"sr_no": str(row.idx),
 				"uom": row.uom,
 				"rate": row.rate,
+				"remaining_qty": remaining_qty,
 				"purchase_order_item": row.name,
 			}
 		)

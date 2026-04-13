@@ -270,6 +270,16 @@ class TestASNNewPortalPage(FrappeTestCase):
 			with self.assertRaises(PortalValidationError):
 				asn_new._create_single_asn("Supp-001")
 
+	def test_create_single_asn_requires_exactly_one_selected_po(self):
+		with (
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001", "PO-0002"]),
+			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
+		):
+			with self.assertRaises(PortalValidationError) as ctx:
+				asn_new._create_single_asn("Supp-001")
+		self.assertEqual(ctx.exception.errors[0]["field"], "selected_purchase_orders")
+		self.assertIn("exactly one", ctx.exception.errors[0]["message"])
+
 	def test_create_single_asn_rejects_cumulative_qty_exceeding_remaining(self):
 		rows = [
 			ParsedSingleRow(

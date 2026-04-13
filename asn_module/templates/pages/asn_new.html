@@ -385,6 +385,59 @@
 		color: var(--asn-new-muted, #6c757d);
 		font-size: 0.8125rem;
 	}
+	.asn-selected-po-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.35rem 0.6rem;
+		border: 1px solid var(--asn-new-border, #ced4da);
+		border-radius: 999px;
+		background: var(--asn-new-muted-bg, #f8f9fa);
+		font-size: 0.875rem;
+	}
+	.asn-item-picker {
+		border: 1px solid var(--asn-new-border, #dee2e6);
+		border-radius: 0.5rem;
+		padding: 0.75rem;
+		background: var(--bs-body-bg, #fff);
+	}
+	.asn-item-picker-list {
+		max-height: 20rem;
+		overflow-y: auto;
+		border: 1px solid var(--asn-new-border, #e9ecef);
+		border-radius: 0.5rem;
+	}
+	.asn-item-picker-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.6rem;
+		padding: 0.65rem 0.75rem;
+		border-bottom: 1px solid var(--asn-new-border, #e9ecef);
+	}
+	.asn-item-picker-row:last-child {
+		border-bottom: 0;
+	}
+	.asn-item-picker-row:hover {
+		background: var(--asn-new-muted-bg, #f8f9fa);
+	}
+	.asn-item-picker-main {
+		min-width: 0;
+	}
+	.asn-item-picker-title {
+		display: block;
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+	.asn-item-picker-meta {
+		display: block;
+		font-size: 0.75rem;
+		color: var(--asn-new-muted, #6c757d);
+	}
+	.asn-item-picker-empty {
+		padding: 0.85rem;
+		font-size: 0.8125rem;
+		color: var(--asn-new-muted, #6c757d);
+	}
 </style>
 <div class="container-fluid asn-new-page px-3 px-md-4 px-xl-5">
 	<div class="row justify-content-center">
@@ -480,7 +533,7 @@
 						</div>
 
 						<div class="mb-3">
-							<label class="form-label" for="single-po-input">{{ _("Add Open Purchase Orders") }}</label>
+							<label class="form-label" for="single-po-input">{{ _("Purchase Order") }}</label>
 							<div
 								class="asn-po-typeahead"
 								id="asn-po-typeahead-root"
@@ -499,17 +552,31 @@
 										aria-expanded="false"
 										aria-controls="asn-po-suggestions"
 									>
-									<button type="button" class="btn btn-outline-secondary" id="add-po-btn">{{ _("Add") }}</button>
+									<button type="button" class="btn btn-outline-secondary" id="add-po-btn">{{ _("Set PO") }}</button>
+									<button type="button" class="btn btn-outline-secondary" id="clear-po-btn">{{ _("Clear") }}</button>
 								</div>
 								<div id="asn-po-suggestions" class="asn-po-suggestions" role="listbox" hidden></div>
 							</div>
-							<div id="selected-po-chips" class="d-flex flex-wrap gap-2 mt-2"></div>
+							<div id="selected-po-chip" class="mt-2"></div>
 							<div id="selected-po-hidden-inputs"></div>
+						</div>
+
+						<div class="mb-3 asn-item-picker" id="single-item-picker" hidden>
+							<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+								<label class="form-label mb-0" for="single-item-filter-input">{{ _("Invoice Items") }}</label>
+								<span class="text-muted small">{{ _("Selected") }}: <span id="single-item-selected-count">0</span></span>
+							</div>
+							<div class="input-group mb-2">
+								<input type="text" class="form-control" id="single-item-filter-input" placeholder="{{ _('Search by item code, item name, or Sr No…') }}" autocomplete="off" spellcheck="false">
+								<button type="button" class="btn btn-outline-secondary" id="single-item-select-filtered">{{ _("Select all filtered") }}</button>
+								<button type="button" class="btn btn-outline-secondary" id="single-item-clear-all">{{ _("Clear all") }}</button>
+							</div>
+							<div id="single-item-picker-list" class="asn-item-picker-list"></div>
 						</div>
 
 						<hr>
 						<h5 class="mb-2">{{ _("Manual Rows") }}</h5>
-						<p class="text-muted small mb-2">{{ _("Add POs above, then one row per line item. Sr No must match the PO line.") }}</p>
+						<p class="text-muted small mb-2">{{ _("Rows are auto-added from selected items. Enter qty and adjust rate if needed.") }}</p>
 						<div class="asn-new-manual-rows">
 							<div class="asn-new-manual-head" aria-hidden="true">
 								<span>{{ _("PO") }}</span>
@@ -522,7 +589,6 @@
 							</div>
 							<div id="single-manual-rows" class="asn-new-manual-body"></div>
 						</div>
-						<button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="add-single-row">{{ _("Add Row") }}</button>
 
 						<div class="mt-4">
 							<button type="submit" class="btn btn-primary">{{ _("Create and Submit ASN") }}</button>
@@ -666,22 +732,48 @@
 
 	initAsnNewTabs();
 
-	const selectedPoSet = new Set();
+	let selectedPo = "";
 	const poInput = document.getElementById("single-po-input");
 	const addPoBtn = document.getElementById("add-po-btn");
-	const chipsRoot = document.getElementById("selected-po-chips");
+	const clearPoBtn = document.getElementById("clear-po-btn");
+	const selectedPoChip = document.getElementById("selected-po-chip");
 	const hiddenInputsRoot = document.getElementById("selected-po-hidden-inputs");
 	const rowsRoot = document.getElementById("single-manual-rows");
-	const addRowBtn = document.getElementById("add-single-row");
 	const poSuggestionsBox = document.getElementById("asn-po-suggestions");
 	const poTypeaheadRoot = document.getElementById("asn-po-typeahead-root");
-	if (!poInput || !addPoBtn || !chipsRoot || !hiddenInputsRoot || !rowsRoot || !addRowBtn || !poSuggestionsBox || !poTypeaheadRoot) return;
+	const itemPicker = document.getElementById("single-item-picker");
+	const itemFilterInput = document.getElementById("single-item-filter-input");
+	const selectFilteredBtn = document.getElementById("single-item-select-filtered");
+	const clearAllItemsBtn = document.getElementById("single-item-clear-all");
+	const selectedItemCount = document.getElementById("single-item-selected-count");
+	const itemPickerList = document.getElementById("single-item-picker-list");
+	if (
+		!poInput ||
+		!addPoBtn ||
+		!clearPoBtn ||
+		!selectedPoChip ||
+		!hiddenInputsRoot ||
+		!rowsRoot ||
+		!poSuggestionsBox ||
+		!poTypeaheadRoot ||
+		!itemPicker ||
+		!itemFilterInput ||
+		!selectFilteredBtn ||
+		!clearAllItemsBtn ||
+		!selectedItemCount ||
+		!itemPickerList
+	) return;
 
 	const poNoMatchMsg = poTypeaheadRoot.dataset.msgNoMatch || "No matching purchase orders.";
+	const rowResetConfirmMsg = "Changing purchase order will clear selected items and rows. Continue?";
+	const noItemsMsg = "No items found for this purchase order.";
 
 	let poSuggestionRows = [];
 	let poActiveSuggestion = -1;
 	let poSearchTimer = null;
+	let poItems = [];
+	const selectedItemKeys = new Set();
+	const selectedItemByKey = new Map();
 
 	function closePoSuggestions() {
 		poSuggestionRows = [];
@@ -763,55 +855,188 @@
 		renderPoSuggestionList(rows);
 	}
 
-	function tryAddPurchaseOrder(raw) {
-		const po = (raw || "").trim();
-		if (!po) return;
-		selectedPoSet.add(po);
-		poInput.value = "";
-		closePoSuggestions();
-		renderPoChips();
+	function keyForItem(entry) {
+		return `${String(entry.sr_no || "").trim()}::${String(entry.value || "").trim()}`;
+	}
+
+	function resetItemSelectionState() {
+		selectedItemKeys.clear();
+		selectedItemByKey.clear();
+		rowsRoot.innerHTML = "";
+		itemFilterInput.value = "";
 	}
 
 	function syncHiddenPoInputs() {
 		hiddenInputsRoot.innerHTML = "";
-		selectedPoSet.forEach((po) => {
-			const hidden = document.createElement("input");
-			hidden.type = "hidden";
-			hidden.name = "selected_purchase_orders";
-			hidden.value = po;
-			hiddenInputsRoot.appendChild(hidden);
+		if (!selectedPo) return;
+		const hidden = document.createElement("input");
+		hidden.type = "hidden";
+		hidden.name = "selected_purchase_orders";
+		hidden.value = selectedPo;
+		hiddenInputsRoot.appendChild(hidden);
+	}
+
+	function renderSelectedPoChip() {
+		if (!selectedPo) {
+			selectedPoChip.innerHTML = "";
+			return;
+		}
+		selectedPoChip.innerHTML = `<span class="asn-selected-po-chip">${selectedPo}</span>`;
+	}
+
+	function rateToInputValue(rate) {
+		if (rate === null || rate === undefined || rate === "") return "";
+		return String(rate);
+	}
+
+	function createRowHtml(itemKey, entry) {
+		return `
+		<div class="single-row asn-new-manual-grid-row" data-item-key="${itemKey}">
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">PO</label>
+				<input class="form-control" name="single_manual_purchase_order" value="${selectedPo}" readonly>
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">Sr No</label>
+				<input class="form-control" name="single_manual_sr_no" value="${String(entry.sr_no || "")}" readonly>
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">Item</label>
+				<input class="form-control" name="single_manual_item_code" value="${String(entry.value || "")}" readonly>
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">UOM</label>
+				<input class="form-control" name="single_manual_uom" value="${String(entry.uom || "")}" readonly>
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">Qty</label>
+				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_qty">
+			</div>
+			<div class="asn-new-cell">
+				<label class="asn-new-cell-label">Rate</label>
+				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_rate" value="${rateToInputValue(entry.rate)}">
+			</div>
+			<div class="asn-new-cell asn-new-remove">
+				<button type="button" class="btn btn-outline-danger btn-sm remove-row" aria-label="Remove row">×</button>
+			</div>
+		</div>
+	`;
+	}
+
+	function addRowForItem(entry) {
+		const itemKey = keyForItem(entry);
+		if (!itemKey || rowsRoot.querySelector(`[data-item-key="${CSS.escape(itemKey)}"]`)) return;
+		rowsRoot.insertAdjacentHTML("beforeend", createRowHtml(itemKey, entry));
+	}
+
+	function removeRowForItemKey(itemKey) {
+		if (!itemKey) return;
+		rowsRoot.querySelector(`[data-item-key="${CSS.escape(itemKey)}"]`)?.remove();
+	}
+
+	function filteredItems() {
+		const txt = itemFilterInput.value.trim().toLowerCase();
+		if (!txt) return poItems;
+		return poItems.filter((entry) => {
+			const haystack = [
+				String(entry.value || "").toLowerCase(),
+				String(entry.item_name || "").toLowerCase(),
+				String(entry.sr_no || "").toLowerCase(),
+			];
+			return haystack.some((value) => value.includes(txt));
 		});
 	}
 
-	function refreshRowPoSelects() {
-		const poOptions = Array.from(selectedPoSet.values());
-		rowsRoot.querySelectorAll("[data-field='purchase_order']").forEach((select) => {
-			const current = select.value;
-			select.innerHTML = `<option value="">Select PO</option>`;
-			poOptions.forEach((po) => {
-				const option = document.createElement("option");
-				option.value = po;
-				option.textContent = po;
-				select.appendChild(option);
-			});
-			if (current && selectedPoSet.has(current)) {
-				select.value = current;
-			} else {
-				select.value = "";
+	function renderItemPickerRows() {
+		const rows = filteredItems();
+		itemPickerList.innerHTML = "";
+		if (!rows.length) {
+			itemPickerList.innerHTML = `<div class="asn-item-picker-empty">${noItemsMsg}</div>`;
+			return;
+		}
+
+		rows.forEach((entry) => {
+			const itemKey = keyForItem(entry);
+			const row = document.createElement("label");
+			row.className = "asn-item-picker-row";
+			row.innerHTML = `
+				<input type="checkbox" class="form-check-input mt-1" data-item-key="${itemKey}" ${selectedItemKeys.has(itemKey) ? "checked" : ""}>
+				<span class="asn-item-picker-main">
+					<span class="asn-item-picker-title">${String(entry.value || "")}</span>
+					<span class="asn-item-picker-meta">Sr No: ${String(entry.sr_no || "")} | ${String(entry.item_name || "")} | UOM: ${String(entry.uom || "")} | Remaining: ${String(entry.remaining_qty ?? "")}</span>
+				</span>
+			`;
+			itemPickerList.appendChild(row);
+		});
+	}
+
+	function syncSelectedCount() {
+		selectedItemCount.textContent = String(selectedItemKeys.size);
+	}
+
+	function renderItemPicker() {
+		syncSelectedCount();
+		renderItemPickerRows();
+	}
+
+	function selectItem(entry) {
+		const itemKey = keyForItem(entry);
+		if (!itemKey || selectedItemKeys.has(itemKey)) return;
+		selectedItemKeys.add(itemKey);
+		selectedItemByKey.set(itemKey, entry);
+		addRowForItem(entry);
+	}
+
+	function deselectItemByKey(itemKey) {
+		if (!itemKey) return;
+		selectedItemKeys.delete(itemKey);
+		selectedItemByKey.delete(itemKey);
+		removeRowForItemKey(itemKey);
+	}
+
+	async function loadPoItems(po) {
+		if (!po) {
+			poItems = [];
+			itemPicker.hidden = true;
+			renderItemPicker();
+			return;
+		}
+		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_purchase_order_items?purchase_order=${encodeURIComponent(po)}&txt=&page_len=200`;
+		const response = await fetch(url, { credentials: "same-origin" });
+		const payload = await response.json();
+		poItems = Array.isArray(payload.message) ? payload.message : [];
+		itemPicker.hidden = false;
+		renderItemPicker();
+	}
+
+	async function setSelectedPurchaseOrder(poValue) {
+		const po = (poValue || "").trim();
+		if (!po) return;
+		if (selectedPo === po) {
+			poInput.value = selectedPo;
+			return;
+		}
+		if (selectedPo && selectedItemKeys.size > 0) {
+			if (!window.confirm(rowResetConfirmMsg)) {
+				poInput.value = selectedPo;
+				closePoSuggestions();
+				return;
 			}
-		});
+		}
+
+		selectedPo = po;
+		resetItemSelectionState();
+		syncHiddenPoInputs();
+		renderSelectedPoChip();
+		poInput.value = selectedPo;
+		closePoSuggestions();
+		await loadPoItems(selectedPo);
 	}
 
-	function renderPoChips() {
-		chipsRoot.innerHTML = "";
-		selectedPoSet.forEach((po) => {
-			const chip = document.createElement("span");
-			chip.className = "badge rounded-pill bg-light text-dark border";
-			chip.innerHTML = `${po} <button type="button" class="btn btn-sm p-0 ms-1 remove-po" data-po="${po}" aria-label="Remove">&times;</button>`;
-			chipsRoot.appendChild(chip);
-		});
-		syncHiddenPoInputs();
-		refreshRowPoSelects();
+	function tryAddPurchaseOrder(raw) {
+		const po = (raw || "").trim();
+		if (!po) return;
+		void setSelectedPurchaseOrder(po);
 	}
 
 	addPoBtn.addEventListener("click", () => {
@@ -900,177 +1125,62 @@
 		}
 	});
 
-	chipsRoot.addEventListener("click", (event) => {
-		if (!(event.target instanceof HTMLElement)) return;
-		if (!event.target.classList.contains("remove-po")) return;
-		const po = event.target.dataset.po || "";
-		selectedPoSet.delete(po);
-		renderPoChips();
+	clearPoBtn.addEventListener("click", () => {
+		selectedPo = "";
+		resetItemSelectionState();
+		poItems = [];
+		poInput.value = "";
+		syncHiddenPoInputs();
+		renderSelectedPoChip();
+		itemPicker.hidden = true;
+		renderItemPicker();
+		closePoSuggestions();
 	});
 
-	function rateToInputValue(rate) {
-		if (rate === null || rate === undefined || rate === "") return "";
-		return String(rate);
-	}
+	itemFilterInput.addEventListener("input", () => {
+		renderItemPickerRows();
+	});
 
-	function srNoMatches(userSr, lineSr) {
-		const a = String(userSr).trim();
-		const b = String(lineSr ?? "").trim();
-		if (!a || !b) return false;
-		if (a === b) return true;
-		const na = Number(a);
-		const nb = Number(b);
-		return !Number.isNaN(na) && !Number.isNaN(nb) && na === nb;
-	}
+	itemPickerList.addEventListener("change", (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		if (!(event.target instanceof HTMLInputElement)) return;
+		if (event.target.type !== "checkbox") return;
+		const itemKey = event.target.dataset.itemKey || "";
+		const entry = poItems.find((row) => keyForItem(row) === itemKey);
+		if (!entry) return;
+		if (event.target.checked) {
+			selectItem(entry);
+		} else {
+			deselectItemByKey(itemKey);
+		}
+		renderItemPicker();
+	});
 
-	async function loadItemOptionsForRow(row, searchTxt) {
-		const po = row.querySelector("[data-field='purchase_order']").value;
-		const itemInput = row.querySelector("[data-field='item_code']");
-		const datalist = row.querySelector("datalist");
-		if (!po || !itemInput || !datalist) return;
-
-		const txt = searchTxt !== undefined ? searchTxt : (itemInput.value || "");
-		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_purchase_order_items?purchase_order=${encodeURIComponent(po)}&txt=${encodeURIComponent(txt)}`;
-		const response = await fetch(url, { credentials: "same-origin" });
-		const payload = await response.json();
-		const itemRows = payload.message || [];
-		datalist.innerHTML = "";
-		itemRows.forEach((entry) => {
-			const option = document.createElement("option");
-			option.value = entry.value || "";
-			option.dataset.srNo = entry.sr_no != null ? String(entry.sr_no) : "";
-			option.dataset.uom = entry.uom || "";
-			option.dataset.rate = rateToInputValue(entry.rate);
-			datalist.appendChild(option);
+	selectFilteredBtn.addEventListener("click", () => {
+		filteredItems().forEach((entry) => {
+			selectItem(entry);
 		});
-		row.dataset.itemOptions = JSON.stringify(itemRows);
-	}
-
-	async function resolveRowFromSrNo(row) {
-		const po = (row.querySelector("[data-field='purchase_order']")?.value || "").trim();
-		const srRaw = row.querySelector("[data-field='sr_no']")?.value || "";
-		const sr = srRaw.trim();
-		if (!po || !sr) return;
-
-		await loadItemOptionsForRow(row, "");
-		const options = JSON.parse(row.dataset.itemOptions || "[]");
-		const selected = options.find((entry) => srNoMatches(sr, entry.sr_no));
-		if (!selected) return;
-
-		row.querySelector("[data-field='item_code']").value = selected.value || "";
-		row.querySelector("[data-field='uom']").value = selected.uom || "";
-		row.querySelector("[data-field='rate']").value = rateToInputValue(selected.rate);
-	}
-
-	function clearDependentFields(row) {
-		row.querySelector("[data-field='sr_no']").value = "";
-		row.querySelector("[data-field='item_code']").value = "";
-		row.querySelector("[data-field='uom']").value = "";
-		row.querySelector("[data-field='rate']").value = "";
-	}
-
-	function createRowHtml(rowId) {
-		return `
-		<div class="single-row asn-new-manual-grid-row" data-row-id="${rowId}">
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">PO</label>
-				<select class="form-select" name="single_manual_purchase_order" data-field="purchase_order"></select>
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">Sr No</label>
-				<input class="form-control" name="single_manual_sr_no" data-field="sr_no" autocomplete="off">
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">Item</label>
-				<input class="form-control" list="single-item-list-${rowId}" name="single_manual_item_code" data-field="item_code" autocomplete="off">
-				<datalist id="single-item-list-${rowId}"></datalist>
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">UOM</label>
-				<input class="form-control" name="single_manual_uom" data-field="uom" autocomplete="off">
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">Qty</label>
-				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_qty" data-field="qty">
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">Rate</label>
-				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_rate" data-field="rate">
-			</div>
-			<div class="asn-new-cell asn-new-remove">
-				<button type="button" class="btn btn-outline-danger btn-sm remove-row" aria-label="Remove row">×</button>
-			</div>
-		</div>
-	`;
-	}
-
-	function addRow() {
-		const rowId = Date.now().toString();
-		rowsRoot.insertAdjacentHTML("beforeend", createRowHtml(rowId));
-		refreshRowPoSelects();
-	}
-
-	addRowBtn.addEventListener("click", addRow);
-	addRow();
-
-	rowsRoot.addEventListener("change", async (event) => {
-		if (!(event.target instanceof HTMLElement)) return;
-		const row = event.target.closest(".single-row");
-		if (!row) return;
-
-		if (event.target.dataset.field === "purchase_order") {
-			clearDependentFields(row);
-			await loadItemOptionsForRow(row);
-			return;
-		}
-		if (event.target.dataset.field === "item_code") {
-			await loadItemOptionsForRow(row);
-			const options = JSON.parse(row.dataset.itemOptions || "[]");
-			const selected = options.find((entry) => entry.value === event.target.value);
-			if (!selected) return;
-			row.querySelector("[data-field='sr_no']").value =
-				selected.sr_no != null ? String(selected.sr_no) : row.querySelector("[data-field='sr_no']").value;
-			row.querySelector("[data-field='uom']").value = selected.uom || "";
-			row.querySelector("[data-field='rate']").value = rateToInputValue(selected.rate);
-		}
+		renderItemPicker();
 	});
 
-	const srNoResolveTimers = new WeakMap();
-
-	rowsRoot.addEventListener("input", (event) => {
-		if (!(event.target instanceof HTMLElement)) return;
-		if (event.target.dataset.field !== "sr_no") return;
-		const row = event.target.closest(".single-row");
-		if (!row) return;
-		const prev = srNoResolveTimers.get(row);
-		if (prev) clearTimeout(prev);
-		const t = window.setTimeout(() => {
-			srNoResolveTimers.delete(row);
-			void resolveRowFromSrNo(row);
-		}, 450);
-		srNoResolveTimers.set(row, t);
-	});
-
-	rowsRoot.addEventListener("focusout", async (event) => {
-		if (!(event.target instanceof HTMLElement)) return;
-		if (event.target.dataset.field !== "sr_no") return;
-		const row = event.target.closest(".single-row");
-		if (!row) return;
-		const prev = srNoResolveTimers.get(row);
-		if (prev) {
-			clearTimeout(prev);
-			srNoResolveTimers.delete(row);
-		}
-		await resolveRowFromSrNo(row);
+	clearAllItemsBtn.addEventListener("click", () => {
+		resetItemSelectionState();
+		renderItemPicker();
 	});
 
 	rowsRoot.addEventListener("click", (event) => {
 		if (!(event.target instanceof HTMLElement)) return;
 		if (!event.target.classList.contains("remove-row")) return;
-		const allRows = rowsRoot.querySelectorAll(".single-row");
-		if (allRows.length <= 1) return;
-		event.target.closest(".single-row")?.remove();
+		const row = event.target.closest(".single-row");
+		if (!row) return;
+		deselectItemByKey(row.getAttribute("data-item-key") || "");
+		renderItemPicker();
 	});
+
+	syncHiddenPoInputs();
+	renderSelectedPoChip();
+	renderItemPicker();
+	itemPicker.hidden = true;
 })();
 </script>
 <script>

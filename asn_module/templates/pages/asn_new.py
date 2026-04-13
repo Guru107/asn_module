@@ -119,6 +119,15 @@ def _create_single_asn(supplier: str) -> CreateResult:
 		selected_purchase_orders=selected_purchase_orders,
 		field="selected_purchase_orders",
 	)
+	if len(selected_purchase_orders) != 1:
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="selected_purchase_orders",
+					message=_("Select exactly one open Purchase Order for Single ASN."),
+				)
+			]
+		)
 	validate_supplier_invoices_not_reused(supplier, [_request_value("supplier_invoice_no")])
 	rows = _parse_single_rows()
 	if not rows:
