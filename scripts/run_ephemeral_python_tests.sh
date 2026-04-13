@@ -48,13 +48,15 @@ bench --site "$SITE_NAME" set-config allow_tests true
 # setup-wizard fixtures because nested-set conflicts are noisy and non-actionable.
 bench --site "$SITE_NAME" execute asn_module.utils.test_setup.before_tests
 
-run_tests_cmd=("$(which bench)" --site "$SITE_NAME" run-tests --app asn_module)
+run_tests_cmd=("$(which bench)" --site "$SITE_NAME" run-tests)
 if [ "${ERPNEXT_VERSION:-}" = "16" ]; then
 	run_tests_cmd+=(--lightmode)
 fi
 
 if [ "$#" -gt 0 ]; then
 	run_tests_cmd+=(--module "$1")
+else
+	run_tests_cmd+=(--app asn_module)
 fi
 
 # Run tests as the exit gate — always exit 0 from this script so CI uses
