@@ -414,6 +414,16 @@
 		padding: 0.65rem 0.75rem;
 		border-bottom: 1px solid var(--asn-new-border, #e9ecef);
 	}
+	.asn-item-picker-checkbox {
+		flex: 0 0 auto;
+		width: 1.05rem;
+		height: 1.05rem;
+		min-width: 1.05rem;
+		margin: 0.15rem 0 0;
+		float: none;
+		cursor: pointer;
+		accent-color: var(--bs-primary, #0d6efd);
+	}
 	.asn-item-picker-row:last-child {
 		border-bottom: 0;
 	}
@@ -960,7 +970,7 @@
 			const row = document.createElement("label");
 			row.className = "asn-item-picker-row";
 			row.innerHTML = `
-				<input type="checkbox" class="form-check-input mt-1" data-item-key="${itemKey}" ${selectedItemKeys.has(itemKey) ? "checked" : ""}>
+				<input type="checkbox" class="asn-item-picker-checkbox" data-item-key="${itemKey}" ${selectedItemKeys.has(itemKey) ? "checked" : ""}>
 				<span class="asn-item-picker-main">
 					<span class="asn-item-picker-title">${String(entry.value || "")}</span>
 					<span class="asn-item-picker-meta">Sr No: ${String(entry.sr_no || "")} | ${String(entry.item_name || "")} | UOM: ${String(entry.uom || "")} | Remaining: ${String(entry.remaining_qty ?? "")}</span>

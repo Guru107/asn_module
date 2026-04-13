@@ -53,6 +53,29 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(rows[0].qty, 10)
 		self.assertEqual(rows[0].rate, 25)
 
+	def test_parse_single_rows_accepts_100_rows(self):
+		class _FakeForm:
+			def __init__(self):
+				indexes = [str(i) for i in range(1, 101)]
+				self.data = {
+					"single_manual_purchase_order": ["PO-100"] * 100,
+					"single_manual_sr_no": indexes,
+					"single_manual_item_code": ["ITEM-001"] * 100,
+					"single_manual_uom": ["Nos"] * 100,
+					"single_manual_qty": ["1"] * 100,
+					"single_manual_rate": ["10"] * 100,
+				}
+
+			def getlist(self, fieldname):
+				return self.data.get(fieldname, [])
+
+		request = SimpleNamespace(form=_FakeForm())
+		with patch("asn_module.templates.pages.asn_new.frappe.request", request):
+			rows = asn_new._parse_single_rows()
+		self.assertEqual(len(rows), 100)
+		self.assertEqual(rows[0].sr_no, "1")
+		self.assertEqual(rows[-1].sr_no, "100")
+
 	def test_parse_bulk_csv_rows_accepts_strict_template(self):
 		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,250,PO-0001,1,ITEM-001,10,25\n"
 		request = SimpleNamespace(
@@ -112,6 +135,27 @@ class TestASNNewPortalPage(FrappeTestCase):
 			self.assertRaises(PortalValidationError),
 		):
 			asn_new._parse_bulk_csv_rows()
+
+	def test_parse_bulk_csv_rows_accepts_100_item_rows(self):
+		rows = [f"INV-100,2026-04-05,2026-04-06,,,,,1000,PO-100,{idx},ITEM-001,1,10" for idx in range(1, 101)]
+		csv_text = (
+			"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\n"
+			+ "\n".join(rows)
+			+ "\n"
+		)
+		request = SimpleNamespace(
+			files={
+				"bulk_items_csv": SimpleNamespace(
+					filename="items_100.csv",
+					stream=BytesIO(csv_text.encode("utf-8")),
+				)
+			}
+		)
+		with patch("asn_module.templates.pages.asn_new.frappe.request", request):
+			parsed = asn_new._parse_bulk_csv_rows()
+		self.assertEqual(len(parsed), 100)
+		self.assertEqual(parsed[0].sr_no, "1")
+		self.assertEqual(parsed[-1].sr_no, "100")
 
 	def test_get_context_rejects_invalid_mode_inline(self):
 		context = SimpleNamespace()

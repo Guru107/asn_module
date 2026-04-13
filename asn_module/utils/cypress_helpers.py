@@ -146,6 +146,83 @@ def seed_supplier_context():
 
 
 @frappe.whitelist()
+def seed_supplier_large_po_context():
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
+	supplier_name = "Test Supplier E2E"
+	portal_email = "supplier_e2e@test.com"
+	portal_password = "supplier_e2e"
+
+	supplier_docname = frappe.db.get_value("Supplier", {"supplier_name": supplier_name}, "name")
+	if supplier_docname:
+		supplier = frappe.get_doc("Supplier", supplier_docname)
+	else:
+		supplier = frappe.get_doc(
+			{
+				"doctype": "Supplier",
+				"supplier_name": supplier_name,
+				"supplier_group": "All Supplier Groups",
+				"supplier_type": "Individual",
+			}
+		).insert(ignore_permissions=True)
+
+	if frappe.db.exists("User", portal_email):
+		portal_user = frappe.get_doc("User", portal_email)
+	else:
+		portal_user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": portal_email,
+				"first_name": "Supplier",
+				"send_welcome_email": 0,
+				"user_type": "Website User",
+			}
+		).insert(ignore_permissions=True)
+	frappe.db.set_value("User", portal_user.name, "enabled", 1)
+
+	from frappe.utils.password import update_password
+
+	update_password(portal_user.name, portal_password)
+
+	if not frappe.db.exists(
+		"User Permission",
+		{"user": portal_user.name, "allow": "Supplier", "for_value": supplier.name},
+	):
+		frappe.permissions.add_user_permission("Supplier", supplier.name, portal_user.name)
+
+	portal_user_doc = frappe.get_doc("User", portal_user.name)
+	if not any((row.role or "").strip() == "Supplier" for row in portal_user_doc.roles):
+		portal_user_doc.append("roles", {"doctype": "Has Role", "role": "Supplier"})
+		portal_user_doc.save(ignore_permissions=True)
+
+	if not frappe.db.exists(
+		"Portal User",
+		{"parent": supplier.name, "parenttype": "Supplier", "user": portal_user.name},
+	):
+		frappe.get_doc(
+			{
+				"doctype": "Portal User",
+				"parent": supplier.name,
+				"parenttype": "Supplier",
+				"parentfield": "portal_users",
+				"user": portal_user.name,
+			}
+		).insert(ignore_permissions=True)
+
+	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+
+	po = create_purchase_order(qty=1, supplier=supplier.name, item_count=100, rate=10)
+	return {
+		"supplier": supplier.name,
+		"portal_user": portal_user.name,
+		"portal_password": portal_password,
+		"purchase_order": {"name": po.name, "items": [i.as_dict() for i in po.items]},
+	}
+
+
+@frappe.whitelist()
 def seed_asn_with_items():
 	if not frappe.conf.get("allow_tests"):
 		frappe.throw(_("Only available in test mode"))
