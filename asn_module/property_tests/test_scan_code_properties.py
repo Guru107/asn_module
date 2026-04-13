@@ -16,5 +16,10 @@ class TestScanCodeProperties(UnitTestCase):
 	@given(scan_text)
 	def test_format_scan_code_for_display_preserves_normalized_content(self, raw_code):
 		normalized = normalize_scan_code(raw_code)
-		display = format_scan_code_for_display(normalized)
+		display = format_scan_code_for_display(raw_code)
 		self.assertEqual(display.replace("-", ""), normalized)
+		if display:
+			self.assertEqual(display, display.upper())
+			self.assertNotIn(" ", display)
+			for chunk in display.split("-"):
+				self.assertLessEqual(len(chunk), 4)
