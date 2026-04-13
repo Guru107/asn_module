@@ -8,6 +8,18 @@ from asn_module.asn_module.doctype.asn.asn import _get_shipped_qty_by_po_item
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
 
 
+def _normalize_paging(start: int | str, page_len: int | str) -> tuple[int, int]:
+	try:
+		start_int = max(int(start), 0)
+	except (TypeError, ValueError):
+		start_int = 0
+	try:
+		page_len_int = max(int(page_len), 1)
+	except (TypeError, ValueError):
+		page_len_int = 20
+	return start_int, page_len_int
+
+
 def _get_supplier() -> str:
 	supplier = _get_supplier_for_user(frappe.session.user)
 	if supplier:
@@ -18,6 +30,7 @@ def _get_supplier() -> str:
 @frappe.whitelist()
 def search_open_purchase_orders(txt: str = "", start: int = 0, page_len: int = 20) -> list[dict]:
 	supplier = _get_supplier()
+	start, page_len = _normalize_paging(start, page_len)
 	txt = (txt or "").strip().lower()
 	entries = get_open_purchase_orders_for_supplier(supplier)
 	filtered = [
@@ -36,6 +49,7 @@ def search_purchase_order_items(
 	page_len: int = 20,
 ) -> list[dict]:
 	supplier = _get_supplier()
+	start, page_len = _normalize_paging(start, page_len)
 	open_po_names = {po.name for po in get_open_purchase_orders_for_supplier(supplier)}
 	purchase_order = (purchase_order or "").strip()
 	if purchase_order not in open_po_names:

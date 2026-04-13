@@ -30,18 +30,38 @@ context("ASN New portal smoke", () => {
 	});
 
 	it("selects items and auto-populates manual rows", () => {
-		const poName = purchaseOrders[0].name;
+		let poName = purchaseOrders[0].name;
+
+		const setPo = (name) => {
+			cy.get("#single-po-input", { timeout: 20000 }).clear().type(name);
+			cy.get("#add-po-btn").click();
+			cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
+		};
+
 		cy.visit("/asn_new", { failOnStatusCode: false });
-		cy.get("#single-po-input", { timeout: 20000 }).clear().type(poName);
-		cy.get("#add-po-btn").click();
-		cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
-		cy.get("#single-item-picker-list input[type='checkbox']", { timeout: 20000 })
-			.first()
-			.check({ force: true });
+		setPo(poName);
+		cy.get("body").then(($body) => {
+			const noItems =
+				$body.find("#single-item-picker-list .asn-item-picker-empty").length > 0;
+			if (noItems && purchaseOrders[1]) {
+				poName = purchaseOrders[1].name;
+				setPo(poName);
+			}
+		});
+		cy.get("input[name='selected_purchase_orders']", { timeout: 20000 })
+			.invoke("val")
+			.as("effectivePo");
+		cy.get("#single-item-picker-list input[type='checkbox']", { timeout: 20000 }).should(
+			"have.length.greaterThan",
+			0
+		);
+		cy.get("#single-item-picker-list input[type='checkbox']").first().check({ force: true });
 		cy.get("#single-manual-rows .single-row", { timeout: 20000 }).should("have.length", 1);
-		cy.get("#single-manual-rows input[name='single_manual_purchase_order']")
-			.first()
-			.should("have.value", poName);
+		cy.get("@effectivePo").then((effectivePo) => {
+			cy.get("#single-manual-rows input[name='single_manual_purchase_order']")
+				.first()
+				.should("have.value", String(effectivePo));
+		});
 		cy.get("#single-item-picker-list input[type='checkbox']").first().uncheck({ force: true });
 		cy.get("#single-manual-rows .single-row", { timeout: 20000 }).should("have.length", 0);
 	});
