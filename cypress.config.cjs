@@ -1,36 +1,10 @@
-const fs = require("fs");
 const path = require("path");
-
-function resolveSupportFile() {
-  const candidates = [];
-  if (process.env.BENCH_ROOT) {
-    candidates.push(
-      path.join(
-        process.env.BENCH_ROOT,
-        "apps",
-        "frappe",
-        "cypress",
-        "support",
-        "e2e.js"
-      )
-    );
-  }
-  // Repo root is the app dir under bench/apps/<app>/ — frappe is ../frappe
-  candidates.push(
-    path.join(__dirname, "..", "frappe", "cypress", "support", "e2e.js")
-  );
-
-  for (const p of candidates) {
-    if (p && fs.existsSync(p)) {
-      return p;
-    }
-  }
-  return path.join(__dirname, "cypress", "support", "e2e.js");
-}
 
 module.exports = {
   e2e: {
-    supportFile: resolveSupportFile(),
+    // Always load app support so custom commands (e.g. cy.call_api) are registered.
+    // App support itself requires Frappe's support file first.
+    supportFile: path.join(__dirname, "cypress", "support", "e2e.js"),
     specPattern: (() => {
       const suite = process.env.E2E_SUITE || "smoke";
       if (suite === "nightly") return "cypress/integration/nightly/**/*.js";

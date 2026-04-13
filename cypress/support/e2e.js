@@ -1,20 +1,33 @@
-const fs = require("fs");
-const path = require("path");
+// Load Frappe's Cypress support first so commands like `cy.login()` are registered.
+// This app is expected to run inside a bench at `apps/asn_module`.
+// eslint-disable-next-line import/no-unresolved
+require("../../../frappe/cypress/support/e2e.js");
 
-// Used only when cypress.config.cjs cannot find Frappe (e.g. misconfigured bench).
-const candidates = [];
-if (process.env.BENCH_ROOT) {
-	candidates.push(
-		path.join(process.env.BENCH_ROOT, "apps", "frappe", "cypress", "support", "e2e.js")
-	);
-}
-candidates.push(path.join(__dirname, "..", "..", "..", "frappe", "cypress", "support", "e2e.js"));
+Cypress.Commands.add("call_api", (method, args = {}) => {
+	const hasArgs = Object.keys(args || {}).length > 0;
+	return cy
+		.request({
+			url: `/api/method/${method}`,
+			method: hasArgs ? "POST" : "GET",
+			body: hasArgs ? args : undefined,
+			form: hasArgs,
+			headers: { Accept: "application/json" },
+			failOnStatusCode: true,
+		})
+		.then((response) => {
+			// Keep specs simple: return method payload directly.
+			return response.body && response.body.message ? response.body.message : response.body;
+		});
+});
 
-const frappeSupport = candidates.find((p) => fs.existsSync(p));
-if (!frappeSupport) {
-	throw new Error(
-		"Could not find Frappe cypress/support/e2e.js. Set BENCH_ROOT or install the app inside a bench (apps/<app>/cypress)."
-	);
-}
-// eslint-disable-next-line import/no-dynamic-require, global-require
-require(frappeSupport);
+Cypress.Commands.add("seed_context", (method, args = {}) => {
+	const routePrefix = (Cypress.env("routePrefix") || "app").replace(/^\/+/, "") || "app";
+	return cy
+		.login()
+		.visit(`/${routePrefix}`, { failOnStatusCode: false })
+		.window()
+		.its("frappe.csrf_token")
+		.should("be.a", "string")
+		.then(() => cy.call(method, args))
+		.then((result) => (result && result.message ? result.message : result));
+});

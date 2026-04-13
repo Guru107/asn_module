@@ -8,8 +8,6 @@ context("ASN scan station", () => {
 		cy.login();
 	});
 
-	// Single visit: Frappe desk often does not re-run page boot on a second cy.visit to the same route,
-	// which left the second spec without .scan-input in CI (Frappe 15 + 16).
 	it("renders scan input and rejects legacy token URLs", () => {
 		cy.visit(route("scan-station"));
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");

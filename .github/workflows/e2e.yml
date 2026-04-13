@@ -30,12 +30,14 @@ jobs:
             python_version: "3.10"
             node_version: "20"
             frappe_route_prefix: "app"
+            mariadb_version: "10.6"
           - frappe_version: "16"
             erpnext_version: "16"
             python_version: "3.14"
             node_version: "24"
             # Use app routes on v16 for Cypress; /desk paths differ and broke smoke.
             frappe_route_prefix: "app"
+            mariadb_version: "11.8"
 
     services:
       redis-cache:
@@ -47,12 +49,11 @@ jobs:
         ports:
           - 11000:6379
       mariadb:
-        image: mariadb:11.8
+        image: mariadb:${{ matrix.mariadb_version }}
         env:
           MYSQL_ROOT_PASSWORD: root
         ports:
           - 3306:3306
-        # MariaDB 11+ secured root requires password; bare `ping` fails healthcheck (password: NO).
         options: --health-cmd="mariadb-admin ping -uroot -proot" --health-interval=5s --health-timeout=2s --health-retries=3
 
     steps:

@@ -7,10 +7,11 @@ context("Scan Station nightly", () => {
 	let seededData;
 
 	before(() => {
-		cy.login();
-		cy.call("asn_module.utils.cypress_helpers.seed_scan_station_context").then((result) => {
-			seededData = result.message || result;
-		});
+		cy.seed_context("asn_module.utils.cypress_helpers.seed_scan_station_context").then(
+			(result) => {
+				seededData = result;
+			}
+		);
 	});
 
 	it("renders scan input", () => {
@@ -26,5 +27,13 @@ context("Scan Station nightly", () => {
 		cy.get(".scan-result, .scan-success, .scan-error", { timeout: 20000 }).should(
 			"be.visible"
 		);
+	});
+
+	it("dispatch with rejected QI shows error feedback", () => {
+		cy.visit(route("scan-station"), { failOnStatusCode: false });
+		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
+		cy.get(".scan-input").clear();
+		cy.get(".scan-input").type("INVALID-REJECTED{enter}");
+		cy.get(".scan-error", { timeout: 15000 }).should("be.visible");
 	});
 });

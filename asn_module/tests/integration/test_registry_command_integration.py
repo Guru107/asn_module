@@ -52,6 +52,13 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 			pluck="name",
 		):
 			frappe.delete_doc("Scan Code", name, force=True, ignore_permissions=True)
+		# Defensive cleanup for orphan rows created by error-path integration tests.
+		for name in frappe.get_all(
+			"Scan Code",
+			filters={"source_doctype": "ASN", "source_name": "Fake-ASN-For-Test"},
+			pluck="name",
+		):
+			frappe.delete_doc("Scan Code", name, force=True, ignore_permissions=True)
 
 		run_asn_pr_pi_via_dispatch(
 			supplier_invoice_no=f"REG-OK-{frappe.generate_hash(length=8)}",

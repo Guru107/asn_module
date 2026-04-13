@@ -7,9 +7,8 @@ context("ASN desk nightly", () => {
 	let seededData;
 
 	before(() => {
-		cy.login();
-		cy.call("asn_module.utils.cypress_helpers.seed_minimal_asn").then((result) => {
-			seededData = result.message || result;
+		cy.seed_context("asn_module.utils.cypress_helpers.seed_minimal_asn").then((result) => {
+			seededData = result;
 		});
 	});
 
@@ -25,5 +24,12 @@ context("ASN desk nightly", () => {
 		cy.visit(route("Form/ASN/" + seededData.asn_name));
 		cy.get(".page-head", { timeout: 20000 }).should("exist");
 		cy.get(".frappe-control[data-fieldname='supplier']", { timeout: 15000 }).should("exist");
+	});
+
+	it("filter by status Submitted shows submitted ASNs", () => {
+		cy.visit(route("asn"), { failOnStatusCode: false });
+		cy.get(".filter-section .input-with-select", { timeout: 20000 }).should("exist");
+		cy.get(".filter-section").contains("Submitted").click();
+		cy.get(".list-row", { timeout: 15000 }).should("have.length.greaterThan", 0);
 	});
 });

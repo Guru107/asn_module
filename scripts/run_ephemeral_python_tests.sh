@@ -43,26 +43,9 @@ bench --site "$SITE_NAME" install-app erpnext
 bench --site "$SITE_NAME" install-app asn_module
 bench build --app asn_module
 
-# ERPNext fixture install can intermittently fail in CI with nested-set recursion
-# while base records already exist. Ignore only that known transient and fail for
-# any other setup error.
-set +e
-fixtures_output="$(
-	bench --site "$SITE_NAME" execute erpnext.setup.setup_wizard.operations.install_fixtures.install --args '["India"]' 2>&1
-)"
-fixtures_exit=$?
-set -e
-
-if [ "$fixtures_exit" -ne 0 ]; then
-	if printf '%s' "$fixtures_output" | grep -q "NestedSetRecursionError\|Item cannot be added to its own descendants"; then
-		echo "Warning: setup wizard fixture install hit nested-set recursion; continuing with test bootstrap."
-	else
-		printf '%s\n' "$fixtures_output" >&2
-		exit "$fixtures_exit"
-	fi
-fi
-
 bench --site "$SITE_NAME" set-config allow_tests true
+# `before_tests` establishes ERPNext defaults for app tests; avoid replaying
+# setup-wizard fixtures because nested-set conflicts are noisy and non-actionable.
 bench --site "$SITE_NAME" execute asn_module.utils.test_setup.before_tests
 
 run_tests_cmd=("$(which bench)" --site "$SITE_NAME" run-tests --app asn_module)
