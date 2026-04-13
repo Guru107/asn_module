@@ -1,17 +1,19 @@
 from decimal import Decimal
 
-from hypothesis import given
-from hypothesis import strategies as st
-from hypothesis import settings as hypothesis_settings
 from frappe.tests import UnitTestCase
 from frappe.utils import flt
+from hypothesis import given
+from hypothesis import settings as hypothesis_settings
+from hypothesis import strategies as st
 
 from asn_module.property_tests import settings as property_settings
 from asn_module.property_tests.strategies import scan_text
-from asn_module.templates.pages.asn_new_services import PortalValidationError
-from asn_module.templates.pages.asn_new_services import normalize_group_field
-from asn_module.templates.pages.asn_new_services import normalize_group_value
-from asn_module.templates.pages.asn_new_services import parse_positive_qty
+from asn_module.templates.pages.asn_new_services import (
+	PortalValidationError,
+	normalize_group_field,
+	normalize_group_value,
+	parse_positive_qty,
+)
 
 
 def _identity(x):

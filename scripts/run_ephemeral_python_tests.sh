@@ -59,10 +59,9 @@ else
 	run_tests_cmd+=(--app asn_module)
 fi
 
-# Run tests as the exit gate — always exit 0 from this script so CI uses
-# the test result as the authoritative signal. Coverage collection via
-# coverage.py subprocess injection is unreliable with bench (Frappe spawns
-# workers); CI uses Frappe's --coverage flag instead.
+# Run tests as the exit gate and propagate the exact exit status. Coverage
+# collection via coverage.py subprocess injection is unreliable with bench
+# (Frappe spawns workers); CI uses Frappe's --coverage flag instead.
 if [ "${CI:-}" = "true" ]; then
 	run_tests_cmd+=(--coverage)
 fi

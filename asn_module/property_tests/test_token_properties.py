@@ -1,13 +1,12 @@
 import base64
 from unittest.mock import patch
 
+from frappe.tests import UnitTestCase
 from hypothesis import given
 from hypothesis import strategies as st
-from frappe.tests import UnitTestCase
 
 from asn_module.qr_engine import token as token_module
 from asn_module.qr_engine.token import InvalidTokenError, create_token, verify_token
-
 
 _ACTION = st.from_regex(r"[a-z][a-z_]{2,39}", fullmatch=True)
 _SOURCE_DOCTYPE = st.from_regex(r"[A-Za-z][A-Za-z ]{2,39}", fullmatch=True)
