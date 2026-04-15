@@ -37,6 +37,16 @@ cleanup() {
 				cp "$coverage_xml_source" "$coverage_xml_target"
 			fi
 
+			if [ ! -f "$coverage_xml_target" ]; then
+				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
+					coverage_data_source="$BENCH_ROOT/.coverage"
+				fi
+				if [ -f "$coverage_data_source" ] && [ -x "$BENCH_ROOT/env/bin/python" ]; then
+					mkdir -p "$(dirname "$coverage_xml_target")"
+					COVERAGE_FILE="$coverage_data_source" "$BENCH_ROOT/env/bin/python" -m coverage xml -o "$coverage_xml_target" >/dev/null 2>&1
+				fi
+			fi
+
 			if [ -n "$coverage_data_target" ]; then
 				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
 					coverage_data_source="$BENCH_ROOT/.coverage"
