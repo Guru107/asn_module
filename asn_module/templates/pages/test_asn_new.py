@@ -137,7 +137,9 @@ class TestASNNewPortalPage(FrappeTestCase):
 			asn_new._parse_bulk_csv_rows()
 
 	def test_parse_bulk_csv_rows_accepts_100_item_rows(self):
-		rows = [f"INV-100,2026-04-05,2026-04-06,,,,,1000,PO-100,{idx},ITEM-001,1,10" for idx in range(1, 101)]
+		rows = [
+			f"INV-100,2026-04-05,2026-04-06,,,,,,1000,PO-100,{idx},ITEM-001,1,10" for idx in range(1, 101)
+		]
 		csv_text = (
 			"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\n"
 			+ "\n".join(rows)
