@@ -29,6 +29,9 @@ cleanup() {
 			local coverage_data_source="$BENCH_ROOT/sites/$SITE_NAME/.coverage"
 			local coverage_data_target="${COVERAGE_DATA_OUTPUT:-}"
 
+			if [ ! -f "$coverage_xml_source" ] && [ -f "$BENCH_ROOT/coverage.xml" ]; then
+				coverage_xml_source="$BENCH_ROOT/coverage.xml"
+			fi
 			if [ -f "$coverage_xml_source" ]; then
 				mkdir -p "$(dirname "$coverage_xml_target")"
 				cp "$coverage_xml_source" "$coverage_xml_target"
