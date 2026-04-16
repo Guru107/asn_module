@@ -21,6 +21,12 @@ Trade-off: Less backend churn but weaker guarantees and inconsistent behavior ac
 
 Locked decision: Option 1.
 
+Robust validation rules (mandatory):
+- Normalize input by trimming and removing whitespace only (no permissive separator rewriting).
+- Accept only exact `SCAN_CODE_LENGTH == 16`.
+- Accept only characters from `SCAN_CODE_ALPHABET`.
+- Reject all non-canonical shapes (dashed strings, legacy token URLs, wrong length, invalid charset) with the standard "Unknown or invalid scan code" flow.
+
 ---
 
 ## File Structure (locked before implementation)

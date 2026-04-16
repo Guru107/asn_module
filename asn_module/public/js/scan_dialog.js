@@ -48,14 +48,6 @@ asn_module.ScanDialog = class ScanDialog {
 
 		try {
 			const parsed = new URL(input, window.location.origin);
-			if (parsed.searchParams.get("token")) {
-				return {
-					error: __(
-						"This URL uses the old token format. Use the short code printed on the document."
-					),
-				};
-			}
-
 			const code_param = parsed.searchParams.get("code");
 			if (code_param) {
 				return { code: decodeURIComponent(code_param).trim() };

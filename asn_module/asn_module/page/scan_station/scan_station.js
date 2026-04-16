@@ -22,14 +22,6 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 		try {
 			const parsed = new URL(input, window.location.origin);
-			if (parsed.searchParams.get("token")) {
-				return {
-					error: __(
-						"This URL uses the old token format. Use a label printed after the upgrade (raw 16-character code or code= URL)."
-					),
-				};
-			}
-
 			const code_param = parsed.searchParams.get("code");
 			if (code_param) {
 				return { code: decodeURIComponent(code_param).trim() };
