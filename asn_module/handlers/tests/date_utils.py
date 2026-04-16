@@ -1,31 +1,15 @@
-import frappe
-from frappe.utils import add_days, nowdate
+from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 
 def fiscal_year_test_dates() -> dict[str, str]:
-	current = nowdate()
-	fy = frappe.db.get_value(
-		"Fiscal Year",
-		{
-			"disabled": 0,
-			"year_start_date": ("<=", current),
-			"year_end_date": (">=", current),
-		},
-		["year_start_date", "year_end_date"],
-		as_dict=True,
-	)
-	if not fy:
-		fy = frappe.db.get_value(
-			"Fiscal Year",
-			{"disabled": 0},
-			["year_start_date", "year_end_date"],
-			as_dict=True,
-			order_by="year_start_date asc",
-		)
-	base = str(fy.year_start_date) if fy else current
+	"""Compatibility shim for handler tests.
+
+	Canonical FY date logic lives in ``asn_module.tests.financial_year_dates``.
+	"""
+	dates = get_fiscal_year_test_dates()
 	return {
-		"transaction_date": base,
-		"schedule_date": add_days(base, 1),
-		"item_schedule_date": add_days(base, 1),
-		"lr_date": add_days(base, 5),
+		"transaction_date": dates["transaction_date"],
+		"schedule_date": dates["schedule_date"],
+		"item_schedule_date": dates["item_schedule_date"],
+		"lr_date": dates["lr_date"],
 	}
