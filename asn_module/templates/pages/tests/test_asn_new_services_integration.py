@@ -13,7 +13,10 @@ from asn_module.templates.pages.asn_new_services import (
 	validate_no_duplicate_po_sr_no,
 	validate_qty_within_remaining,
 )
+from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import before_tests
+
+TEST_DATES = get_fiscal_year_test_dates()
 
 
 class TestAsnNewServicesIntegration(FrappeTestCase):
@@ -80,8 +83,8 @@ class TestAsnNewServicesIntegration(FrappeTestCase):
 		row1 = ParsedBulkRow(
 			1,
 			"INV-MISMATCH",
-			"2026-04-05",
-			"2026-04-06",
+			TEST_DATES["supplier_invoice_date"],
+			TEST_DATES["expected_delivery_date"],
 			"LR-001",
 			"",
 			"",
@@ -97,8 +100,8 @@ class TestAsnNewServicesIntegration(FrappeTestCase):
 		row2 = ParsedBulkRow(
 			2,
 			"INV-MISMATCH",
-			"2026-04-05",
-			"2026-04-06",
+			TEST_DATES["supplier_invoice_date"],
+			TEST_DATES["expected_delivery_date"],
 			"LR-002",
 			"",
 			"",
@@ -119,8 +122,8 @@ class TestAsnNewServicesIntegration(FrappeTestCase):
 		row1 = ParsedBulkRow(
 			1,
 			"INV-DUP-1",
-			"2026-04-05",
-			"2026-04-06",
+			TEST_DATES["supplier_invoice_date"],
+			TEST_DATES["expected_delivery_date"],
 			"",
 			"",
 			"",
@@ -136,8 +139,8 @@ class TestAsnNewServicesIntegration(FrappeTestCase):
 		row2 = ParsedBulkRow(
 			2,
 			"INV-DUP-2",
-			"2026-04-05",
-			"2026-04-06",
+			TEST_DATES["supplier_invoice_date"],
+			TEST_DATES["expected_delivery_date"],
 			"",
 			"",
 			"",

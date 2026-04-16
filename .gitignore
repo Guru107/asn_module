@@ -60,3 +60,4 @@ cypress/screenshots/
 
 .coverage
 .hypothesis/
+dump.rdb

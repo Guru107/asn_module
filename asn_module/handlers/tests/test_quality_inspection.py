@@ -4,6 +4,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import before_tests, create_purchase_order
+from asn_module.handlers.tests.date_utils import fiscal_year_test_dates
 
 
 class TestQualityInspectionSubmitHook(FrappeTestCase):
@@ -13,10 +14,11 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 		super().setUpClass()
 
 	def _make_purchase_receipt(self, submit=False):
+		dates = fiscal_year_test_dates()
 		purchase_order = create_purchase_order(
-			transaction_date="2026-03-30",
-			schedule_date="2026-03-31",
-			item_schedule_date="2026-03-31",
+			transaction_date=dates["transaction_date"],
+			schedule_date=dates["schedule_date"],
+			item_schedule_date=dates["item_schedule_date"],
 		)
 		item = frappe.get_doc("Item", purchase_order.items[0].item_code)
 		if not item.inspection_required_before_purchase:
@@ -141,10 +143,11 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 		msgprint,
 		attach_qr_to_doc,
 	):
+		dates = fiscal_year_test_dates()
 		purchase_order = create_purchase_order(
-			transaction_date="2026-03-30",
-			schedule_date="2026-03-31",
-			item_schedule_date="2026-03-31",
+			transaction_date=dates["transaction_date"],
+			schedule_date=dates["schedule_date"],
+			item_schedule_date=dates["item_schedule_date"],
 		)
 		stock_entry = frappe.get_doc(
 			{

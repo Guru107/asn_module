@@ -11,6 +11,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn_with_two_items,
 )
 from asn_module.handlers.purchase_receipt import create_from_asn, on_purchase_receipt_submit
+from asn_module.handlers.tests.date_utils import fiscal_year_test_dates
 
 
 class TestCreatePurchaseReceipt(FrappeTestCase):
@@ -20,16 +21,17 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		super().setUpClass()
 
 	def _make_submitted_asn(self):
+		dates = fiscal_year_test_dates()
 		purchase_order = create_purchase_order(
-			transaction_date="2026-03-30",
-			schedule_date="2026-03-31",
-			item_schedule_date="2026-03-31",
+			transaction_date=dates["transaction_date"],
+			schedule_date=dates["schedule_date"],
+			item_schedule_date=dates["item_schedule_date"],
 		)
 		asn = make_test_asn(purchase_order=purchase_order)
 		asn.supplier_invoice_no = f"INV-PR-PREFILL-{frappe.generate_hash(length=6)}"
 		asn.transporter_name = "MAS Logistics"
 		asn.lr_no = "LR-0001"
-		asn.lr_date = "2026-04-05"
+		asn.lr_date = dates["lr_date"]
 		asn.insert(ignore_permissions=True)
 		with _mock_asn_attachments():
 			asn.submit()
@@ -100,10 +102,11 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			)
 
 	def test_rejects_draft_asn(self):
+		dates = fiscal_year_test_dates()
 		purchase_order = create_purchase_order(
-			transaction_date="2026-03-30",
-			schedule_date="2026-03-31",
-			item_schedule_date="2026-03-31",
+			transaction_date=dates["transaction_date"],
+			schedule_date=dates["schedule_date"],
+			item_schedule_date=dates["item_schedule_date"],
 		)
 		asn = make_test_asn(purchase_order=purchase_order)
 		asn.insert(ignore_permissions=True)
@@ -118,10 +121,11 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 	@patch("asn_module.handlers.purchase_receipt._attach_qr_to_doc")
 	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_submit_updates_asn_and_attaches_one_putaway_qr(self, generate_qr, attach_qr_to_doc):
+		dates = fiscal_year_test_dates()
 		purchase_order = create_purchase_order(
-			transaction_date="2026-03-30",
-			schedule_date="2026-03-31",
-			item_schedule_date="2026-03-31",
+			transaction_date=dates["transaction_date"],
+			schedule_date=dates["schedule_date"],
+			item_schedule_date=dates["item_schedule_date"],
 			qty=10,
 		)
 		asn = make_test_asn_with_two_items(purchase_order=purchase_order, qty=5)

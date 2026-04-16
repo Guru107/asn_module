@@ -26,17 +26,21 @@ context("Scan Station nightly", () => {
 	it("accepts scan code and shows success or expected feedback", () => {
 		cy.visit(route("scan-station"));
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
+		expect(seededData.scan_code).to.have.length(16);
 		cy.get(".scan-input").clear();
-		cy.get(".scan-input").type(seededData.scan_code + "{enter}");
+		cy.get(".scan-input").type(seededData.scan_code);
+		cy.location("pathname", { timeout: 20000 }).should("include", "/purchase-receipt/");
 		cy.url({ timeout: 20000 }).should("not.include", "/login");
-		cy.url({ timeout: 20000 }).should("include", "/desk/purchase-receipt/");
 	});
 
-	it("dispatch with rejected QI shows error feedback", () => {
+	it("malformed code shows error feedback", () => {
 		cy.visit(route("scan-station"), { failOnStatusCode: false });
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
 		cy.get(".scan-input").clear();
-		cy.get(".scan-input").type("INVALID-REJECTED{enter}");
+		cy.get(".scan-input").type("TOO-SHORT{enter}");
+		cy.get(".scan-error", { timeout: 15000 }).should("be.visible");
+		cy.get(".scan-input").clear();
+		cy.get(".scan-input").type("ABCD-EFGH-JKLM-NPQR{enter}");
 		cy.get(".scan-error", { timeout: 15000 }).should("be.visible");
 	});
 });

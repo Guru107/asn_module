@@ -166,7 +166,7 @@
 			"fieldname": "scan_code_label",
 			"fieldtype": "Data",
 			"label": "Scan Code (manual entry)",
-			"description": "Grouped for readability; barcode encodes the raw code without dashes.",
+			"description": "Plain uppercase scan code with no separators; barcode encodes the same raw code.",
 			"no_copy": 1,
 			"read_only": 1
 		},

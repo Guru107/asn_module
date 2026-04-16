@@ -13,6 +13,9 @@ from asn_module.templates.pages.asn import (
 	get_context,
 	has_website_permission,
 )
+from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+
+TEST_DATES = get_fiscal_year_test_dates()
 
 
 class TestASNPortalPage(FrappeTestCase):
@@ -25,12 +28,16 @@ class TestASNPortalPage(FrappeTestCase):
 	def test_templates_use_website_route_and_gate_desk_create_action(self):
 		asn_page = Path(__file__).with_name("asn.html").read_text()
 		asn_row = Path(__file__).with_name("asn_row.html").read_text()
+		asn_detail = (
+			Path(__file__).parents[2] / "asn_module" / "doctype" / "asn" / "templates" / "asn.html"
+		).read_text()
 
 		self.assertIn("{% if can_create_asn %}", asn_page)
 		self.assertIn('href="/asn_new"', asn_page)
 		self.assertIn('href="/{{ asn.route }}"', asn_row)
 		self.assertIn("asn-portal-delete-btn", asn_row)
 		self.assertNotIn("/app/asn/{{ asn.name }}", asn_row)
+		self.assertIn("asn-copy-scan-code-btn", asn_detail)
 
 	def test_get_supplier_for_user_returns_portal_supplier(self):
 		with patch(
@@ -71,8 +78,8 @@ class TestASNPortalPage(FrappeTestCase):
 					"route": None,
 					"supplier_invoice_no": "INV-001",
 					"status": "Submitted",
-					"expected_delivery_date": "2026-04-05",
-					"asn_date": "2026-04-02",
+					"expected_delivery_date": TEST_DATES["expected_delivery_date"],
+					"asn_date": TEST_DATES["asn_date"],
 					"docstatus": 1,
 				}
 			)
@@ -133,8 +140,8 @@ class TestASNPortalPage(FrappeTestCase):
 					"route": "asn/asn-0001",
 					"supplier_invoice_no": "INV-001",
 					"status": "Submitted",
-					"expected_delivery_date": "2026-04-05",
-					"asn_date": "2026-04-02",
+					"expected_delivery_date": TEST_DATES["expected_delivery_date"],
+					"asn_date": TEST_DATES["asn_date"],
 					"docstatus": 1,
 				}
 			)
@@ -168,8 +175,8 @@ class TestASNPortalPage(FrappeTestCase):
 					"route": "asn/asn-0009",
 					"supplier_invoice_no": "INV-009",
 					"status": "Cancelled",
-					"expected_delivery_date": "2026-04-05",
-					"asn_date": "2026-04-02",
+					"expected_delivery_date": TEST_DATES["expected_delivery_date"],
+					"asn_date": TEST_DATES["asn_date"],
 					"docstatus": 2,
 				}
 			)
@@ -204,8 +211,8 @@ class TestASNPortalPage(FrappeTestCase):
 					"route": "asn/asn-0008",
 					"supplier_invoice_no": "INV-008",
 					"status": "Cancelled",
-					"expected_delivery_date": "2026-04-05",
-					"asn_date": "2026-04-02",
+					"expected_delivery_date": TEST_DATES["expected_delivery_date"],
+					"asn_date": TEST_DATES["asn_date"],
 					"docstatus": 2,
 				}
 			)

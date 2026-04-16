@@ -116,16 +116,6 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 	return handler_fn(source_doctype=source_doctype, source_name=source_name, payload=payload)
 
 
-def _reject_legacy_token_args() -> None:
-	if frappe.form_dict.get("token"):
-		frappe.throw(
-			_(
-				"Token-based scan URLs are no longer supported. Scan the QR again or enter the short code from the document."
-			),
-			title=_("Unsupported scan format"),
-		)
-
-
 def _payload_from_scan_code_registry(scan_doc: frappe.model.document.Document, device_info: str) -> dict:
 	return {
 		"action": scan_doc.action_key,
@@ -146,7 +136,6 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 
 	raw_input = (code or "").strip()
 	normalized = normalize_scan_code(raw_input)
-	_reject_legacy_token_args()
 
 	action_key = "unknown"
 	source_doctype = "DocType"
@@ -154,6 +143,8 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 
 	try:
 		if not normalized:
+			if raw_input:
+				raise ScanCodeNotFoundError(_("Unknown or invalid scan code."))
 			raise ScanCodeNotFoundError(_("Missing scan code."))
 
 		scan_doc = get_scan_code_doc(normalized)

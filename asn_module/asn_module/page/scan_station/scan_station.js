@@ -22,14 +22,6 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 		try {
 			const parsed = new URL(input, window.location.origin);
-			if (parsed.searchParams.get("token")) {
-				return {
-					error: __(
-						"This URL uses the old token format. Use a label printed after the upgrade (code= URL or raw short code)."
-					),
-				};
-			}
-
 			const code_param = parsed.searchParams.get("code");
 			if (code_param) {
 				return { code: decodeURIComponent(code_param).trim() };
@@ -54,7 +46,7 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 			// Not a URL. Treat as raw scan code.
 		}
 
-		return { code: input.replace(/[\s-]/g, "") };
+		return { code: input.replace(/\s/g, "") };
 	}
 
 	function process_scan(value) {
@@ -119,8 +111,8 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 		clearTimeout(scan_timeout);
 		scan_timeout = setTimeout(() => {
 			let val = $input.val();
-			// Short scan codes (~12 chars) or full dispatch URLs
-			if (val && (val.length >= 10 || /^https?:\/\//i.test(val))) {
+			// 16-character raw scan codes or full dispatch URLs with code=
+			if (val && (val.length >= 16 || /^https?:\/\//i.test(val))) {
 				process_scan(val);
 			}
 		}, 300);

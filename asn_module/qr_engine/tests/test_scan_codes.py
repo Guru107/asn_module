@@ -1,9 +1,13 @@
-from unittest.mock import patch
+from unittest import TestCase
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_days, today
 
 from asn_module.qr_engine.scan_codes import (
+	SCAN_CODE_ALPHABET,
+	SCAN_CODE_LENGTH,
 	_random_scan_code_value,
 	format_scan_code_for_display,
 	get_or_create_scan_code,
@@ -50,33 +54,38 @@ class TestFormatScanCodeForDisplay(FrappeTestCase):
 	def test_empty_code_returns_empty(self):
 		self.assertEqual(format_scan_code_for_display(""), "")
 
-	def test_short_code_unchanged(self):
-		self.assertEqual(format_scan_code_for_display("AB"), "AB")
+	def test_short_code_is_uppercased(self):
+		self.assertEqual(format_scan_code_for_display("ab"), "AB")
 
-	def test_exact_group_length(self):
-		self.assertEqual(format_scan_code_for_display("ABCD"), "ABCD")
+	def test_removes_spaces_and_dashes_without_grouping(self):
+		self.assertEqual(format_scan_code_for_display("ab cd-ef"), "ABCDEF")
 
-	def test_long_code_grouped(self):
+	def test_long_code_is_not_grouped(self):
 		result = format_scan_code_for_display("ABCDEFGHIJKLMNOP")
-		self.assertEqual(result, "ABCD-EFGH-IJKL-MNOP")
+		self.assertEqual(result, "ABCDEFGHIJKLMNOP")
 
-	def test_odd_length_code(self):
+	def test_odd_length_code_is_not_grouped(self):
 		result = format_scan_code_for_display("ABCDEFGHI")
-		self.assertEqual(result, "ABCD-EFGH-I")
+		self.assertEqual(result, "ABCDEFGHI")
 
 
 class TestNormalizeScanCode(FrappeTestCase):
 	def test_none_returns_empty(self):
 		self.assertEqual(normalize_scan_code(None), "")
 
-	def test_strips_dashes(self):
-		self.assertEqual(normalize_scan_code("AB-CD-EF"), "ABCDEF")
+	def test_rejects_wrong_length(self):
+		self.assertEqual(normalize_scan_code("ABCDEFGHJKLMNPQ"), "")
+		self.assertEqual(normalize_scan_code("ABCDEFGHJKLMNPQRST"), "")
 
-	def test_strips_spaces(self):
-		self.assertEqual(normalize_scan_code("AB CD EF"), "ABCDEF")
+	def test_rejects_invalid_characters(self):
+		self.assertEqual(normalize_scan_code("ABCDEFGHJKLMNPQ0"), "")
+		self.assertEqual(normalize_scan_code("ABCDEFGHJKLMNPQI"), "")
 
-	def test_uppercases(self):
-		self.assertEqual(normalize_scan_code("abcdef"), "ABCDEF")
+	def test_rejects_dashes(self):
+		self.assertEqual(normalize_scan_code("ABCD-EFGH-JKLM-NPQR"), "")
+
+	def test_accepts_valid_16_char_code_and_normalizes(self):
+		self.assertEqual(normalize_scan_code("  abcd efgh jklm npqr  "), "ABCDEFGHJKLMNPQR")
 
 
 class TestGetOrCreateScanCode(FrappeTestCase, _ScanCodeTestMixin):
@@ -91,6 +100,9 @@ class TestGetOrCreateScanCode(FrappeTestCase, _ScanCodeTestMixin):
 
 	def test_creates_new_scan_code(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		self.assertEqual(len(name), SCAN_CODE_LENGTH)
+		self.assertTrue(all(ch in SCAN_CODE_ALPHABET for ch in name))
+		self.assertEqual(normalize_scan_code(name), name)
 		self.assertTrue(frappe.db.exists("Scan Code", name))
 
 	def test_returns_existing_active(self):
@@ -191,7 +203,7 @@ class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 
 	def test_expiry_date_in_past_blocked(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
-		frappe.db.set_value("Scan Code", name, "expires_on", "2000-01-01", update_modified=False)
+		frappe.db.set_value("Scan Code", name, "expires_on", add_days(today(), -1), update_modified=False)
 		doc = frappe.get_doc("Scan Code", name)
 		with self.assertRaises(frappe.ValidationError):
 			validate_scan_code_row(doc, "create_purchase_receipt")
@@ -240,3 +252,57 @@ class TestVerifyRegistryRowPointsToExistingSource(FrappeTestCase, _ScanCodeTestM
 		doc = frappe.get_doc("Scan Code", name)
 		with patch("asn_module.qr_engine.scan_codes.frappe.db.exists", side_effect=Exception("db error")):
 			self.assertFalse(verify_registry_row_points_to_existing_source(doc))
+
+
+class TestGetOrCreateScanCodeCanonicalReuse(TestCase):
+	def test_invalid_active_row_is_not_reused(self):
+		doc = MagicMock()
+		doc.name = "ABCDEFGHJKLMNPQ2"
+		fake_frappe = MagicMock()
+		fake_frappe.ValidationError = Exception
+		fake_frappe.db.get_value.return_value = "ABCD-EFGH-JKLM-NPQR"
+		fake_frappe.db.exists.return_value = False
+		fake_frappe.get_doc.return_value = doc
+
+		with (
+			patch("asn_module.qr_engine.scan_codes.frappe", fake_frappe),
+			patch(
+				"asn_module.qr_engine.scan_codes._random_scan_code_value",
+				return_value="ABCDEFGHJKLMNPQ2",
+			),
+		):
+			result = get_or_create_scan_code("create_purchase_receipt", "ASN", "ASN-001")
+
+		self.assertEqual(result, "ABCDEFGHJKLMNPQ2")
+		self.assertEqual(len(result), SCAN_CODE_LENGTH)
+		self.assertTrue(all(ch in SCAN_CODE_ALPHABET for ch in result))
+		self.assertEqual(normalize_scan_code(result), result)
+		fake_frappe.db.get_value.assert_called_once()
+		fake_frappe.db.exists.assert_called_once_with("Scan Code", "ABCDEFGHJKLMNPQ2")
+		fake_frappe.get_doc.assert_called_once()
+
+	def test_newly_created_scan_code_is_canonical_16_chars(self):
+		doc = MagicMock()
+		doc.name = "ABCDEFGHJKLMNPQ2"
+		fake_frappe = MagicMock()
+		fake_frappe.ValidationError = Exception
+		fake_frappe.db.get_value.return_value = None
+		fake_frappe.db.exists.return_value = False
+		fake_frappe.get_doc.return_value = doc
+
+		with (
+			patch("asn_module.qr_engine.scan_codes.frappe", fake_frappe),
+			patch(
+				"asn_module.qr_engine.scan_codes._random_scan_code_value",
+				return_value="ABCDEFGHJKLMNPQ2",
+			),
+		):
+			result = get_or_create_scan_code("create_purchase_receipt", "ASN", "ASN-002")
+
+		self.assertEqual(result, "ABCDEFGHJKLMNPQ2")
+		self.assertEqual(len(result), SCAN_CODE_LENGTH)
+		self.assertTrue(all(ch in SCAN_CODE_ALPHABET for ch in result))
+		self.assertEqual(normalize_scan_code(result), result)
+		fake_frappe.db.get_value.assert_called_once()
+		fake_frappe.db.exists.assert_called_once_with("Scan Code", "ABCDEFGHJKLMNPQ2")
+		fake_frappe.get_doc.assert_called_once()

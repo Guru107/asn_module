@@ -5,6 +5,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.templates.pages import asn_new_search
+from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+
+TEST_DATES = get_fiscal_year_test_dates()
 
 
 class TestASNNewSearch(FrappeTestCase):
@@ -20,9 +23,15 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
 				return_value=[
-					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05"),
 					SimpleNamespace(
-						name="PO-0002", status="To Receive and Bill", transaction_date="2026-04-06"
+						name="PO-0001",
+						status="To Receive",
+						transaction_date=TEST_DATES["supplier_invoice_date"],
+					),
+					SimpleNamespace(
+						name="PO-0002",
+						status="To Receive and Bill",
+						transaction_date=TEST_DATES["expected_delivery_date"],
 					),
 				],
 			),
@@ -43,7 +52,11 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
 				return_value=[
-					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+					SimpleNamespace(
+						name="PO-0001",
+						status="To Receive",
+						transaction_date=TEST_DATES["supplier_invoice_date"],
+					)
 				],
 			),
 			self.assertRaises(frappe.PermissionError),
@@ -62,7 +75,11 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
 				return_value=[
-					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+					SimpleNamespace(
+						name="PO-0001",
+						status="To Receive",
+						transaction_date=TEST_DATES["supplier_invoice_date"],
+					)
 				],
 			),
 			patch(
@@ -123,8 +140,16 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
 				return_value=[
-					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05"),
-					SimpleNamespace(name="PO-0002", status="To Receive", transaction_date="2026-04-06"),
+					SimpleNamespace(
+						name="PO-0001",
+						status="To Receive",
+						transaction_date=TEST_DATES["supplier_invoice_date"],
+					),
+					SimpleNamespace(
+						name="PO-0002",
+						status="To Receive",
+						transaction_date=TEST_DATES["expected_delivery_date"],
+					),
 				],
 			),
 		):
@@ -143,7 +168,11 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
 				return_value=[
-					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+					SimpleNamespace(
+						name="PO-0001",
+						status="To Receive",
+						transaction_date=TEST_DATES["supplier_invoice_date"],
+					)
 				],
 			),
 			patch(
@@ -190,7 +219,11 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
 				return_value=[
-					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+					SimpleNamespace(
+						name="PO-0001",
+						status="To Receive",
+						transaction_date=TEST_DATES["supplier_invoice_date"],
+					)
 				],
 			),
 			patch(
@@ -231,7 +264,11 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
 				return_value=[
-					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+					SimpleNamespace(
+						name="PO-0001",
+						status="To Receive",
+						transaction_date=TEST_DATES["supplier_invoice_date"],
+					)
 				],
 			),
 			patch(
