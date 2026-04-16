@@ -6,6 +6,7 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.asn_module.doctype.asn.test_asn import before_tests, create_purchase_order
 from asn_module.handlers.purchase_return import create_from_quality_inspection
 from asn_module.handlers.tests.date_utils import fiscal_year_test_dates
+from asn_module.handlers.tests.qi_schema import ensure_quality_inspection_purchase_receipt_item_column
 from asn_module.handlers.tests.test_stock_transfer import TestCreateStockTransfer
 
 
@@ -13,12 +14,7 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()
-		if not frappe.db.has_column("Quality Inspection", "purchase_receipt_item"):
-			frappe.db.commit()
-			frappe.db.sql(
-				"ALTER TABLE `tabQuality Inspection` ADD COLUMN `purchase_receipt_item` VARCHAR(255)",
-				ignore_ddl=True,
-			)
+		ensure_quality_inspection_purchase_receipt_item_column()
 		super().setUpClass()
 
 	def _make_rejected_purchase_receipt_with_qi(self):
