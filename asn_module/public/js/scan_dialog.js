@@ -72,7 +72,7 @@ asn_module.ScanDialog = class ScanDialog {
 			// Not a URL. Treat as raw scan code.
 		}
 
-		return { code: input.replace(/[\s-]/g, "") };
+		return { code: input.replace(/\s/g, "") };
 	}
 
 	process_scan(value) {
