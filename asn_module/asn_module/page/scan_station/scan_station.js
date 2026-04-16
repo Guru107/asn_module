@@ -12,7 +12,18 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 	const $error = page.main.find(".scan-error");
 	const $history = page.main.find(".scan-history-list");
 
+	let scan_code_length = 16;
 	let scan_timeout = null;
+
+	frappe.call({
+		method: "asn_module.qr_engine.scan_codes.get_scan_code_length",
+		callback(r) {
+			const value = Number(r.message);
+			if (Number.isInteger(value) && value > 0) {
+				scan_code_length = value;
+			}
+		},
+	});
 
 	function parse_scan_input(value) {
 		const input = (value || "").trim();
@@ -111,8 +122,8 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 		clearTimeout(scan_timeout);
 		scan_timeout = setTimeout(() => {
 			let val = $input.val();
-			// 16-character raw scan codes or full dispatch URLs with code=
-			if (val && (val.length >= 16 || /^https?:\/\//i.test(val))) {
+			// Canonical raw scan codes or full dispatch URLs with code=
+			if (val && (val.length >= scan_code_length || /^https?:\/\//i.test(val))) {
 				process_scan(val);
 			}
 		}, 300);

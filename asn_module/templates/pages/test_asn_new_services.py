@@ -22,7 +22,9 @@ from asn_module.templates.pages.asn_new_services import (
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
-TEST_DATES = get_fiscal_year_test_dates()
+
+def _test_dates():
+	return get_fiscal_year_test_dates()
 
 
 class TestParsePositiveQty(FrappeTestCase):
@@ -141,8 +143,8 @@ class TestValidateInvoiceGroupConsistency(FrappeTestCase):
 		defaults = dict(
 			row_number=1,
 			supplier_invoice_no="INV-1",
-			supplier_invoice_date=TEST_DATES["supplier_invoice_date"],
-			expected_delivery_date=TEST_DATES["expected_delivery_date"],
+			supplier_invoice_date=_test_dates()["supplier_invoice_date"],
+			expected_delivery_date=_test_dates()["expected_delivery_date"],
 			lr_no="",
 			lr_date="",
 			transporter_name="",
@@ -179,8 +181,8 @@ class TestValidateInvoiceGroupSinglePurchaseOrder(FrappeTestCase):
 		defaults = dict(
 			row_number=1,
 			supplier_invoice_no="INV-1",
-			supplier_invoice_date=TEST_DATES["supplier_invoice_date"],
-			expected_delivery_date=TEST_DATES["expected_delivery_date"],
+			supplier_invoice_date=_test_dates()["supplier_invoice_date"],
+			expected_delivery_date=_test_dates()["expected_delivery_date"],
 			lr_no="",
 			lr_date="",
 			transporter_name="",
