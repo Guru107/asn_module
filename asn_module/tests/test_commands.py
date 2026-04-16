@@ -15,6 +15,16 @@ class TestVerifyScanCodeRegistry(FrappeTestCase):
 		super().setUpClass()
 		for row in frappe.get_all("Scan Code", filters={"source_doctype": "Bogus DocType"}):
 			frappe.delete_doc("Scan Code", row["name"], force=True, ignore_permissions=True)
+		# Defensive cleanup for orphan rows created by failure-path integration tests.
+		for row in frappe.get_all(
+			"Scan Code",
+			filters={
+				"source_doctype": "ASN",
+				"source_name": ["in", ["Fake-ASN-For-Test", "NONEXISTENT-DOC-XYZ"]],
+			},
+			pluck="name",
+		):
+			frappe.delete_doc("Scan Code", row, force=True, ignore_permissions=True)
 
 	def _make_orphan_scan_code(self):
 		doc = frappe.get_doc(

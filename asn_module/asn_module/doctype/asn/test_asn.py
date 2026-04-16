@@ -63,6 +63,15 @@ def _ensure_supplier():
 def _ensure_item():
 	item_code = "_Test ASN Item"
 	if frappe.db.exists("Item", item_code):
+		# Keep the default ASN test item non-inspection to avoid cross-test leakage
+		# from stock-transfer/QI tests that temporarily enable inspection.
+		frappe.db.set_value(
+			"Item",
+			item_code,
+			"inspection_required_before_purchase",
+			0,
+			update_modified=False,
+		)
 		return item_code
 
 	item_group = _first_or_none("Item Group") or "All Item Groups"
@@ -74,6 +83,7 @@ def _ensure_item():
 			"item_name": item_code,
 			"item_group": item_group,
 			"stock_uom": uom,
+			"inspection_required_before_purchase": 0,
 		}
 	)
 	item.insert(ignore_permissions=True)

@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_days, today
 
 from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_ALPHABET,
@@ -202,7 +203,7 @@ class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 
 	def test_expiry_date_in_past_blocked(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
-		frappe.db.set_value("Scan Code", name, "expires_on", "2000-01-01", update_modified=False)
+		frappe.db.set_value("Scan Code", name, "expires_on", add_days(today(), -1), update_modified=False)
 		doc = frappe.get_doc("Scan Code", name)
 		with self.assertRaises(frappe.ValidationError):
 			validate_scan_code_row(doc, "create_purchase_receipt")

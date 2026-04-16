@@ -15,6 +15,18 @@ from asn_module.templates.pages.asn_new_services import (
 	validate_no_duplicate_po_sr_no,
 	validate_supplier_invoices_not_reused,
 )
+from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+
+TEST_DATES = get_fiscal_year_test_dates()
+
+
+def _bulk_csv_content(row_line: str) -> bytes:
+	return (
+		"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,"
+		"transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,"
+		"sr_no,item_code,qty,rate\n"
+		f"{row_line}\n"
+	).encode()
 
 
 class TestASNNewPortalPage(FrappeTestCase):
@@ -77,7 +89,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(rows[-1].sr_no, "100")
 
 	def test_parse_bulk_csv_rows_accepts_strict_template(self):
-		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,250,PO-0001,1,ITEM-001,10,25\n"
+		csv_content = _bulk_csv_content(
+			"INV-1,"
+			f"{TEST_DATES['supplier_invoice_date']},{TEST_DATES['expected_delivery_date']},"
+			f"LR-1,{TEST_DATES['lr_date']},TR-1,,,250,PO-0001,1,ITEM-001,10,25"
+		)
 		request = SimpleNamespace(
 			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
 		)
@@ -92,7 +108,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(rows[0].supplier_invoice_amount, 250)
 
 	def test_parse_bulk_csv_rows_accepts_empty_rate(self):
-		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,250,PO-0001,1,ITEM-001,10,\n"
+		csv_content = _bulk_csv_content(
+			"INV-1,"
+			f"{TEST_DATES['supplier_invoice_date']},{TEST_DATES['expected_delivery_date']},"
+			f"LR-1,{TEST_DATES['lr_date']},TR-1,,,250,PO-0001,1,ITEM-001,10,"
+		)
 		request = SimpleNamespace(
 			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
 		)
@@ -102,7 +122,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertIsNone(rows[0].rate)
 
 	def test_parse_bulk_csv_rows_rejects_negative_rate_when_provided(self):
-		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,250,PO-0001,1,ITEM-001,10,-1\n"
+		csv_content = _bulk_csv_content(
+			"INV-1,"
+			f"{TEST_DATES['supplier_invoice_date']},{TEST_DATES['expected_delivery_date']},"
+			f"LR-1,{TEST_DATES['lr_date']},TR-1,,,250,PO-0001,1,ITEM-001,10,-1"
+		)
 		request = SimpleNamespace(
 			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
 		)
@@ -113,7 +137,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 			asn_new._parse_bulk_csv_rows()
 
 	def test_parse_bulk_csv_rows_rejects_empty_supplier_invoice_amount(self):
-		csv_content = b"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\nINV-1,2026-04-05,2026-04-06,LR-1,2026-04-05,TR-1,,,,PO-0001,1,ITEM-001,10,25\n"
+		csv_content = _bulk_csv_content(
+			"INV-1,"
+			f"{TEST_DATES['supplier_invoice_date']},{TEST_DATES['expected_delivery_date']},"
+			f"LR-1,{TEST_DATES['lr_date']},TR-1,,,,PO-0001,1,ITEM-001,10,25"
+		)
 		request = SimpleNamespace(
 			files={"bulk_items_csv": SimpleNamespace(filename="items.csv", stream=BytesIO(csv_content))}
 		)
@@ -138,7 +166,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 	def test_parse_bulk_csv_rows_accepts_100_item_rows(self):
 		rows = [
-			f"INV-100,2026-04-05,2026-04-06,,,,,,1000,PO-100,{idx},ITEM-001,1,10" for idx in range(1, 101)
+			(
+				f"INV-100,{TEST_DATES['supplier_invoice_date']},"
+				f"{TEST_DATES['expected_delivery_date']},,,,,,1000,PO-100,{idx},ITEM-001,1,10"
+			)
+			for idx in range(1, 101)
 		]
 		csv_text = (
 			"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate\n"
@@ -219,8 +251,8 @@ class TestASNNewPortalPage(FrappeTestCase):
 			ParsedBulkRow(
 				row_number=2,
 				supplier_invoice_no="INV-1",
-				supplier_invoice_date="2026-04-05",
-				expected_delivery_date="2026-04-06",
+				supplier_invoice_date=TEST_DATES["supplier_invoice_date"],
+				expected_delivery_date=TEST_DATES["expected_delivery_date"],
 				lr_no="",
 				lr_date="",
 				transporter_name="",
@@ -236,8 +268,8 @@ class TestASNNewPortalPage(FrappeTestCase):
 			ParsedBulkRow(
 				row_number=3,
 				supplier_invoice_no="INV-1",
-				supplier_invoice_date="2026-04-05",
-				expected_delivery_date="2026-04-06",
+				supplier_invoice_date=TEST_DATES["supplier_invoice_date"],
+				expected_delivery_date=TEST_DATES["expected_delivery_date"],
 				lr_no="",
 				lr_date="",
 				transporter_name="",
@@ -330,8 +362,8 @@ class TestASNNewPortalPage(FrappeTestCase):
 			ParsedBulkRow(
 				row_number=2,
 				supplier_invoice_no="INV-MIX",
-				supplier_invoice_date="2026-04-05",
-				expected_delivery_date="2026-04-06",
+				supplier_invoice_date=TEST_DATES["supplier_invoice_date"],
+				expected_delivery_date=TEST_DATES["expected_delivery_date"],
 				lr_no="",
 				lr_date="",
 				transporter_name="",
@@ -347,8 +379,8 @@ class TestASNNewPortalPage(FrappeTestCase):
 			ParsedBulkRow(
 				row_number=3,
 				supplier_invoice_no="INV-MIX",
-				supplier_invoice_date="2026-04-05",
-				expected_delivery_date="2026-04-06",
+				supplier_invoice_date=TEST_DATES["supplier_invoice_date"],
+				expected_delivery_date=TEST_DATES["expected_delivery_date"],
 				lr_no="",
 				lr_date="",
 				transporter_name="",
@@ -382,8 +414,8 @@ class TestASNNewPortalPage(FrappeTestCase):
 			ParsedBulkRow(
 				row_number=2,
 				supplier_invoice_no="INV-1",
-				supplier_invoice_date="2026-04-05",
-				expected_delivery_date="2026-04-06",
+				supplier_invoice_date=TEST_DATES["supplier_invoice_date"],
+				expected_delivery_date=TEST_DATES["expected_delivery_date"],
 				lr_no="",
 				lr_date="",
 				transporter_name="",
@@ -399,8 +431,8 @@ class TestASNNewPortalPage(FrappeTestCase):
 			ParsedBulkRow(
 				row_number=3,
 				supplier_invoice_no="INV-2",
-				supplier_invoice_date="2026-04-05",
-				expected_delivery_date="2026-04-06",
+				supplier_invoice_date=TEST_DATES["supplier_invoice_date"],
+				expected_delivery_date=TEST_DATES["expected_delivery_date"],
 				lr_no="",
 				lr_date="",
 				transporter_name="",

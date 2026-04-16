@@ -7,6 +7,9 @@ from frappe.tests import UnitTestCase
 
 from asn_module.qr_engine import token as token_module
 from asn_module.qr_engine.token import InvalidTokenError, create_token, verify_token
+from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+
+TEST_DATES = get_fiscal_year_test_dates()
 
 
 class TestToken(UnitTestCase):
@@ -76,7 +79,7 @@ class TestToken(UnitTestCase):
 				"action": "create_purchase_receipt",
 				"source_doctype": "ASN",
 				"source_name": "ASN-00001",
-				"created_at": "2026-04-02 13:32:44.604410",
+				"created_at": TEST_DATES["token_created_at"],
 			}
 		)
 
@@ -89,7 +92,7 @@ class TestToken(UnitTestCase):
 				"action": " ",
 				"source_doctype": "ASN",
 				"source_name": "ASN-00001",
-				"created_at": "2026-04-02 13:32:44.604410",
+				"created_at": TEST_DATES["token_created_at"],
 				"created_by": "Administrator",
 			}
 		)
