@@ -250,17 +250,19 @@ def create_purchase_order(**kwargs):
 	po.currency = currency
 	po.conversion_factor = kwargs.get("conversion_factor", 1)
 	po.supplier_warehouse = kwargs.get("supplier_warehouse")
-	po.append(
-		"items",
-		{
-			"item_code": item_code,
-			"warehouse": warehouse,
-			"qty": kwargs.get("qty", 10),
-			"rate": kwargs.get("rate", 500),
-			"schedule_date": item_schedule_date,
-			"include_exploded_items": kwargs.get("include_exploded_items", 1),
-		},
-	)
+	item_count = max(int(kwargs.get("item_count", 1) or 1), 1)
+	for _ in range(item_count):
+		po.append(
+			"items",
+			{
+				"item_code": item_code,
+				"warehouse": warehouse,
+				"qty": kwargs.get("qty", 10),
+				"rate": kwargs.get("rate", 500),
+				"schedule_date": item_schedule_date,
+				"include_exploded_items": kwargs.get("include_exploded_items", 1),
+			},
+		)
 	po.set_missing_values()
 
 	if not kwargs.get("do_not_save"):

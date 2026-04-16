@@ -23,9 +23,48 @@ cleanup() {
 	local exit_code=$?
 	set +e
 	if [ -n "${SITE_NAME:-}" ] && [ -d "$BENCH_ROOT/sites/$SITE_NAME" ]; then
-		if [ "${CI:-}" = "true" ] && [ -f "$BENCH_ROOT/sites/$SITE_NAME/coverage.xml" ]; then
-			mkdir -p "$APP_ROOT"
-			cp "$BENCH_ROOT/sites/$SITE_NAME/coverage.xml" "$APP_ROOT/"
+		if [ "${CI:-}" = "true" ]; then
+			local coverage_xml_source="$BENCH_ROOT/sites/$SITE_NAME/coverage.xml"
+			local coverage_xml_target="${COVERAGE_XML_OUTPUT:-$APP_ROOT/coverage.xml}"
+			local coverage_data_source="$BENCH_ROOT/sites/$SITE_NAME/.coverage"
+			local coverage_data_target="${COVERAGE_DATA_OUTPUT:-}"
+
+			if [ ! -f "$coverage_xml_source" ] && [ -f "$BENCH_ROOT/sites/coverage.xml" ]; then
+				coverage_xml_source="$BENCH_ROOT/sites/coverage.xml"
+			fi
+			if [ ! -f "$coverage_xml_source" ] && [ -f "$BENCH_ROOT/coverage.xml" ]; then
+				coverage_xml_source="$BENCH_ROOT/coverage.xml"
+			fi
+			if [ -f "$coverage_xml_source" ]; then
+				mkdir -p "$(dirname "$coverage_xml_target")"
+				cp "$coverage_xml_source" "$coverage_xml_target"
+			fi
+
+			if [ ! -f "$coverage_xml_target" ]; then
+				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
+					coverage_data_source="$BENCH_ROOT/sites/.coverage"
+				fi
+				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
+					coverage_data_source="$BENCH_ROOT/.coverage"
+				fi
+				if [ -f "$coverage_data_source" ] && [ -x "$BENCH_ROOT/env/bin/python" ]; then
+					mkdir -p "$(dirname "$coverage_xml_target")"
+					COVERAGE_FILE="$coverage_data_source" "$BENCH_ROOT/env/bin/python" -m coverage xml -o "$coverage_xml_target" >/dev/null 2>&1
+				fi
+			fi
+
+			if [ -n "$coverage_data_target" ]; then
+				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
+					coverage_data_source="$BENCH_ROOT/sites/.coverage"
+				fi
+				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
+					coverage_data_source="$BENCH_ROOT/.coverage"
+				fi
+				if [ -f "$coverage_data_source" ]; then
+					mkdir -p "$(dirname "$coverage_data_target")"
+					cp "$coverage_data_source" "$coverage_data_target"
+				fi
+			fi
 		fi
 		echo "Dropping ephemeral site $SITE_NAME"
 		cd "$BENCH_ROOT" || exit "$exit_code"
@@ -48,19 +87,20 @@ bench --site "$SITE_NAME" set-config allow_tests true
 # setup-wizard fixtures because nested-set conflicts are noisy and non-actionable.
 bench --site "$SITE_NAME" execute asn_module.utils.test_setup.before_tests
 
-run_tests_cmd=("$(which bench)" --site "$SITE_NAME" run-tests --app asn_module)
+run_tests_cmd=("$(which bench)" --site "$SITE_NAME" run-tests)
 if [ "${ERPNEXT_VERSION:-}" = "16" ]; then
 	run_tests_cmd+=(--lightmode)
 fi
 
 if [ "$#" -gt 0 ]; then
 	run_tests_cmd+=(--module "$1")
+else
+	run_tests_cmd+=(--app asn_module)
 fi
 
-# Run tests as the exit gate — always exit 0 from this script so CI uses
-# the test result as the authoritative signal. Coverage collection via
-# coverage.py subprocess injection is unreliable with bench (Frappe spawns
-# workers); CI uses Frappe's --coverage flag instead.
+# Run tests as the exit gate and propagate the exact exit status. Coverage
+# collection via coverage.py subprocess injection is unreliable with bench
+# (Frappe spawns workers); CI uses Frappe's --coverage flag instead.
 if [ "${CI:-}" = "true" ]; then
 	run_tests_cmd+=(--coverage)
 fi

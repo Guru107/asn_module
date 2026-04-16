@@ -402,3 +402,27 @@ def validate_no_duplicate_po_sr_no(rows: list[ParsedBulkRow], *, invoice_no: str
 		)
 	if errors:
 		raise PortalValidationError(errors)
+
+
+def validate_invoice_group_single_purchase_order(invoice_no: str, rows: list[ParsedBulkRow]):
+	if not rows:
+		return
+
+	expected_po = rows[0].purchase_order
+	errors: list[dict] = []
+	for row in rows[1:]:
+		if row.purchase_order == expected_po:
+			continue
+		errors.append(
+			error_entry(
+				row_number=row.row_number,
+				invoice_no=invoice_no,
+				field="purchase_order",
+				message=_(
+					"Row {0}: invoice group {1} must contain a single Purchase Order. Expected {2}, found {3}."
+				).format(row.row_number, invoice_no, expected_po, row.purchase_order),
+			)
+		)
+
+	if errors:
+		raise PortalValidationError(errors)

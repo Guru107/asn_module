@@ -1,12 +1,14 @@
 context("ASN New portal smoke", () => {
 	let portalUser;
 	let portalPassword;
+	let purchaseOrders;
 
 	before(() => {
 		cy.seed_context("asn_module.utils.cypress_helpers.seed_supplier_context").then(
 			(seededData) => {
 				portalUser = seededData.portal_user;
 				portalPassword = seededData.portal_password;
+				purchaseOrders = seededData.purchase_orders || [];
 			}
 		);
 	});
@@ -25,6 +27,43 @@ context("ASN New portal smoke", () => {
 		cy.get("form#single-asn-form input[name='supplier_invoice_no']", {
 			timeout: 20000,
 		}).should("exist");
+	});
+
+	it("selects items and auto-populates manual rows", () => {
+		let poName = purchaseOrders[0].name;
+
+		const setPo = (name) => {
+			cy.get("#single-po-input", { timeout: 20000 }).clear().type(name);
+			cy.get("#add-po-btn").click();
+			cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
+		};
+
+		cy.visit("/asn_new", { failOnStatusCode: false });
+		setPo(poName);
+		cy.get("body").then(($body) => {
+			const noItems =
+				$body.find("#single-item-picker-list .asn-item-picker-empty").length > 0;
+			if (noItems && purchaseOrders[1]) {
+				poName = purchaseOrders[1].name;
+				setPo(poName);
+			}
+		});
+		cy.get("input[name='selected_purchase_orders']", { timeout: 20000 })
+			.invoke("val")
+			.as("effectivePo");
+		cy.get("#single-item-picker-list input[type='checkbox']", { timeout: 20000 }).should(
+			"have.length.greaterThan",
+			0
+		);
+		cy.get("#single-item-picker-list input[type='checkbox']").first().check({ force: true });
+		cy.get("#single-manual-rows .single-row", { timeout: 20000 }).should("have.length", 1);
+		cy.get("@effectivePo").then((effectivePo) => {
+			cy.get("#single-manual-rows input[name='single_manual_purchase_order']")
+				.first()
+				.should("have.value", String(effectivePo));
+		});
+		cy.get("#single-item-picker-list input[type='checkbox']").first().uncheck({ force: true });
+		cy.get("#single-manual-rows .single-row", { timeout: 20000 }).should("have.length", 0);
 	});
 
 	it("renders bulk-mode form without errors", () => {

@@ -39,6 +39,40 @@ bench --site <site_name> run-tests --module asn_module.<module_path>
 # Single test:
 bench --site <site_name> run-tests --module asn_module.<module_path> --test <test_name>
 ```
+
+### Property-Based Tests
+Use the `HYPOTHESIS_PROFILE` env var to switch between CI-sized and deeper local runs.
+
+```bash
+# Phase 1: run one property module locally
+HYPOTHESIS_PROFILE=local bench --site frappe16.localhost run-tests \
+  --module asn_module.property_tests.test_asn_new_services_properties \
+  --lightmode
+
+# Full property suite: run each module explicitly
+for m in \
+  asn_module.property_tests.test_asn_new_services_properties \
+  asn_module.property_tests.test_scan_code_properties \
+  asn_module.property_tests.test_token_properties; do
+  HYPOTHESIS_PROFILE=local bench --site frappe16.localhost run-tests --module "$m" --lightmode
+done
+
+# CI-style profile for local reproduction
+HYPOTHESIS_PROFILE=ci bench --site frappe16.localhost run-tests \
+  --module asn_module.property_tests.test_asn_new_services_properties \
+  --lightmode
+```
+
+Notes:
+- `bench --site frappe16.localhost run-tests --module asn_module.property_tests --lightmode` returns no tests ran in this repo; run each property module explicitly.
+- The CI job uses the `ci` profile. Local debugging can use `local` to increase examples.
+
+Triage guidance:
+- Let Hypothesis shrink the failure first. Keep the minimized counterexample it prints.
+- Re-run the single failing module with the same `HYPOTHESIS_PROFILE` to confirm it is reproducible.
+- If the failure is real, add a deterministic regression test next to the affected code and keep the property test as the fuzzing guard.
+- If the failure is only caused by unrealistic input, tighten the strategy bounds rather than asserting on a larger surface than the code actually guarantees.
+
 For running E2E Tests use Cypress
 ```bash
 Usage: bench run-ui-tests [OPTIONS] APP [CYPRESSARGS]...

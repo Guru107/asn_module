@@ -53,6 +53,19 @@ class TestAsnNewServicesIntegration(FrappeTestCase):
 				po.cancel()
 			po.delete()
 
+	def test_fetch_purchase_order_items_handles_100_line_purchase_order(self):
+		po = create_purchase_order(qty=1, rate=100, item_count=100)
+		try:
+			rows_by_key, remaining_qty_by_name = fetch_purchase_order_items([po.name])
+			self.assertEqual(len(rows_by_key), 100)
+			self.assertEqual(len(remaining_qty_by_name), 100)
+			self.assertIn((po.name, "1"), rows_by_key)
+			self.assertIn((po.name, "100"), rows_by_key)
+		finally:
+			if po.docstatus == 1:
+				po.cancel()
+			po.delete()
+
 	def test_validate_qty_within_remaining_raises_on_excess(self):
 		with self.assertRaises(PortalValidationError):
 			validate_qty_within_remaining(

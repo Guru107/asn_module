@@ -68,15 +68,37 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.frappe.get_all",
 				return_value=[
-					SimpleNamespace(name="POI-1", idx=1, item_code="ITEM-001", uom="Nos", rate=10),
-					SimpleNamespace(name="POI-2", idx=2, item_code="ABC-002", uom="Nos", rate=20),
+					SimpleNamespace(
+						name="POI-1",
+						idx=1,
+						item_code="ITEM-001",
+						item_name="Widget 1",
+						uom="Nos",
+						rate=10,
+						qty=5,
+					),
+					SimpleNamespace(
+						name="POI-2",
+						idx=2,
+						item_code="ABC-002",
+						item_name="Widget 2",
+						uom="Nos",
+						rate=20,
+						qty=4,
+					),
 				],
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_shipped_qty_by_po_item",
+				return_value={"POI-1": 2, "POI-2": 4},
 			),
 		):
 			rows = asn_new_search.search_purchase_order_items(purchase_order="PO-0001", txt="ITEM")
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0]["value"], "ITEM-001")
 		self.assertEqual(rows[0]["sr_no"], "1")
+		self.assertEqual(rows[0]["item_name"], "Widget 1")
+		self.assertEqual(rows[0]["remaining_qty"], 3)
 
 	def test_get_supplier_raises_when_none(self):
 		with (
@@ -127,11 +149,112 @@ class TestASNNewSearch(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new_search.frappe.get_all",
 				return_value=[
-					SimpleNamespace(name="POI-1", idx=1, item_code="ITEM-001", uom="Nos", rate=10),
-					SimpleNamespace(name="POI-2", idx=2, item_code="OTHER-002", uom="Nos", rate=20),
+					SimpleNamespace(
+						name="POI-1",
+						idx=1,
+						item_code="ITEM-001",
+						item_name="Alpha",
+						uom="Nos",
+						rate=10,
+						qty=5,
+					),
+					SimpleNamespace(
+						name="POI-2",
+						idx=2,
+						item_code="OTHER-002",
+						item_name="Beta",
+						uom="Nos",
+						rate=20,
+						qty=5,
+					),
 				],
 			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_shipped_qty_by_po_item",
+				return_value={"POI-1": 0, "POI-2": 0},
+			),
 		):
-			rows = asn_new_search.search_purchase_order_items(purchase_order="PO-0001", txt="ITEM")
+			rows = asn_new_search.search_purchase_order_items(purchase_order="PO-0001", txt="alpha")
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["value"], "ITEM-001")
+
+	def test_search_purchase_order_items_excludes_fully_received_rows(self):
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
+				return_value=[
+					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+				],
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.get_all",
+				return_value=[
+					SimpleNamespace(
+						name="POI-1",
+						idx=1,
+						item_code="ITEM-001",
+						item_name="Alpha",
+						uom="Nos",
+						rate=10,
+						qty=5,
+					),
+					SimpleNamespace(
+						name="POI-2", idx=2, item_code="ITEM-002", item_name="Beta", uom="Nos", rate=20, qty=2
+					),
+				],
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_shipped_qty_by_po_item",
+				return_value={"POI-1": 5, "POI-2": 0},
+			),
+		):
+			rows = asn_new_search.search_purchase_order_items(purchase_order="PO-0001", txt="")
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["value"], "ITEM-002")
+
+	def test_search_purchase_order_items_accepts_string_paging_params(self):
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user", return_value="Supp-001"
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
+				return_value=[
+					SimpleNamespace(name="PO-0001", status="To Receive", transaction_date="2026-04-05")
+				],
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.get_all",
+				return_value=[
+					SimpleNamespace(
+						name="POI-1",
+						idx=1,
+						item_code="ITEM-001",
+						item_name="Alpha",
+						uom="Nos",
+						rate=10,
+						qty=5,
+					),
+				],
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_shipped_qty_by_po_item",
+				return_value={"POI-1": 0},
+			),
+		):
+			rows = asn_new_search.search_purchase_order_items(
+				purchase_order="PO-0001", txt="", start="0", page_len="200"
+			)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0]["value"], "ITEM-001")

@@ -14,6 +14,10 @@ context("Scan Station nightly", () => {
 		);
 	});
 
+	beforeEach(() => {
+		cy.login();
+	});
+
 	it("renders scan input", () => {
 		cy.visit(route("scan-station"));
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
@@ -24,9 +28,8 @@ context("Scan Station nightly", () => {
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
 		cy.get(".scan-input").clear();
 		cy.get(".scan-input").type(seededData.scan_code + "{enter}");
-		cy.get(".scan-result, .scan-success, .scan-error", { timeout: 20000 }).should(
-			"be.visible"
-		);
+		cy.url({ timeout: 20000 }).should("not.include", "/login");
+		cy.url({ timeout: 20000 }).should("include", "/desk/purchase-receipt/");
 	});
 
 	it("dispatch with rejected QI shows error feedback", () => {

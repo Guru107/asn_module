@@ -16,6 +16,7 @@ from asn_module.templates.pages.asn_new_services import (
 	parse_required_supplier_invoice_amount,
 	validate_bulk_group_count,
 	validate_invoice_group_consistency,
+	validate_invoice_group_single_purchase_order,
 	validate_qty_within_remaining,
 	validate_selected_purchase_orders,
 )
@@ -168,6 +169,46 @@ class TestValidateInvoiceGroupConsistency(FrappeTestCase):
 		]
 		with self.assertRaises(PortalValidationError):
 			validate_invoice_group_consistency("INV-1", rows)
+
+
+class TestValidateInvoiceGroupSinglePurchaseOrder(FrappeTestCase):
+	def _make_bulk_row(self, **overrides):
+		defaults = dict(
+			row_number=1,
+			supplier_invoice_no="INV-1",
+			supplier_invoice_date="2026-04-05",
+			expected_delivery_date="2026-04-06",
+			lr_no="",
+			lr_date="",
+			transporter_name="",
+			vehicle_number="",
+			driver_contact="",
+			supplier_invoice_amount=100.0,
+			purchase_order="PO-001",
+			sr_no="1",
+			item_code="ITEM-001",
+			qty=10.0,
+			rate=25.0,
+		)
+		defaults.update(overrides)
+		return ParsedBulkRow(**defaults)
+
+	def test_single_purchase_order_group_ok(self):
+		rows = [
+			self._make_bulk_row(row_number=1, purchase_order="PO-001"),
+			self._make_bulk_row(row_number=2, purchase_order="PO-001", sr_no="2"),
+		]
+		validate_invoice_group_single_purchase_order("INV-1", rows)
+
+	def test_multiple_purchase_orders_in_group_raises(self):
+		rows = [
+			self._make_bulk_row(row_number=1, purchase_order="PO-001"),
+			self._make_bulk_row(row_number=2, purchase_order="PO-002"),
+		]
+		with self.assertRaises(PortalValidationError) as ctx:
+			validate_invoice_group_single_purchase_order("INV-1", rows)
+		messages = " ".join(error.get("message", "") for error in ctx.exception.errors)
+		self.assertIn("single Purchase Order", messages)
 
 
 class TestValidateQtyWithinRemaining(FrappeTestCase):
