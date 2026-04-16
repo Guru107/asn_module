@@ -29,4 +29,3 @@ def fiscal_year_test_dates() -> dict[str, str]:
 		"item_schedule_date": add_days(base, 1),
 		"lr_date": add_days(base, 5),
 	}
-
