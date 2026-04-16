@@ -352,6 +352,7 @@
 		probe.select();
 		let ok = false;
 		try {
+			// Intentional legacy fallback for older browsers/contexts without Clipboard API.
 			ok = document.execCommand("copy");
 		} catch (e) {
 			ok = false;

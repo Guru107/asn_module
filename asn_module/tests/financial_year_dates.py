@@ -33,7 +33,12 @@ def get_fiscal_year_test_dates() -> dict[str, str]:
 	asn_date = str(fiscal_year.year_start_date)
 	invoice_date = str(add_days(asn_date, 3))
 	expected_delivery_date = str(add_days(asn_date, 4))
+	schedule_date = str(add_days(asn_date, 1))
 	return {
+		# Canonical baseline keys used by handlers and portal/template tests.
+		"transaction_date": asn_date,
+		"schedule_date": schedule_date,
+		"item_schedule_date": schedule_date,
 		"asn_date": asn_date,
 		"supplier_invoice_date": invoice_date,
 		"expected_delivery_date": expected_delivery_date,
