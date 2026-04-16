@@ -65,13 +65,15 @@ def _ensure_item():
 	if frappe.db.exists("Item", item_code):
 		# Keep the default ASN test item non-inspection to avoid cross-test leakage
 		# from stock-transfer/QI tests that temporarily enable inspection.
-		frappe.db.set_value(
-			"Item",
-			item_code,
-			"inspection_required_before_purchase",
-			0,
-			update_modified=False,
-		)
+		current_value = frappe.db.get_value("Item", item_code, "inspection_required_before_purchase")
+		if current_value:
+			frappe.db.set_value(
+				"Item",
+				item_code,
+				"inspection_required_before_purchase",
+				0,
+				update_modified=False,
+			)
 		return item_code
 
 	item_group = _first_or_none("Item Group") or "All Item Groups"
@@ -281,6 +283,17 @@ def create_purchase_order(**kwargs):
 			po.submit()
 
 	return po
+
+
+def create_purchase_order_with_fiscal_dates(**kwargs):
+	"""Create a Purchase Order seeded with fiscal-year-safe baseline dates."""
+	from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+
+	dates = get_fiscal_year_test_dates()
+	kwargs.setdefault("transaction_date", dates["transaction_date"])
+	kwargs.setdefault("schedule_date", dates["schedule_date"])
+	kwargs.setdefault("item_schedule_date", dates["item_schedule_date"])
+	return create_purchase_order(**kwargs)
 
 
 class TestASN(FrappeTestCase):
