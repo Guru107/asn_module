@@ -22,7 +22,11 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 	def _make_submitted_asn(self):
 		dates = get_fiscal_year_test_dates()
-		purchase_order = create_purchase_order_with_fiscal_dates()
+		purchase_order = create_purchase_order_with_fiscal_dates(
+			transaction_date=dates["transaction_date"],
+			schedule_date=dates["schedule_date"],
+			item_schedule_date=dates["item_schedule_date"],
+		)
 		asn = make_test_asn(purchase_order=purchase_order)
 		asn.supplier_invoice_no = f"INV-PR-PREFILL-{frappe.generate_hash(length=6)}"
 		asn.transporter_name = "MAS Logistics"

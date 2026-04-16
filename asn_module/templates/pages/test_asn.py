@@ -17,7 +17,12 @@ from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 
 def _test_dates():
-	return get_fiscal_year_test_dates()
+	cache_key = "_asn_test_dates_cache"
+	cached = getattr(frappe.local, cache_key, None)
+	if cached is None:
+		cached = get_fiscal_year_test_dates()
+		setattr(frappe.local, cache_key, cached)
+	return cached
 
 
 class TestASNPortalPage(FrappeTestCase):
