@@ -91,3 +91,21 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 			with self.assertRaises(ScanCodeNotFoundError) as cm:
 				dispatch(code="ASNLONGCODENOTEXIST1234", device_info="test")
 			self.assertIn("Unknown or invalid scan code", str(cm.exception))
+
+	def test_dispatch_invalid_length_scan_code_raises(self):
+		with integration_user_context():
+			with self.assertRaises(ScanCodeNotFoundError) as cm:
+				dispatch(code="TOO-SHORT", device_info="test")
+			self.assertIn("Unknown or invalid scan code", str(cm.exception))
+
+	def test_dispatch_invalid_charset_scan_code_raises(self):
+		with integration_user_context():
+			with self.assertRaises(ScanCodeNotFoundError) as cm:
+				dispatch(code="ABCDEFGHJKLMNPQ0", device_info="test")
+			self.assertIn("Unknown or invalid scan code", str(cm.exception))
+
+	def test_dispatch_dashed_scan_code_raises(self):
+		with integration_user_context():
+			with self.assertRaises(ScanCodeNotFoundError) as cm:
+				dispatch(code="ABCD-EFGH-JKLM-NPQR", device_info="test")
+			self.assertIn("Unknown or invalid scan code", str(cm.exception))

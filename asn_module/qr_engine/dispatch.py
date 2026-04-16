@@ -154,6 +154,8 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 
 	try:
 		if not normalized:
+			if raw_input:
+				raise ScanCodeNotFoundError(_("Unknown or invalid scan code."))
 			raise ScanCodeNotFoundError(_("Missing scan code."))
 
 		scan_doc = get_scan_code_doc(normalized)

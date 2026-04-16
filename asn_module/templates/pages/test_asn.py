@@ -25,12 +25,16 @@ class TestASNPortalPage(FrappeTestCase):
 	def test_templates_use_website_route_and_gate_desk_create_action(self):
 		asn_page = Path(__file__).with_name("asn.html").read_text()
 		asn_row = Path(__file__).with_name("asn_row.html").read_text()
+		asn_detail = (
+			Path(__file__).parents[2] / "asn_module" / "doctype" / "asn" / "templates" / "asn.html"
+		).read_text()
 
 		self.assertIn("{% if can_create_asn %}", asn_page)
 		self.assertIn('href="/asn_new"', asn_page)
 		self.assertIn('href="/{{ asn.route }}"', asn_row)
 		self.assertIn("asn-portal-delete-btn", asn_row)
 		self.assertNotIn("/app/asn/{{ asn.name }}", asn_row)
+		self.assertIn("asn-copy-scan-code-btn", asn_detail)
 
 	def test_get_supplier_for_user_returns_portal_supplier(self):
 		with patch(

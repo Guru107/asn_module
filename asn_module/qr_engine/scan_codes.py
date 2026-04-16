@@ -10,8 +10,7 @@ from frappe.utils import cint, get_datetime, now_datetime
 
 # Uppercase compact alphabet without ambiguous characters (0/O, 1/I/L).
 SCAN_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
-SCAN_CODE_LENGTH = 12
-SCAN_CODE_GROUP = 4
+SCAN_CODE_LENGTH = 16
 
 # Actions that may be executed when the registry row is already ``Used`` (re-scan).
 RESCAN_SAFE_ACTIONS = frozenset({"confirm_putaway"})
@@ -19,12 +18,12 @@ RESCAN_SAFE_ACTIONS = frozenset({"confirm_putaway"})
 _MAX_CREATE_ATTEMPTS = 64
 
 
-def format_scan_code_for_display(code: str, group: int = SCAN_CODE_GROUP) -> str:
-	"""Human-readable grouped code (e.g. ABCD-EFGH-IJKL); barcode still uses raw ``code``."""
+def format_scan_code_for_display(code: str) -> str:
+	"""Human-readable scan code as a plain uppercase string without separators."""
 	raw = (code or "").replace("-", "").replace(" ", "").upper()
 	if not raw:
 		return ""
-	return "-".join(raw[i : i + group] for i in range(0, len(raw), group))
+	return raw
 
 
 def _random_scan_code_value() -> str:
@@ -55,7 +54,7 @@ def get_or_create_scan_code(action_key: str, source_doctype: str, source_name: s
 		"name",
 		order_by="creation desc",
 	)
-	if existing:
+	if existing and normalize_scan_code(existing) == existing:
 		return existing
 
 	for _attempt in range(_MAX_CREATE_ATTEMPTS):
@@ -86,9 +85,12 @@ def get_scan_code_doc(code: str) -> frappe.model.document.Document | None:
 
 
 def normalize_scan_code(code: str | None) -> str:
-	if code is None:
+	raw = (code or "").strip().replace(" ", "").upper()
+	if len(raw) != SCAN_CODE_LENGTH:
 		return ""
-	return (code or "").strip().replace("-", "").replace(" ", "").upper()
+	if any(ch not in SCAN_CODE_ALPHABET for ch in raw):
+		return ""
+	return raw
 
 
 def validate_scan_code_row(doc: frappe.model.document.Document, action_key: str) -> None:

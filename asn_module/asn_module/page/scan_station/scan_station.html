@@ -2,6 +2,9 @@
 	<div class="scan-input-section text-center" style="padding: 40px 20px;">
 		<h3>{{ __("Scan QR Code or Barcode") }}</h3>
 		<p class="text-muted">{{ __("Use a handheld scanner or paste a QR URL below") }}</p>
+		<p class="text-muted scan-hint">
+			{{ __("Raw scan codes are 16 characters long, or use a dispatch URL with a code= query parameter.") }}
+		</p>
 		<div class="scan-input-wrapper" style="max-width: 500px; margin: 20px auto;">
 			<input
 				type="text"
