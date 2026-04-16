@@ -24,10 +24,21 @@ Support supplier invoice scanning using **1D barcode only** (Code128), without a
 
 ## Data Model and Mapping
 - Continue using `Scan Code` doctype as source of truth.
-- Update code length constant from `12` to `16`.
+- Update new-code generation length constant from `12` to `16`.
 - Keep existing alphabet (uppercase, unambiguous characters).
 - Keep action/source mapping server-side.
 - Barcode payload remains opaque key only; business context resolved on backend.
+
+## Cutover and Backward Compatibility
+- **Do not invalidate existing 12-char codes.**
+- Existing active 12-char scan codes must remain scannable through current lifecycle rules until they are naturally consumed/revoked/expired.
+- Only **newly generated** codes use 16-char format.
+- Dispatch and lookup logic must accept both lengths during transition.
+- Generation logic must never create new 12-char codes after rollout.
+
+Rationale:
+- Prevent breaking in-flight supplier invoices already printed with 12-char codes.
+- Allow zero-downtime migration with no supplier-side coordination window.
 
 ## Supplier Compatibility Model
 No supplier-system integration required.
@@ -39,6 +50,12 @@ No supplier-system integration required.
 - Validate lifecycle/state/action/source via existing dispatch logic.
 - On success: execute `create_purchase_receipt` action path.
 - Keep existing failure handling for missing/invalid/revoked/used code.
+
+Normalization rules:
+- Trim surrounding whitespace.
+- Strip internal spaces and `-`.
+- Uppercase before lookup.
+- Accept both 12-char (legacy) and 16-char (new) canonical forms.
 
 ## Printability and Scan Reliability Guardrails
 - Preserve existing Code128 render path and tune only if needed after test evidence.
@@ -67,9 +84,10 @@ No supplier-system integration required.
 
 ## Testing Strategy
 ### Unit
-- Scan code generation length/charset assertions updated for 16 chars.
+- Scan code generation length/charset assertions updated for 16 chars (new generation path).
+- Legacy 12-char codes remain accepted by normalization/lookup path.
 - Barcode generation contract remains valid for 16-char value.
-- Dispatch accepts new 16-char code shape.
+- Dispatch accepts both 12-char and 16-char code shapes.
 
 ### Integration
 - End-to-end ASN -> scan barcode -> Purchase Receipt creation using generated mapped code.
@@ -83,7 +101,9 @@ No supplier-system integration required.
 
 ## Acceptance Criteria
 - New ASN-generated mapped code length is 16.
+- Existing 12-char active codes remain scannable during migration.
 - Supplier can copy 16-char code into invoice field and print Code128.
 - Our scanner successfully reads and dispatches to PR creation.
 - No QR dependency added to Sales Invoice flow.
 - Existing IRN QR on invoice remains unaffected.
+- Print/scan reliability check passes with at least 95% successful scans on test sample prints at agreed invoice print settings.
