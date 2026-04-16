@@ -29,6 +29,9 @@ cleanup() {
 			local coverage_data_source="$BENCH_ROOT/sites/$SITE_NAME/.coverage"
 			local coverage_data_target="${COVERAGE_DATA_OUTPUT:-}"
 
+			if [ ! -f "$coverage_xml_source" ] && [ -f "$BENCH_ROOT/sites/coverage.xml" ]; then
+				coverage_xml_source="$BENCH_ROOT/sites/coverage.xml"
+			fi
 			if [ ! -f "$coverage_xml_source" ] && [ -f "$BENCH_ROOT/coverage.xml" ]; then
 				coverage_xml_source="$BENCH_ROOT/coverage.xml"
 			fi
@@ -38,6 +41,9 @@ cleanup() {
 			fi
 
 			if [ ! -f "$coverage_xml_target" ]; then
+				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
+					coverage_data_source="$BENCH_ROOT/sites/.coverage"
+				fi
 				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
 					coverage_data_source="$BENCH_ROOT/.coverage"
 				fi
@@ -48,6 +54,9 @@ cleanup() {
 			fi
 
 			if [ -n "$coverage_data_target" ]; then
+				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
+					coverage_data_source="$BENCH_ROOT/sites/.coverage"
+				fi
 				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
 					coverage_data_source="$BENCH_ROOT/.coverage"
 				fi
