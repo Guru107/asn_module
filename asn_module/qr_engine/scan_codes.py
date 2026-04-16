@@ -1,4 +1,8 @@
-"""Short opaque scan codes backed by the Scan Code doctype."""
+"""Short opaque scan codes backed by the Scan Code doctype.
+
+Current development policy intentionally supports only canonical 16-character
+codes; legacy compatibility is out of scope unless explicitly requested.
+"""
 
 from __future__ import annotations
 
@@ -85,6 +89,7 @@ def get_scan_code_doc(code: str) -> frappe.model.document.Document | None:
 
 
 def normalize_scan_code(code: str | None) -> str:
+	"""Normalize and validate a scan code in strict canonical 16-char form."""
 	raw = (code or "").strip().replace(" ", "").upper()
 	if len(raw) != SCAN_CODE_LENGTH:
 		return ""

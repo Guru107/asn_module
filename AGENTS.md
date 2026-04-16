@@ -60,3 +60,4 @@ Use `--lightmode` to avoid ERPNext test-record bootstrapping errors (fiscal year
 - When running tests without `--lightmode`, ERPNext's test-record bootstrap may throw a fiscal-year overlap error after all asn_module tests pass. This is harmless to asn_module tests but causes a non-zero exit code.
 - The app is installed via `bench get-app --soft-link /workspace`, so code changes in `/workspace` are immediately reflected.
 - `bench build --app asn_module` rebuilds frontend assets. The `bench start` watcher auto-rebuilds JS/CSS on save.
+- Backward compatibility is intentionally out of scope while this module is under active development unless a task explicitly requires it.
