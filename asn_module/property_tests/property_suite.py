@@ -1,7 +1,7 @@
 """Aggregate property tests for single-pass CI execution with coverage.
 
-Frappe's test runner handles explicit module targets most reliably. Running
-one aggregate module ensures coverage is produced in one invocation.
+This module is intentionally not named with a ``test_`` prefix so it is not
+auto-discovered during full app test runs.
 """
 
 from asn_module.property_tests.test_asn_new_services_properties import TestPropertyHarness
