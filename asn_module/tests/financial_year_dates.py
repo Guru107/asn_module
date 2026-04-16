@@ -6,6 +6,10 @@ from frappe.utils import add_days, today
 
 def get_fiscal_year_test_dates() -> dict[str, str]:
 	"""Return stable test dates that always fall within a single enabled Fiscal Year."""
+	cached = getattr(frappe.local, "_fiscal_year_test_dates", None)
+	if cached is not None:
+		return cached
+
 	fiscal_year = frappe.db.get_value(
 		"Fiscal Year",
 		{
@@ -31,7 +35,7 @@ def get_fiscal_year_test_dates() -> dict[str, str]:
 	invoice_date = str(add_days(asn_date, 3))
 	expected_delivery_date = str(add_days(asn_date, 4))
 	schedule_date = str(add_days(asn_date, 1))
-	return {
+	result = {
 		# Canonical baseline keys used by handlers and portal/template tests.
 		"transaction_date": asn_date,
 		"schedule_date": schedule_date,
@@ -42,3 +46,5 @@ def get_fiscal_year_test_dates() -> dict[str, str]:
 		"lr_date": invoice_date,
 		"token_created_at": f"{asn_date} 13:32:44.604410",
 	}
+	frappe.local._fiscal_year_test_dates = result
+	return result
