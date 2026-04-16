@@ -2,6 +2,71 @@ import frappe
 from frappe import _
 
 
+def _ensure_supplier_portal_user(
+	*,
+	supplier_name: str,
+	portal_email: str,
+	portal_password: str,
+) -> tuple[frappe.model.document.Document, str, str]:
+	supplier_docname = frappe.db.get_value("Supplier", {"supplier_name": supplier_name}, "name")
+	if supplier_docname:
+		supplier = frappe.get_doc("Supplier", supplier_docname)
+	else:
+		supplier = frappe.get_doc(
+			{
+				"doctype": "Supplier",
+				"supplier_name": supplier_name,
+				"supplier_group": "All Supplier Groups",
+				"supplier_type": "Individual",
+			}
+		).insert(ignore_permissions=True)
+
+	if frappe.db.exists("User", portal_email):
+		portal_user = frappe.get_doc("User", portal_email)
+	else:
+		portal_user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": portal_email,
+				"first_name": "Supplier",
+				"send_welcome_email": 0,
+				"user_type": "Website User",
+			}
+		).insert(ignore_permissions=True)
+	frappe.db.set_value("User", portal_user.name, "enabled", 1)
+
+	from frappe.utils.password import update_password
+
+	update_password(portal_user.name, portal_password)
+
+	if not frappe.db.exists(
+		"User Permission",
+		{"user": portal_user.name, "allow": "Supplier", "for_value": supplier.name},
+	):
+		frappe.permissions.add_user_permission("Supplier", supplier.name, portal_user.name)
+
+	portal_user_doc = frappe.get_doc("User", portal_user.name)
+	if not any((row.role or "").strip() == "Supplier" for row in portal_user_doc.roles):
+		portal_user_doc.append("roles", {"doctype": "Has Role", "role": "Supplier"})
+		portal_user_doc.save(ignore_permissions=True)
+
+	if not frappe.db.exists(
+		"Portal User",
+		{"parent": supplier.name, "parenttype": "Supplier", "user": portal_user.name},
+	):
+		frappe.get_doc(
+			{
+				"doctype": "Portal User",
+				"parent": supplier.name,
+				"parenttype": "Supplier",
+				"parentfield": "portal_users",
+				"user": portal_user.name,
+			}
+		).insert(ignore_permissions=True)
+
+	return supplier, portal_user.name, portal_password
+
+
 @frappe.whitelist()
 def seed_minimal_asn():
 	if not frappe.conf.get("allow_tests"):
@@ -73,61 +138,11 @@ def seed_supplier_context():
 	portal_email = "supplier_e2e@test.com"
 	portal_password = "supplier_e2e"
 
-	supplier_docname = frappe.db.get_value("Supplier", {"supplier_name": supplier_name}, "name")
-	if supplier_docname:
-		supplier = frappe.get_doc("Supplier", supplier_docname)
-	else:
-		supplier = frappe.get_doc(
-			{
-				"doctype": "Supplier",
-				"supplier_name": supplier_name,
-				"supplier_group": "All Supplier Groups",
-				"supplier_type": "Individual",
-			}
-		).insert(ignore_permissions=True)
-
-	if frappe.db.exists("User", portal_email):
-		portal_user = frappe.get_doc("User", portal_email)
-	else:
-		portal_user = frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": portal_email,
-				"first_name": "Supplier",
-				"send_welcome_email": 0,
-				"user_type": "Website User",
-			}
-		).insert(ignore_permissions=True)
-	frappe.db.set_value("User", portal_user.name, "enabled", 1)
-
-	from frappe.utils.password import update_password
-
-	update_password(portal_user.name, portal_password)
-
-	if not frappe.db.exists(
-		"User Permission",
-		{"user": portal_user.name, "allow": "Supplier", "for_value": supplier.name},
-	):
-		frappe.permissions.add_user_permission("Supplier", supplier.name, portal_user.name)
-
-	portal_user_doc = frappe.get_doc("User", portal_user.name)
-	if not any((row.role or "").strip() == "Supplier" for row in portal_user_doc.roles):
-		portal_user_doc.append("roles", {"doctype": "Has Role", "role": "Supplier"})
-		portal_user_doc.save(ignore_permissions=True)
-
-	if not frappe.db.exists(
-		"Portal User",
-		{"parent": supplier.name, "parenttype": "Supplier", "user": portal_user.name},
-	):
-		frappe.get_doc(
-			{
-				"doctype": "Portal User",
-				"parent": supplier.name,
-				"parenttype": "Supplier",
-				"parentfield": "portal_users",
-				"user": portal_user.name,
-			}
-		).insert(ignore_permissions=True)
+	supplier, portal_user_name, portal_password = _ensure_supplier_portal_user(
+		supplier_name=supplier_name,
+		portal_email=portal_email,
+		portal_password=portal_password,
+	)
 
 	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 
@@ -136,7 +151,7 @@ def seed_supplier_context():
 
 	return {
 		"supplier": supplier.name,
-		"portal_user": portal_user.name,
+		"portal_user": portal_user_name,
 		"portal_password": portal_password,
 		"purchase_orders": [
 			{"name": po1.name, "items": [i.as_dict() for i in po1.items]},
@@ -155,68 +170,18 @@ def seed_supplier_large_po_context():
 	portal_email = "supplier_e2e@test.com"
 	portal_password = "supplier_e2e"
 
-	supplier_docname = frappe.db.get_value("Supplier", {"supplier_name": supplier_name}, "name")
-	if supplier_docname:
-		supplier = frappe.get_doc("Supplier", supplier_docname)
-	else:
-		supplier = frappe.get_doc(
-			{
-				"doctype": "Supplier",
-				"supplier_name": supplier_name,
-				"supplier_group": "All Supplier Groups",
-				"supplier_type": "Individual",
-			}
-		).insert(ignore_permissions=True)
-
-	if frappe.db.exists("User", portal_email):
-		portal_user = frappe.get_doc("User", portal_email)
-	else:
-		portal_user = frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": portal_email,
-				"first_name": "Supplier",
-				"send_welcome_email": 0,
-				"user_type": "Website User",
-			}
-		).insert(ignore_permissions=True)
-	frappe.db.set_value("User", portal_user.name, "enabled", 1)
-
-	from frappe.utils.password import update_password
-
-	update_password(portal_user.name, portal_password)
-
-	if not frappe.db.exists(
-		"User Permission",
-		{"user": portal_user.name, "allow": "Supplier", "for_value": supplier.name},
-	):
-		frappe.permissions.add_user_permission("Supplier", supplier.name, portal_user.name)
-
-	portal_user_doc = frappe.get_doc("User", portal_user.name)
-	if not any((row.role or "").strip() == "Supplier" for row in portal_user_doc.roles):
-		portal_user_doc.append("roles", {"doctype": "Has Role", "role": "Supplier"})
-		portal_user_doc.save(ignore_permissions=True)
-
-	if not frappe.db.exists(
-		"Portal User",
-		{"parent": supplier.name, "parenttype": "Supplier", "user": portal_user.name},
-	):
-		frappe.get_doc(
-			{
-				"doctype": "Portal User",
-				"parent": supplier.name,
-				"parenttype": "Supplier",
-				"parentfield": "portal_users",
-				"user": portal_user.name,
-			}
-		).insert(ignore_permissions=True)
+	supplier, portal_user_name, portal_password = _ensure_supplier_portal_user(
+		supplier_name=supplier_name,
+		portal_email=portal_email,
+		portal_password=portal_password,
+	)
 
 	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 
 	po = create_purchase_order(qty=1, supplier=supplier.name, item_count=100, rate=10)
 	return {
 		"supplier": supplier.name,
-		"portal_user": portal_user.name,
+		"portal_user": portal_user_name,
 		"portal_password": portal_password,
 		"purchase_order": {"name": po.name, "items": [i.as_dict() for i in po.items]},
 	}

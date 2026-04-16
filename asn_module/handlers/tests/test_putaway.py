@@ -1,9 +1,11 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.asn_module.doctype.asn.test_asn import before_tests, create_purchase_order
+from asn_module.asn_module.doctype.asn.test_asn import (
+	before_tests,
+	create_purchase_order_with_fiscal_dates,
+)
 from asn_module.handlers.putaway import confirm_putaway
-from asn_module.handlers.tests.date_utils import fiscal_year_test_dates
 
 
 class TestConfirmPutaway(FrappeTestCase):
@@ -13,12 +15,7 @@ class TestConfirmPutaway(FrappeTestCase):
 		super().setUpClass()
 
 	def _make_draft_purchase_receipt(self):
-		dates = fiscal_year_test_dates()
-		purchase_order = create_purchase_order(
-			transaction_date=dates["transaction_date"],
-			schedule_date=dates["schedule_date"],
-			item_schedule_date=dates["item_schedule_date"],
-		)
+		purchase_order = create_purchase_order_with_fiscal_dates()
 		pr = frappe.get_doc(
 			{
 				"doctype": "Purchase Receipt",

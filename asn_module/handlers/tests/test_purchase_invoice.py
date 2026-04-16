@@ -7,11 +7,10 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.asn_module.doctype.asn.test_asn import (
 	_mock_asn_attachments,
 	before_tests,
-	create_purchase_order,
+	create_purchase_order_with_fiscal_dates,
 	make_test_asn,
 )
 from asn_module.handlers.purchase_invoice import create_from_purchase_receipt
-from asn_module.handlers.tests.date_utils import fiscal_year_test_dates
 
 
 class TestCreatePurchaseInvoice(FrappeTestCase):
@@ -21,12 +20,7 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		super().setUpClass()
 
 	def _make_submitted_purchase_receipt(self, *, asn=None, per_billed=0, qty=2):
-		dates = fiscal_year_test_dates()
-		purchase_order = create_purchase_order(
-			transaction_date=dates["transaction_date"],
-			schedule_date=dates["schedule_date"],
-			item_schedule_date=dates["item_schedule_date"],
-		)
+		purchase_order = create_purchase_order_with_fiscal_dates()
 		if asn is None:
 			asn = make_test_asn(purchase_order=purchase_order)
 			asn.insert(ignore_permissions=True)

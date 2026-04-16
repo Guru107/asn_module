@@ -7,7 +7,9 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.templates.pages import asn_new_search
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
-TEST_DATES = get_fiscal_year_test_dates()
+
+def _test_dates():
+	return get_fiscal_year_test_dates()
 
 
 class TestASNNewSearch(FrappeTestCase):
@@ -26,12 +28,12 @@ class TestASNNewSearch(FrappeTestCase):
 					SimpleNamespace(
 						name="PO-0001",
 						status="To Receive",
-						transaction_date=TEST_DATES["supplier_invoice_date"],
+						transaction_date=_test_dates()["supplier_invoice_date"],
 					),
 					SimpleNamespace(
 						name="PO-0002",
 						status="To Receive and Bill",
-						transaction_date=TEST_DATES["expected_delivery_date"],
+						transaction_date=_test_dates()["expected_delivery_date"],
 					),
 				],
 			),
@@ -55,7 +57,7 @@ class TestASNNewSearch(FrappeTestCase):
 					SimpleNamespace(
 						name="PO-0001",
 						status="To Receive",
-						transaction_date=TEST_DATES["supplier_invoice_date"],
+						transaction_date=_test_dates()["supplier_invoice_date"],
 					)
 				],
 			),
@@ -78,7 +80,7 @@ class TestASNNewSearch(FrappeTestCase):
 					SimpleNamespace(
 						name="PO-0001",
 						status="To Receive",
-						transaction_date=TEST_DATES["supplier_invoice_date"],
+						transaction_date=_test_dates()["supplier_invoice_date"],
 					)
 				],
 			),
@@ -143,12 +145,12 @@ class TestASNNewSearch(FrappeTestCase):
 					SimpleNamespace(
 						name="PO-0001",
 						status="To Receive",
-						transaction_date=TEST_DATES["supplier_invoice_date"],
+						transaction_date=_test_dates()["supplier_invoice_date"],
 					),
 					SimpleNamespace(
 						name="PO-0002",
 						status="To Receive",
-						transaction_date=TEST_DATES["expected_delivery_date"],
+						transaction_date=_test_dates()["expected_delivery_date"],
 					),
 				],
 			),
@@ -171,7 +173,7 @@ class TestASNNewSearch(FrappeTestCase):
 					SimpleNamespace(
 						name="PO-0001",
 						status="To Receive",
-						transaction_date=TEST_DATES["supplier_invoice_date"],
+						transaction_date=_test_dates()["supplier_invoice_date"],
 					)
 				],
 			),
@@ -222,7 +224,7 @@ class TestASNNewSearch(FrappeTestCase):
 					SimpleNamespace(
 						name="PO-0001",
 						status="To Receive",
-						transaction_date=TEST_DATES["supplier_invoice_date"],
+						transaction_date=_test_dates()["supplier_invoice_date"],
 					)
 				],
 			),
@@ -267,7 +269,7 @@ class TestASNNewSearch(FrappeTestCase):
 					SimpleNamespace(
 						name="PO-0001",
 						status="To Receive",
-						transaction_date=TEST_DATES["supplier_invoice_date"],
+						transaction_date=_test_dates()["supplier_invoice_date"],
 					)
 				],
 			),

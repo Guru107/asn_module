@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from functools import lru_cache
-
 import frappe
 from frappe.utils import add_days, today
 
 
-@lru_cache(maxsize=1)
 def get_fiscal_year_test_dates() -> dict[str, str]:
 	"""Return stable test dates that always fall within a single enabled Fiscal Year."""
 	fiscal_year = frappe.db.get_value(

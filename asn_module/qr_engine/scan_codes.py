@@ -34,6 +34,12 @@ def _random_scan_code_value() -> str:
 	return "".join(secrets.choice(SCAN_CODE_ALPHABET) for _ in range(SCAN_CODE_LENGTH))
 
 
+@frappe.whitelist()
+def get_scan_code_length() -> int:
+	"""Return canonical scan-code length for UI clients."""
+	return SCAN_CODE_LENGTH
+
+
 def get_or_create_scan_code(action_key: str, source_doctype: str, source_name: str) -> str:
 	"""Return scan code (document name) for an active row, or create a new active row.
 

@@ -3,9 +3,11 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.asn_module.doctype.asn.test_asn import before_tests, create_purchase_order
+from asn_module.asn_module.doctype.asn.test_asn import (
+	before_tests,
+	create_purchase_order_with_fiscal_dates,
+)
 from asn_module.handlers.stock_transfer import create_from_quality_inspection
-from asn_module.handlers.tests.date_utils import fiscal_year_test_dates
 from asn_module.handlers.tests.qi_schema import ensure_quality_inspection_purchase_receipt_item_column
 
 
@@ -79,11 +81,7 @@ class TestStockTransferErrors(FrappeTestCase):
 		submit_purchase_receipt=True,
 	):
 		item_code = self._ensure_item()
-		dates = fiscal_year_test_dates()
-		purchase_order = create_purchase_order(
-			transaction_date=dates["transaction_date"],
-			schedule_date=dates["schedule_date"],
-			item_schedule_date=dates["item_schedule_date"],
+		purchase_order = create_purchase_order_with_fiscal_dates(
 			item_code=item_code,
 			qty=10,
 		)
@@ -166,11 +164,7 @@ class TestStockTransferErrors(FrappeTestCase):
 
 	def test_qi_item_not_found_in_pr_raises(self):
 		item_code = self._ensure_item()
-		dates = fiscal_year_test_dates()
-		purchase_order = create_purchase_order(
-			transaction_date=dates["transaction_date"],
-			schedule_date=dates["schedule_date"],
-			item_schedule_date=dates["item_schedule_date"],
+		purchase_order = create_purchase_order_with_fiscal_dates(
 			item_code=item_code,
 			qty=10,
 		)
