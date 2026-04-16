@@ -166,10 +166,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 	def test_parse_bulk_csv_rows_accepts_100_item_rows(self):
 		rows = [
-			(
-				f"INV-100,{TEST_DATES['supplier_invoice_date']},"
-				f"{TEST_DATES['expected_delivery_date']},,,,,,1000,PO-100,{idx},ITEM-001,1,10"
-			)
+			f"INV-100,{TEST_DATES['supplier_invoice_date']},{TEST_DATES['expected_delivery_date']},,,,,,1000,PO-100,{idx},ITEM-001,1,10"
 			for idx in range(1, 101)
 		]
 		csv_text = (
