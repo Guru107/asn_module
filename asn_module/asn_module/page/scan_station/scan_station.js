@@ -23,6 +23,10 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 				scan_code_length = value;
 			}
 		},
+		error() {
+			// Keep default fallback when the config call fails.
+			scan_code_length = 16;
+		},
 	});
 
 	function parse_scan_input(value) {
