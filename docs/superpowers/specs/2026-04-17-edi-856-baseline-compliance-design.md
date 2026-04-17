@@ -27,11 +27,11 @@ Supported sequences:
 - `850 -> 856 -> 810` when acknowledgment is bypassed.
 
 Default behavior:
-- `requires_855_ack = false` (bypass by default).
+- `Supplier.requires_855_ack = false` (bypass by default).
 
 Gating rule for 856:
-- If `requires_855_ack = true`, block 856 until a valid 855 exists.
-- If `requires_855_ack = false`, allow 856 without 855.
+- If `Supplier.requires_855_ack = true`, block 856 until a valid 855 exists.
+- If `Supplier.requires_855_ack = false`, allow 856 without 855.
 
 Trade-offs:
 - Flag-based gating (recommended): explicit and operationally simple, but depends on correct partner configuration.
@@ -88,7 +88,7 @@ Use **Option 1**.
 4. Validate HL hierarchy graph and parent linkage.
 5. Validate element-level requirements and formats.
 6. Validate cross-segment consistency (`CTT`, `SE`).
-7. Apply optional 855 precondition for 856 release (`requires_855_ack` gate).
+7. Apply optional 855 precondition for 856 release using supplier policy (`Supplier.requires_855_ack` gate).
 8. Return structured compliance result.
 
 ### 4.3 Compliance Result Contract
