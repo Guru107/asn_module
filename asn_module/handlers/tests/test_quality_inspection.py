@@ -58,7 +58,7 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 			}
 		)
 
-	@patch("asn_module.handlers.quality_inspection._attach_qr_to_doc")
+	@patch("asn_module.handlers.quality_inspection.attach_qr_to_doc")
 	@patch("asn_module.handlers.quality_inspection.frappe.msgprint")
 	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_accepted_quality_inspection_generates_stock_transfer_qr(
@@ -83,7 +83,7 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 		self.assertEqual(msgprint.call_args_list[-1].kwargs["alert"], True)
 		self.assertIn("Stock Transfer QR attached", msgprint.call_args_list[-1].args[0])
 
-	@patch("asn_module.handlers.quality_inspection._attach_qr_to_doc")
+	@patch("asn_module.handlers.quality_inspection.attach_qr_to_doc")
 	@patch("asn_module.handlers.quality_inspection.frappe.msgprint")
 	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_rejected_quality_inspection_generates_purchase_return_qr(
@@ -108,7 +108,7 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 		self.assertEqual(msgprint.call_args_list[-1].kwargs["alert"], True)
 		self.assertIn("Purchase Return QR attached", msgprint.call_args_list[-1].args[0])
 
-	@patch("asn_module.handlers.quality_inspection._attach_qr_to_doc")
+	@patch("asn_module.handlers.quality_inspection.attach_qr_to_doc")
 	@patch("asn_module.handlers.quality_inspection.frappe.msgprint")
 	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_generates_qr_for_draft_purchase_receipt_reference(
@@ -131,7 +131,7 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 		self.assertEqual(msgprint.call_args_list[-1].kwargs["alert"], True)
 		self.assertIn("Stock Transfer QR attached", msgprint.call_args_list[-1].args[0])
 
-	@patch("asn_module.handlers.quality_inspection._attach_qr_to_doc")
+	@patch("asn_module.handlers.quality_inspection.attach_qr_to_doc")
 	@patch("asn_module.handlers.quality_inspection.frappe.msgprint")
 	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_ignores_non_purchase_receipt_quality_inspection(
