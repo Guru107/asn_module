@@ -287,10 +287,7 @@ def create_purchase_order(**kwargs):
 
 def create_purchase_order_with_fiscal_dates(**kwargs):
 	"""Create a Purchase Order seeded with fiscal-year-safe baseline dates."""
-	missing_date_keys = [
-		key for key in ("transaction_date", "schedule_date", "item_schedule_date") if kwargs.get(key) is None
-	]
-	if missing_date_keys:
+	if any(kwargs.get(key) is None for key in ("transaction_date", "schedule_date", "item_schedule_date")):
 		from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 		dates = get_fiscal_year_test_dates()
