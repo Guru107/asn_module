@@ -24,6 +24,10 @@ Trade-off: Less manual setup, but introduces inference errors and harder trouble
 Locked default:
 - `Supplier.requires_855_ack = 0` (bypass by default).
 
+UI copy requirement (mandatory):
+- User-facing labels/messages must use business language, not raw EDI numeric codes.
+- Keep EDI codes only in code, logs, and compliance docs.
+
 ## File Structure (locked before implementation)
 
 - Create: `asn_module/edi_856/__init__.py`
@@ -79,7 +83,7 @@ def setup():
             {
                 "fieldname": "requires_855_ack",
                 "fieldtype": "Check",
-                "label": "Require 855 Acknowledgment Before 856",
+                "label": "Require purchase order acknowledgment before shipment notice",
                 "default": "0",
                 "insert_after": "supplier_group",
             }
@@ -100,7 +104,7 @@ def after_install():
 {
   "fieldname": "ack_855_reference",
   "fieldtype": "Data",
-  "label": "855 Reference",
+  "label": "Purchase order acknowledgment reference",
   "depends_on": "eval:doc.supplier"
 }
 ```
@@ -266,7 +270,7 @@ def assert_855_gate(asn_doc):
     if supplier_requires_ack != 1:
         return
     if not (asn_doc.ack_855_reference or "").strip():
-        frappe.throw("855 acknowledgment is required before exporting 856")
+        frappe.throw("Purchase order acknowledgment is required before sending shipment notice.")
 ```
 
 ```python
@@ -370,3 +374,4 @@ git commit -m "feat(edi-856): deliver baseline compliance validator with optiona
 - Keep `Supplier.requires_855_ack` default at `0` to preserve bypass behavior unless explicitly enabled.
 - Every validation failure must map to stable `rule_id` values so compliance matrix stays deterministic.
 - Prefer explicit error messages over implicit silent fallback when 855 is required but missing.
+- Keep all user-visible labels and errors in plain business language (no raw `850/855/856/810` code references).

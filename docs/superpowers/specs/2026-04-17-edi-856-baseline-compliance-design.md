@@ -46,6 +46,16 @@ Trade-offs:
 - CTT consistency: Totals/count fields align with actual detail content per baseline rule.
 - SE consistency: Segment count accuracy and ST02/SE02 control number match.
 
+## 2.1 UI Labeling Policy (Human-Readable)
+
+- All end-user labels, help text, and validation errors must be human-readable and must not rely on raw EDI codes like `850/855/856/810`.
+- Technical codes are allowed in developer-facing areas only (rule IDs, logs, compliance matrix, code comments).
+- Required UI copy pattern for this phase:
+  - Supplier checkbox label: **"Require purchase order acknowledgment before shipment notice"**
+  - ASN reference field label: **"Purchase order acknowledgment reference"**
+  - Blocking error when required acknowledgment is missing:
+    **"Purchase order acknowledgment is required before sending shipment notice."**
+
 ## 3. Approaches Considered
 
 ### Option 1: Compliance Matrix + Deterministic Validator (Recommended)
