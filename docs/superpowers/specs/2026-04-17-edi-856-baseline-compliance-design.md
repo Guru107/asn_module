@@ -61,7 +61,12 @@ Trade-offs:
 
 - When supplier acknowledgment is required, ASN must use acknowledgment reference before shipment notice is sent.
 - When supplier acknowledgment is not required, ASN must use purchase order reference in the ASN reference field.
-- For ASN with multiple purchase orders, use a deterministic joined value of unique purchase order numbers (sorted, comma-separated).
+
+## 2.3 ASN-to-PO Cardinality Rule
+
+- One ASN must reference exactly one purchase order.
+- Multiple ASNs may reference the same purchase order.
+- If ASN items contain more than one distinct purchase order, validation must block save/submit.
 
 ## 3. Approaches Considered
 

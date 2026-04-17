@@ -29,6 +29,10 @@ UI copy requirement (mandatory):
 - Keep EDI codes only in code, logs, and compliance docs.
 - ASN reference must support both acknowledgment and purchase order fallback usage.
 
+Cardinality requirement (mandatory):
+- One ASN must map to exactly one purchase order.
+- Multiple ASNs may map to the same purchase order.
+
 ## File Structure (locked before implementation)
 
 - Create: `asn_module/edi_856/__init__.py`
@@ -65,6 +69,23 @@ UI copy requirement (mandatory):
 def test_supplier_requires_855_ack_defaults_to_false(self):
     supplier = frappe.get_doc("Supplier", _ensure_supplier())
     self.assertEqual(int(getattr(supplier, "requires_855_ack", 0) or 0), 0)
+
+def test_asn_rejects_multiple_purchase_orders(self):
+    po1 = create_purchase_order(do_not_submit=True)
+    po2 = create_purchase_order(do_not_submit=True)
+    asn = make_test_asn(purchase_order=po1)
+    asn.items[0].purchase_order = po1.name
+    asn.items[0].purchase_order_item = po1.items[0].name
+    asn.append("items", {
+        "purchase_order": po2.name,
+        "purchase_order_item": po2.items[0].name,
+        "item_code": po2.items[0].item_code,
+        "qty": 1,
+        "uom": po2.items[0].uom,
+        "rate": po2.items[0].rate,
+    })
+    with self.assertRaises(frappe.ValidationError):
+        asn.insert(ignore_permissions=True)
 ```
 
 - [ ] **Step 2: Run ASN tests to confirm failure on missing field behavior**
@@ -108,6 +129,19 @@ def after_install():
   "label": "Acknowledgment or purchase order reference",
   "depends_on": "eval:doc.supplier"
 }
+```
+
+```python
+# asn_module/asn_module/doctype/asn/asn.py
+def _validate_single_purchase_order(self):
+    po_values = {
+        (row.purchase_order or "").strip()
+        for row in (self.items or [])
+        if (row.purchase_order or "").strip()
+    }
+    if len(po_values) <= 1:
+        return
+    frappe.throw("One shipment notice can reference only one purchase order.")
 ```
 
 - [ ] **Step 4: Re-run ASN tests and verify pass for default behavior**
@@ -269,8 +303,11 @@ Expected: FAIL because export service/gate does not exist.
 
 ```python
 def _derive_purchase_order_reference(asn_doc):
-    refs = sorted({(row.purchase_order or "").strip() for row in (asn_doc.items or []) if row.purchase_order})
-    return ", ".join(refs)
+    for row in (asn_doc.items or []):
+        value = (row.purchase_order or "").strip()
+        if value:
+            return value
+    return ""
 
 def assert_855_gate(asn_doc):
     supplier_requires_ack = int(
@@ -388,3 +425,4 @@ git commit -m "feat(edi-856): deliver baseline compliance validator with optiona
 - Prefer explicit error messages over implicit silent fallback when 855 is required but missing.
 - Keep all user-visible labels and errors in plain business language (no raw `850/855/856/810` code references).
 - When acknowledgment is not required, always populate ASN reference from purchase order data deterministically.
+- Enforce one-ASN-one-PO validation before reference derivation, so fallback never handles mixed PO sets.
