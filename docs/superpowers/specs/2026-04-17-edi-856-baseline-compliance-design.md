@@ -7,17 +7,35 @@ Verify and enforce **100% compliance** of this module against the **X12 4010 856
 
 ### In Scope
 - 856 Ship Notice/Manifest baseline compliance only.
+- 855 Purchase Order Acknowledgment support as an optional flow step.
 - Deterministic compliance verification with rule-level failures.
 - Compliance evidence suitable for release gating.
 
 ### Out of Scope
 - Trading-partner-specific custom guides in this phase.
-- 855 implementation (optional by business decision).
 - Reworking ERPNext 850/810 behavior.
 
 ### Existing System Context
 - ERPNext already covers 850 (Purchase Order) and 810 (Invoice).
 - `asn_module` is responsible for ASN behavior and is the 856-focused surface.
+- 855 must be supported, but bypass must remain possible when not required.
+
+## 1.1 Flow Model with Optional 855
+
+Supported sequences:
+- `850 -> 855 -> 856 -> 810` when acknowledgment is required.
+- `850 -> 856 -> 810` when acknowledgment is bypassed.
+
+Default behavior:
+- `requires_855_ack = false` (bypass by default).
+
+Gating rule for 856:
+- If `requires_855_ack = true`, block 856 until a valid 855 exists.
+- If `requires_855_ack = false`, allow 856 without 855.
+
+Trade-offs:
+- Flag-based gating (recommended): explicit and operationally simple, but depends on correct partner configuration.
+- Auto-detect gating: less manual setup, but higher complexity and higher false-positive/false-negative risk.
 
 ## 2. Terminology (Implementation Glossary)
 
@@ -70,7 +88,8 @@ Use **Option 1**.
 4. Validate HL hierarchy graph and parent linkage.
 5. Validate element-level requirements and formats.
 6. Validate cross-segment consistency (`CTT`, `SE`).
-7. Return structured compliance result.
+7. Apply optional 855 precondition for 856 release (`requires_855_ack` gate).
+8. Return structured compliance result.
 
 ### 4.3 Compliance Result Contract
 Return:
