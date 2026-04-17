@@ -32,6 +32,7 @@ Default behavior:
 Gating rule for 856:
 - If `Supplier.requires_855_ack = true`, block 856 until a valid 855 exists.
 - If `Supplier.requires_855_ack = false`, allow 856 without 855.
+- If `Supplier.requires_855_ack = false`, ASN reference must fall back to purchase order reference.
 
 Trade-offs:
 - Flag-based gating (recommended): explicit and operationally simple, but depends on correct partner configuration.
@@ -52,9 +53,15 @@ Trade-offs:
 - Technical codes are allowed in developer-facing areas only (rule IDs, logs, compliance matrix, code comments).
 - Required UI copy pattern for this phase:
   - Supplier checkbox label: **"Require purchase order acknowledgment before shipment notice"**
-  - ASN reference field label: **"Purchase order acknowledgment reference"**
+  - ASN reference field label: **"Acknowledgment or purchase order reference"**
   - Blocking error when required acknowledgment is missing:
     **"Purchase order acknowledgment is required before sending shipment notice."**
+
+## 2.2 Reference Fallback Rule
+
+- When supplier acknowledgment is required, ASN must use acknowledgment reference before shipment notice is sent.
+- When supplier acknowledgment is not required, ASN must use purchase order reference in the ASN reference field.
+- For ASN with multiple purchase orders, use a deterministic joined value of unique purchase order numbers (sorted, comma-separated).
 
 ## 3. Approaches Considered
 

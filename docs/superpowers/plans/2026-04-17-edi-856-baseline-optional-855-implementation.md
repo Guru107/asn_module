@@ -4,7 +4,7 @@
 
 **Goal:** Add deterministic X12 4010 856 baseline compliance validation, and enforce optional 855 precondition gating with default bypass at supplier policy level (`Supplier.requires_855_ack=false`).
 
-**Architecture:** Introduce a focused `edi_856` package that parses, validates, and reports baseline compliance with stable rule IDs. Integrate a small export/gate service into ASN flow: read `Supplier.requires_855_ack`; when false, 856 can proceed directly; when true, 856 requires a stored valid 855 reference before export.
+**Architecture:** Introduce a focused `edi_856` package that parses, validates, and reports baseline compliance with stable rule IDs. Integrate a small export/gate service into ASN flow: read `Supplier.requires_855_ack`; when false, 856 can proceed directly and ASN reference falls back to purchase order reference; when true, 856 requires a stored valid acknowledgment reference before export.
 
 **Tech Stack:** Frappe v16 DocType JSON/Python, Python `FrappeTestCase`, existing ASN doctype/controller patterns, bench test runner.
 
@@ -27,6 +27,7 @@ Locked default:
 UI copy requirement (mandatory):
 - User-facing labels/messages must use business language, not raw EDI numeric codes.
 - Keep EDI codes only in code, logs, and compliance docs.
+- ASN reference must support both acknowledgment and purchase order fallback usage.
 
 ## File Structure (locked before implementation)
 
@@ -104,7 +105,7 @@ def after_install():
 {
   "fieldname": "ack_855_reference",
   "fieldtype": "Data",
-  "label": "Purchase order acknowledgment reference",
+  "label": "Acknowledgment or purchase order reference",
   "depends_on": "eval:doc.supplier"
 }
 ```
@@ -244,8 +245,12 @@ git commit -m "feat(edi-856): add baseline validator and rule-id based findings"
 def test_export_856_allows_bypass_when_requires_855_false(self):
     asn = make_test_asn()
     frappe.db.set_value("Supplier", asn.supplier, "requires_855_ack", 0, update_modified=False)
+    asn.ack_855_reference = ""
+    asn.save(ignore_permissions=True)
     payload = export_856_for_asn(asn.name)
     self.assertIn("ST*856*", payload)
+    refreshed = frappe.get_doc("ASN", asn.name)
+    self.assertTrue((refreshed.ack_855_reference or "").strip())
 
 def test_export_856_blocks_when_requires_855_true_and_reference_missing(self):
     asn = make_test_asn()
@@ -263,11 +268,18 @@ Expected: FAIL because export service/gate does not exist.
 - [ ] **Step 3: Implement gate and export integration**
 
 ```python
+def _derive_purchase_order_reference(asn_doc):
+    refs = sorted({(row.purchase_order or "").strip() for row in (asn_doc.items or []) if row.purchase_order})
+    return ", ".join(refs)
+
 def assert_855_gate(asn_doc):
     supplier_requires_ack = int(
         frappe.db.get_value("Supplier", asn_doc.supplier, "requires_855_ack") or 0
     )
     if supplier_requires_ack != 1:
+        fallback_ref = _derive_purchase_order_reference(asn_doc)
+        if fallback_ref and not (asn_doc.ack_855_reference or "").strip():
+            frappe.db.set_value("ASN", asn_doc.name, "ack_855_reference", fallback_ref, update_modified=False)
         return
     if not (asn_doc.ack_855_reference or "").strip():
         frappe.throw("Purchase order acknowledgment is required before sending shipment notice.")
@@ -375,3 +387,4 @@ git commit -m "feat(edi-856): deliver baseline compliance validator with optiona
 - Every validation failure must map to stable `rule_id` values so compliance matrix stays deterministic.
 - Prefer explicit error messages over implicit silent fallback when 855 is required but missing.
 - Keep all user-visible labels and errors in plain business language (no raw `850/855/856/810` code references).
+- When acknowledgment is not required, always populate ASN reference from purchase order data deterministically.
