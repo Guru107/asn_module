@@ -113,7 +113,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				payload={"action": "create_purchase_receipt"},
 			)
 
-	@patch("asn_module.handlers.purchase_receipt._attach_qr_to_doc")
+	@patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc")
 	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_submit_updates_asn_and_attaches_one_putaway_qr(self, generate_qr, attach_qr_to_doc):
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10)

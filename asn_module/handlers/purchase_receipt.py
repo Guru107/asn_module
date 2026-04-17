@@ -117,12 +117,20 @@ def on_purchase_receipt_submit(doc, method):
 	asn.reload()
 	asn.update_receipt_status()
 
+	asn_item_codes = {
+		row.name: row.item_code
+		for row in frappe.get_all(
+			"ASN Item",
+			filters={"name": ["in", list(received_qty_by_asn_item)]},
+			fields=["name", "item_code"],
+		)
+	}
+
 	for asn_item_name in received_qty_by_asn_item:
-		item_code = frappe.db.get_value("ASN Item", asn_item_name, "item_code")
 		emit_asn_item_transition(
 			asn=asn.name,
 			asn_item=asn_item_name,
-			item_code=item_code,
+			item_code=asn_item_codes.get(asn_item_name),
 			state="PR_SUBMITTED",
 			transition_status="OK",
 			ref_doctype="Purchase Receipt",
@@ -136,16 +144,12 @@ def on_purchase_receipt_submit(doc, method):
 		source_doctype="Purchase Receipt",
 		source_name=doc.name,
 	)
-	_attach_qr_to_doc(doc, purchase_invoice_qr, "purchase-invoice-qr")
+	attach_qr_to_doc(doc, purchase_invoice_qr, "purchase-invoice-qr")
 
-	putaway_required = False
-	for pr_item in doc.items:
-		inspection_required = frappe.db.get_value(
-			"Item", pr_item.item_code, "inspection_required_before_purchase"
-		)
-		if inspection_required:
-			continue
-		putaway_required = True
+	putaway_required = any(
+		not frappe.get_cached_value("Item", pr_item.item_code, "inspection_required_before_purchase")
+		for pr_item in doc.items
+	)
 
 	if putaway_required:
 		putaway_qr = generate_qr(
@@ -153,9 +157,4 @@ def on_purchase_receipt_submit(doc, method):
 			source_doctype="Purchase Receipt",
 			source_name=doc.name,
 		)
-		_attach_qr_to_doc(doc, putaway_qr, f"putaway-{doc.name}")
-
-
-def _attach_qr_to_doc(doc, qr_result, prefix):
-	"""Attach a generated QR image to the target document."""
-	attach_qr_to_doc(doc, qr_result, prefix)
+		attach_qr_to_doc(doc, putaway_qr, f"putaway-{doc.name}")

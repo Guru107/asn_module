@@ -27,10 +27,5 @@ def on_quality_inspection_submit(doc, method):
 		source_doctype="Quality Inspection",
 		source_name=doc.name,
 	)
-	_attach_qr_to_doc(doc, qr_result, action)
+	attach_qr_to_doc(doc, qr_result, action)
 	frappe.msgprint(message, alert=True)
-
-
-def _attach_qr_to_doc(doc, qr_result, prefix):
-	"""Attach a generated QR image to the target document."""
-	attach_qr_to_doc(doc, qr_result, prefix)

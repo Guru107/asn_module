@@ -25,7 +25,7 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 		rejected_qi = fixture._make_quality_inspection(pr.name, pr.items[0].item_code, "Rejected")
 		with (
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.quality_inspection._attach_qr_to_doc"),
+			patch("asn_module.handlers.quality_inspection.attach_qr_to_doc"),
 			patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
 		):
 			rejected_qi.submit()
@@ -130,7 +130,7 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 				patch(
 					"asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}
 				),
-				patch("asn_module.handlers.quality_inspection._attach_qr_to_doc"),
+				patch("asn_module.handlers.quality_inspection.attach_qr_to_doc"),
 				patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
 			):
 				qi.submit()
