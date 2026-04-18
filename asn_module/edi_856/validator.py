@@ -34,7 +34,7 @@ class ComplianceFinding:
 	fix_hint: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComplianceResult:
 	is_compliant: bool
 	errors: list[ComplianceFinding]
@@ -163,8 +163,12 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 				)
 			)
 
+	full_segment_by_tag: dict[str, list[int]] = {}
+	for segment in segments:
+		full_segment_by_tag.setdefault(segment.tag, []).append(segment.index)
+
 	for singleton_tag in ("ST", "BSN", "CTT", "SE"):
-		positions = segment_by_tag.get(singleton_tag, [])
+		positions = full_segment_by_tag.get(singleton_tag, [])
 		if len(positions) > 1:
 			errors.append(
 				ComplianceFinding(

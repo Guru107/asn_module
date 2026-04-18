@@ -170,6 +170,19 @@ class TestValidate856Baseline(TestCase):
 		self.assertIn("SEG-ST-CARD-001", rule_ids)
 		self.assertIn("SEG-BSN-CARD-001", rule_ids)
 		self.assertIn("SEG-CTT-CARD-001", rule_ids)
+		self.assertIn("SEG-SE-CARD-001", rule_ids)
+
+	def test_trailing_se_outside_primary_scope_still_triggers_se_cardinality_error(self):
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		parsed = parse_edi("ST*856*0001~BSN*00*12345~HL*1**S~CTT*1~SE*5*0001~SE*1*0002~")
+		result = validate_856_baseline(parsed)
+
+		rule_ids = [finding.rule_id for finding in result.errors]
+		self.assertFalse(result.is_compliant)
+		self.assertIn("SEG-OUTSIDE-SCOPE-001", rule_ids)
+		self.assertIn("SEG-SE-CARD-001", rule_ids)
+		self.assertEqual(next(finding.segment_index for finding in result.errors if finding.rule_id == "SEG-SE-CARD-001"), 5)
 
 	def test_computed_metrics_match_contract(self):
 		from asn_module.edi_856.validator import validate_856_baseline
@@ -184,11 +197,35 @@ class TestValidate856Baseline(TestCase):
 		self.assertEqual(result.computed_metrics["has_bsn"], 1)
 		self.assertEqual(result.computed_metrics["has_se"], 1)
 
-	def test_reporting_smoke(self):
+	def test_reporting_serializes_result_contract(self):
 		from asn_module.edi_856.reporting import compliance_result_to_dict, compliance_result_to_text
 		from asn_module.edi_856.validator import validate_856_baseline
 
-		result = validate_856_baseline(parse_edi(VALID_PAYLOAD))
+		result = validate_856_baseline(parse_edi("ST*856*0001~BSN*00*12345~HL*1**S~CTT*1~SE*4*0001~"))
+		serialized = compliance_result_to_dict(result)
 
-		self.assertEqual(compliance_result_to_dict(result)["is_compliant"], True)
-		self.assertIn("compliant=True", compliance_result_to_text(result))
+		self.assertEqual(serialized["is_compliant"], False)
+		self.assertEqual(serialized["computed_metrics"], {
+			"segment_count": 5,
+			"error_count": 1,
+			"warning_count": 0,
+			"has_st": 1,
+			"has_bsn": 1,
+			"has_se": 1,
+		})
+		self.assertEqual(
+			serialized["errors"],
+			[
+				{
+					"rule_id": "CNT-SE01-SCOPE-COUNT-001",
+					"severity": "error",
+					"message": "SE01 '4' does not match count '5'.",
+					"segment_tag": "SE",
+					"segment_index": 4,
+					"element_index": 1,
+					"fix_hint": "Set SE01 to 5.",
+				}
+			],
+		)
+		self.assertEqual(serialized["warnings"], [])
+		self.assertIn("compliant=False", compliance_result_to_text(result))
