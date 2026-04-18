@@ -7,6 +7,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate, today
 
 from asn_module.asn_module.doctype.asn.asn import get_po_items, get_purchase_order_items
+from asn_module.custom_fields.supplier import setup as setup_supplier_fields
 from asn_module.utils.test_setup import TEST_COMPANY_NAME, before_tests
 
 IGNORE_TEST_RECORD_DEPENDENCIES = [
@@ -303,6 +304,23 @@ class TestASN(FrappeTestCase):
 		before_tests()
 		super().setUpClass()
 
+	def test_supplier_requires_855_ack_custom_field_defaults_to_zero(self):
+		setup_supplier_fields()
+
+		field = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Supplier", "fieldname": "requires_855_ack"},
+			["default", "label"],
+			as_dict=True,
+		)
+
+		self.assertIsNotNone(field)
+		self.assertEqual(field.default, "0")
+		self.assertEqual(
+			field.label,
+			"Require purchase order acknowledgment before shipment notice",
+		)
+
 	def test_insert_rejects_empty_items(self):
 		asn = make_test_asn()
 		asn.set("items", [])
@@ -348,6 +366,27 @@ class TestASN(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			over_limit.insert(ignore_permissions=True)
+
+	def test_insert_rejects_multiple_purchase_orders_in_one_asn(self):
+		po_one = create_purchase_order(qty=10, do_not_submit=True)
+		po_two = create_purchase_order(qty=5, do_not_submit=True, supplier=po_one.supplier)
+
+		asn = make_test_asn(purchase_order=po_one, qty=2)
+		po_two_item = po_two.items[0]
+		asn.append(
+			"items",
+			{
+				"purchase_order": po_two.name,
+				"purchase_order_item": po_two_item.name,
+				"item_code": po_two_item.item_code,
+				"qty": 1,
+				"uom": po_two_item.uom,
+				"rate": po_two_item.rate,
+			},
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			asn.insert(ignore_permissions=True)
 
 	def test_insert_allows_duplicate_po_item_rows_within_remaining_po_qty(self):
 		po = create_purchase_order(qty=10, do_not_submit=True)

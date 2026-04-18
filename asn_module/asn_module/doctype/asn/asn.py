@@ -31,6 +31,7 @@ class ASN(WebsiteGenerator):
 	def validate(self):
 		self._validate_items_present()
 		self._validate_item_qty()
+		self._validate_single_purchase_order()
 		self._sync_supplier_invoice_amount_from_items()
 		super().validate()
 		self._validate_supplier_invoice_unique()
@@ -162,6 +163,17 @@ class ASN(WebsiteGenerator):
 				continue
 
 			frappe.throw(_("Row {0}: Quantity must be greater than 0").format(row.idx))
+
+	def _validate_single_purchase_order(self):
+		purchase_orders = {row.purchase_order for row in self.items or [] if row.purchase_order}
+		if len(purchase_orders) <= 1:
+			return
+
+		frappe.throw(
+			_("Each ASN must reference only one purchase order. Found: {0}").format(
+				", ".join(sorted(purchase_orders))
+			)
+		)
 
 	def _sync_supplier_invoice_amount_from_items(self):
 		"""When header amount is unset (0), derive it from line qty * rate so the portal/detail view is not stuck at 0."""

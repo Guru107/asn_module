@@ -24,6 +24,7 @@
 		"driver_contact",
 		"invoice_section",
 		"supplier_invoice_no",
+		"ack_855_reference",
 		"supplier_invoice_date",
 		"column_break_3",
 		"supplier_invoice_amount",
@@ -141,6 +142,11 @@
 			"fieldtype": "Data",
 			"label": "Supplier Invoice No",
 			"reqd": 1
+		},
+		{
+			"fieldname": "ack_855_reference",
+			"fieldtype": "Data",
+			"label": "Acknowledgment or purchase order reference"
 		},
 		{
 			"fieldname": "supplier_invoice_date",
