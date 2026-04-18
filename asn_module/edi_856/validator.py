@@ -15,6 +15,7 @@ from asn_module.edi_856.rules_4010 import (
 	SEG_CTT_CARD_001,
 	SEG_CTT_REQ_001,
 	SEG_HL_REQ_001,
+	SEG_OUTSIDE_SCOPE_001,
 	SEG_SE_CARD_001,
 	SEG_SE_REQ_001,
 	SEG_ST_CARD_001,
@@ -71,13 +72,35 @@ def _singleton_cardinality_rule_id(tag: str) -> str:
 
 def _expected_missing_segment_index(tag: str, segment_by_tag: dict[str, list[int]]) -> int:
 	ordered_required_tags = ("ST", "BSN", "HL", "CTT", "SE")
-	expected_index = 0
-	for required_tag in ordered_required_tags:
-		if required_tag == tag:
-			return expected_index
-		if segment_by_tag.get(required_tag):
-			expected_index += 1
-	return expected_index
+	tag_position = ordered_required_tags.index(tag)
+
+	for left_tag in reversed(ordered_required_tags[:tag_position]):
+		left_positions = segment_by_tag.get(left_tag)
+		if left_positions:
+			return left_positions[0] + 1
+
+	for right_tag in ordered_required_tags[tag_position + 1 :]:
+		right_positions = segment_by_tag.get(right_tag)
+		if right_positions:
+			return right_positions[0]
+
+	return 0
+
+
+def _transaction_scope_indices(segments: list) -> tuple[int | None, int | None]:
+	st_index = next((segment.index for segment in segments if segment.tag == "ST"), None)
+	if st_index is None:
+		return None, None
+
+	se_index = next((segment.index for segment in segments if segment.tag == "SE" and segment.index > st_index), None)
+	if se_index is None:
+		return st_index, segments[-1].index if segments else st_index
+
+	return st_index, se_index
+
+
+def _is_envelope_tag(tag: str) -> bool:
+	return tag in {"ISA", "GS", "GE", "IEA"}
 
 
 def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
@@ -85,13 +108,42 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 	warnings: list[ComplianceFinding] = []
 
 	segments = parsed.segments
+	scope_start, scope_end = _transaction_scope_indices(list(segments))
+
+	if scope_start is None:
+		scope_segments = list(segments)
+	else:
+		scope_segments = [segment for segment in segments if scope_start <= segment.index <= scope_end]
+
 	segment_by_tag: dict[str, list[int]] = {}
-	for segment in segments:
+	for segment in scope_segments:
 		segment_by_tag.setdefault(segment.tag, []).append(segment.index)
 
-	st_segment = next((segment for segment in segments if segment.tag == "ST"), None)
-	bsn_segment = next((segment for segment in segments if segment.tag == "BSN"), None)
-	se_segment = next((segment for segment in segments if segment.tag == "SE"), None)
+	st_segment = next((segment for segment in scope_segments if segment.tag == "ST"), None)
+	bsn_segment = next((segment for segment in scope_segments if segment.tag == "BSN"), None)
+	se_segment = next((segment for segment in scope_segments if segment.tag == "SE"), None)
+
+	if scope_start is not None:
+		outside_scope_segments = [
+			segment
+			for segment in segments
+			if not (scope_start <= segment.index <= scope_end) and not _is_envelope_tag(segment.tag)
+		]
+	else:
+		outside_scope_segments = [segment for segment in segments if not _is_envelope_tag(segment.tag)]
+
+	for segment in outside_scope_segments:
+		errors.append(
+			ComplianceFinding(
+				rule_id=SEG_OUTSIDE_SCOPE_001,
+				severity="error",
+				message=f"{segment.tag or 'segment'} is outside the transaction scope.",
+				segment_tag=segment.tag or None,
+				segment_index=segment.index,
+				element_index=None,
+				fix_hint="Move business segments inside the ST..SE transaction set.",
+			)
+		)
 
 	for required_tag in REQUIRED_SEGMENTS:
 		if required_tag not in segment_by_tag:
@@ -126,23 +178,22 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 				)
 			)
 
-	if st_segment is not None:
-		ordered_required_tags = ("ST", "BSN", "HL", "CTT", "SE")
-		for left_tag, right_tag in pairwise(ordered_required_tags):
-			left_index = segment_by_tag.get(left_tag, [None])[0]
-			right_index = segment_by_tag.get(right_tag, [None])[0]
-			if left_index is not None and right_index is not None and left_index > right_index:
-				errors.append(
-					ComplianceFinding(
-						rule_id=_sequence_rule_id(left_tag, right_tag),
-						severity="error",
-						message=f"{left_tag} appears after {right_tag}.",
-						segment_tag=right_tag,
-						segment_index=right_index,
-						element_index=None,
-						fix_hint="Restore the required order: ST -> BSN -> HL -> CTT -> SE.",
-					)
+	ordered_required_tags = ("ST", "BSN", "HL", "CTT", "SE")
+	for left_tag, right_tag in pairwise(ordered_required_tags):
+		left_index = segment_by_tag.get(left_tag, [None])[0]
+		right_index = segment_by_tag.get(right_tag, [None])[0]
+		if left_index is not None and right_index is not None and left_index > right_index:
+			errors.append(
+				ComplianceFinding(
+					rule_id=_sequence_rule_id(left_tag, right_tag),
+					severity="error",
+					message=f"{left_tag} appears after {right_tag}.",
+					segment_tag=right_tag,
+					segment_index=right_index,
+					element_index=None,
+					fix_hint="Restore the required order: ST -> BSN -> HL -> CTT -> SE.",
 				)
+			)
 
 	if st_segment is not None and se_segment is not None:
 		st_index = st_segment.index

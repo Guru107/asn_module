@@ -8,6 +8,46 @@ VALID_PAYLOAD = (FIXTURES_DIR / "valid_856_minimal.txt").read_text()
 
 
 class TestValidate856Baseline(TestCase):
+	def test_business_segment_after_se_is_non_compliant(self):
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		parsed = parse_edi("ST*856*0001~BSN*00*12345~HL*1**S~CTT*1~SE*5*0001~N1*SH*ACME~")
+		result = validate_856_baseline(parsed)
+
+		self.assertFalse(result.is_compliant)
+		self.assertIn("SEG-OUTSIDE-SCOPE-001", [finding.rule_id for finding in result.errors])
+
+	def test_envelope_tags_outside_scope_are_allowed(self):
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		parsed = parse_edi(
+			"ISA*00*          *00*          *ZZ*SEND*ZZ*RECV*260418*1200*U*00401*000000001*0*T*:~"
+			"GS*SH*SENDER*RECEIVER*20260418*1200*1*X*004010~"
+			"ST*856*0001~BSN*00*12345~HL*1**S~CTT*1~SE*5*0001~"
+			"GE*1*1~IEA*1*000000001~"
+		)
+		result = validate_856_baseline(parsed)
+
+		self.assertTrue(result.is_compliant)
+
+	def test_missing_st_does_not_suppress_ordering_checks(self):
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		parsed = parse_edi("HL*1**S~BSN*00*12345~CTT*1~SE*4*0001~")
+		result = validate_856_baseline(parsed)
+
+		self.assertFalse(result.is_compliant)
+		self.assertIn("ORD-BSN-HL-001", [finding.rule_id for finding in result.errors])
+
+	def test_missing_segment_index_uses_nearest_required_neighbor(self):
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		parsed = parse_edi("HL*1**S~ST*856*0001~CTT*1~SE*4*0001~")
+		result = validate_856_baseline(parsed)
+
+		missing_bsn = next(finding for finding in result.errors if finding.rule_id == "SEG-BSN-REQ-001")
+		self.assertEqual(missing_bsn.segment_index, 2)
+
 	def test_se01_segment_count_mismatch_pins_metadata_and_reporting(self):
 		from asn_module.edi_856.reporting import compliance_result_to_text
 		from asn_module.edi_856.validator import validate_856_baseline
@@ -110,11 +150,11 @@ class TestValidate856Baseline(TestCase):
 	def test_ordering_violation_for_ctt_and_se_produces_order_error(self):
 		from asn_module.edi_856.validator import validate_856_baseline
 
-		parsed = parse_edi("ST*856*0001~BSN*00*12345~HL*1**S~SE*4*0001~CTT*1~")
+		parsed = parse_edi("ST*856*0001~BSN*00*12345~CTT*1~HL*1**S~SE*4*0001~")
 		result = validate_856_baseline(parsed)
 
 		self.assertFalse(result.is_compliant)
-		self.assertIn("ORD-CTT-SE-001", [finding.rule_id for finding in result.errors])
+		self.assertIn("ORD-HL-CTT-001", [finding.rule_id for finding in result.errors])
 
 	def test_duplicate_singletons_produce_cardinality_errors(self):
 		from asn_module.edi_856.validator import validate_856_baseline
@@ -126,10 +166,10 @@ class TestValidate856Baseline(TestCase):
 
 		rule_ids = [finding.rule_id for finding in result.errors]
 		self.assertFalse(result.is_compliant)
+		self.assertIn("SEG-OUTSIDE-SCOPE-001", rule_ids)
 		self.assertIn("SEG-ST-CARD-001", rule_ids)
 		self.assertIn("SEG-BSN-CARD-001", rule_ids)
 		self.assertIn("SEG-CTT-CARD-001", rule_ids)
-		self.assertIn("SEG-SE-CARD-001", rule_ids)
 
 	def test_computed_metrics_match_contract(self):
 		from asn_module.edi_856.validator import validate_856_baseline
