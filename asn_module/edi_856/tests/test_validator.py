@@ -17,6 +17,15 @@ class TestValidate856Baseline(TestCase):
 		self.assertEqual(result.errors, ())
 		self.assertEqual(result.warnings, ())
 
+	def test_se01_segment_count_mismatch_produces_error(self):
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		parsed = parse_edi("ST*856*0001~BSN*00*12345~HL*1**S~CTT*1~SE*4*0001~")
+		result = validate_856_baseline(parsed)
+
+		self.assertFalse(result.is_compliant)
+		self.assertIn("CNT-SE01-SCOPE-COUNT-001", [finding.rule_id for finding in result.errors])
+
 	def test_missing_bsn_produces_required_segment_error(self):
 		from asn_module.edi_856.validator import validate_856_baseline
 
@@ -64,11 +73,35 @@ class TestValidate856Baseline(TestCase):
 	def test_ordering_violation_produces_order_error(self):
 		from asn_module.edi_856.validator import validate_856_baseline
 
-		parsed = parse_edi("BSN*00*12345~ST*856*0001~HL*1**S~CTT*1~SE*5*0001~")
+		parsed = parse_edi("ST*856*0001~HL*1**S~BSN*00*12345~CTT*1~SE*5*0001~")
 		result = validate_856_baseline(parsed)
 
 		self.assertFalse(result.is_compliant)
-		self.assertIn("ORD-ST-FIRST-001", [finding.rule_id for finding in result.errors])
+		self.assertIn("ORD-BSN-HL-001", [finding.rule_id for finding in result.errors])
+
+	def test_ordering_violation_for_ctt_and_se_produces_order_error(self):
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		parsed = parse_edi("ST*856*0001~BSN*00*12345~HL*1**S~SE*4*0001~CTT*1~")
+		result = validate_856_baseline(parsed)
+
+		self.assertFalse(result.is_compliant)
+		self.assertIn("ORD-CTT-SE-001", [finding.rule_id for finding in result.errors])
+
+	def test_duplicate_singletons_produce_cardinality_errors(self):
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		parsed = parse_edi(
+			"ST*856*0001~ST*856*0002~BSN*00*12345~BSN*00*12346~HL*1**S~HL*2**P~CTT*1~CTT*2~SE*9*0001~SE*9*0002~"
+		)
+		result = validate_856_baseline(parsed)
+
+		rule_ids = [finding.rule_id for finding in result.errors]
+		self.assertFalse(result.is_compliant)
+		self.assertIn("SEG-ST-CARD-001", rule_ids)
+		self.assertIn("SEG-BSN-CARD-001", rule_ids)
+		self.assertIn("SEG-CTT-CARD-001", rule_ids)
+		self.assertIn("SEG-SE-CARD-001", rule_ids)
 
 	def test_computed_metrics_match_contract(self):
 		from asn_module.edi_856.validator import validate_856_baseline
