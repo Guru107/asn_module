@@ -69,6 +69,17 @@ def _singleton_cardinality_rule_id(tag: str) -> str:
 	}.get(tag, f"SEG-{tag}-CARD-001")
 
 
+def _expected_missing_segment_index(tag: str, segment_by_tag: dict[str, list[int]]) -> int:
+	ordered_required_tags = ("ST", "BSN", "HL", "CTT", "SE")
+	expected_index = 0
+	for required_tag in ordered_required_tags:
+		if required_tag == tag:
+			return expected_index
+		if segment_by_tag.get(required_tag):
+			expected_index += 1
+	return expected_index
+
+
 def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 	errors: list[ComplianceFinding] = []
 	warnings: list[ComplianceFinding] = []
@@ -84,17 +95,13 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 
 	for required_tag in REQUIRED_SEGMENTS:
 		if required_tag not in segment_by_tag:
-			reference_index: int | None = None
-			if st_segment is not None and required_tag != "ST":
-				reference_index = st_segment.index + 1
-
 			errors.append(
 				ComplianceFinding(
 					rule_id=_missing_required_segment_rule_id(required_tag),
 					severity="error",
 					message=f"Missing required {required_tag} segment.",
 					segment_tag=required_tag,
-					segment_index=reference_index,
+					segment_index=_expected_missing_segment_index(required_tag, segment_by_tag),
 					element_index=None,
 					fix_hint=(
 						"Add a BSN segment after ST."
@@ -145,16 +152,16 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 			se01 = se_segment.elements[0] if len(se_segment.elements) > 0 else ""
 			if se01 != str(actual_segment_count):
 				errors.append(
-				ComplianceFinding(
-					rule_id=CNT_SE01_SCOPE_COUNT_001,
-					severity="error",
-					message=f"SE01 '{se01}' does not match count '{actual_segment_count}'.",
-					segment_tag="SE",
-					segment_index=se_index,
-					element_index=1,
-					fix_hint=f"Set SE01 to {actual_segment_count}.",
+					ComplianceFinding(
+						rule_id=CNT_SE01_SCOPE_COUNT_001,
+						severity="error",
+						message=f"SE01 '{se01}' does not match count '{actual_segment_count}'.",
+						segment_tag="SE",
+						segment_index=se_index,
+						element_index=1,
+						fix_hint=f"Set SE01 to {actual_segment_count}.",
+					)
 				)
-			)
 
 		st_control = st_segment.elements[1] if len(st_segment.elements) > 1 else ""
 		se_control = se_segment.elements[1] if len(se_segment.elements) > 1 else ""
@@ -167,7 +174,7 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 					message=f"SE02 '{se_control}' does not match ST02 '{st_control}'.",
 					segment_tag="SE",
 					segment_index=se_segment.index,
-					element_index=1,
+					element_index=2,
 					fix_hint="Set SE02 to match ST02.",
 				)
 			)
