@@ -1,0 +1,1 @@
+REQUIRED_SEGMENTS = ("ST", "BSN", "HL", "CTT", "SE")
