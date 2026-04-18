@@ -13,23 +13,29 @@
 ## Decision and Trade-offs (Locked)
 
 1. Compliance matrix + deterministic validator (selected)
+
 Trade-off: More upfront implementation than inline checks, but auditable and repeatable for a 100% compliance claim.
 
-2. Optional 855 gating via explicit Supplier-level flag (selected)
+1. Optional 855 gating via explicit Supplier-level flag (selected)
+
 Trade-off: Simple, predictable operator control per supplier, but depends on correct supplier master data maintenance.
 
-3. Auto-detect whether 855 is required (rejected for now)
+1. Auto-detect whether 855 is required (rejected for now)
+
 Trade-off: Less manual setup, but introduces inference errors and harder troubleshooting.
 
 Locked default:
+
 - `Supplier.requires_855_ack = 0` (bypass by default).
 
 UI copy requirement (mandatory):
+
 - User-facing labels/messages must use business language, not raw EDI numeric codes.
 - Keep EDI codes only in code, logs, and compliance docs.
 - ASN reference must support both acknowledgment and purchase order fallback usage.
 
 Cardinality requirement (mandatory):
+
 - One ASN must map to exactly one purchase order.
 - Multiple ASNs may map to the same purchase order.
 
@@ -58,12 +64,12 @@ Cardinality requirement (mandatory):
 ### Task 1: Add Supplier-Level Optional 855 Configuration Field
 
 **Files:**
+
 - Create: `asn_module/custom_fields/supplier.py`
 - Modify: `asn_module/setup.py`
 - Modify: `asn_module/asn_module/doctype/asn/asn.json`
 - Test: `asn_module/asn_module/doctype/asn/test_asn.py`
-
-- [ ] **Step 1: Write failing doctype/controller tests for new fields and defaults**
+- **Step 1: Write failing doctype/controller tests for new fields and defaults**
 
 ```python
 def test_supplier_requires_855_ack_defaults_to_false(self):
@@ -88,12 +94,12 @@ def test_asn_rejects_multiple_purchase_orders(self):
         asn.insert(ignore_permissions=True)
 ```
 
-- [ ] **Step 2: Run ASN tests to confirm failure on missing field behavior**
+- **Step 2: Run ASN tests to confirm failure on missing field behavior**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --module asn_module.asn_module.doctype.asn.test_asn --lightmode`  
 Expected: FAIL due to missing `Supplier.requires_855_ack` custom field assertion.
 
-- [ ] **Step 3: Add Supplier custom field setup and wire it in after-install**
+- **Step 3: Add Supplier custom field setup and wire it in after-install**
 
 ```python
 # asn_module/custom_fields/supplier.py
@@ -144,12 +150,12 @@ def _validate_single_purchase_order(self):
     frappe.throw("One shipment notice can reference only one purchase order.")
 ```
 
-- [ ] **Step 4: Re-run ASN tests and verify pass for default behavior**
+- **Step 4: Re-run ASN tests and verify pass for default behavior**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --module asn_module.asn_module.doctype.asn.test_asn --lightmode`  
 Expected: PASS for new default test; existing tests remain green.
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/custom_fields/supplier.py asn_module/setup.py asn_module/asn_module/doctype/asn/asn.json asn_module/asn_module/doctype/asn/test_asn.py
@@ -159,12 +165,12 @@ git commit -m "feat(supplier): add optional 855 gate policy field with bypass de
 ### Task 2: Build 856 Parser and Rule Catalog (4010 Baseline)
 
 **Files:**
+
 - Create: `asn_module/edi_856/parser.py`
 - Create: `asn_module/edi_856/rules_4010.py`
 - Create: `asn_module/edi_856/tests/test_parser.py`
 - Create: `asn_module/edi_856/tests/fixtures/valid_856_minimal.txt`
-
-- [ ] **Step 1: Write failing parser tests for separators and segment tokenization**
+- **Step 1: Write failing parser tests for separators and segment tokenization**
 
 ```python
 def test_parse_edi_segments_with_default_separators(self):
@@ -173,12 +179,12 @@ def test_parse_edi_segments_with_default_separators(self):
     self.assertEqual([s.tag for s in parsed.segments], ["ST", "BSN", "SE"])
 ```
 
-- [ ] **Step 2: Run parser tests and confirm failure**
+- **Step 2: Run parser tests and confirm failure**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_parser --lightmode`  
 Expected: FAIL because parser module is not implemented.
 
-- [ ] **Step 3: Implement minimal parser contract and baseline rule skeleton**
+- **Step 3: Implement minimal parser contract and baseline rule skeleton**
 
 ```python
 @dataclass(frozen=True)
@@ -194,12 +200,12 @@ class ParsedEdi:
 REQUIRED_SEGMENTS = ("ST", "BSN", "HL", "CTT", "SE")
 ```
 
-- [ ] **Step 4: Re-run parser tests**
+- **Step 4: Re-run parser tests**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_parser --lightmode`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/edi_856/parser.py asn_module/edi_856/rules_4010.py asn_module/edi_856/tests/test_parser.py asn_module/edi_856/tests/fixtures/valid_856_minimal.txt
@@ -209,12 +215,12 @@ git commit -m "feat(edi-856): add parser primitives and baseline rule catalog sk
 ### Task 3: Implement Deterministic 856 Baseline Validator
 
 **Files:**
+
 - Create: `asn_module/edi_856/validator.py`
 - Create: `asn_module/edi_856/reporting.py`
 - Create: `asn_module/edi_856/tests/test_validator.py`
 - Create: `asn_module/edi_856/tests/fixtures/invalid_missing_bsn.txt`
-
-- [ ] **Step 1: Write failing validator tests for required segment/order/control checks**
+- **Step 1: Write failing validator tests for required segment/order/control checks**
 
 ```python
 def test_validator_flags_missing_bsn_rule_id(self):
@@ -227,12 +233,12 @@ def test_validator_enforces_st_se_control_match(self):
     assert any(f.rule_id == "CNT-SE02-ST02-MATCH-001" for f in result.errors)
 ```
 
-- [ ] **Step 2: Run validator tests to confirm failure first**
+- **Step 2: Run validator tests to confirm failure first**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_validator --lightmode`  
 Expected: FAIL on missing validator implementation.
 
-- [ ] **Step 3: Implement validator and reporting contract with stable `rule_id`s**
+- **Step 3: Implement validator and reporting contract with stable `rule_id`s**
 
 ```python
 @dataclass(frozen=True)
@@ -253,12 +259,12 @@ class ComplianceResult:
     computed_metrics: dict[str, int]
 ```
 
-- [ ] **Step 4: Re-run validator tests and ensure deterministic rule-id assertions pass**
+- **Step 4: Re-run validator tests and ensure deterministic rule-id assertions pass**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_validator --lightmode`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/edi_856/validator.py asn_module/edi_856/reporting.py asn_module/edi_856/tests/test_validator.py asn_module/edi_856/tests/fixtures/invalid_missing_bsn.txt
@@ -268,12 +274,12 @@ git commit -m "feat(edi-856): add baseline validator and rule-id based findings"
 ### Task 4: Add Optional 855 Gate and 856 Export Service Integration
 
 **Files:**
+
 - Create: `asn_module/edi_856/service.py`
 - Modify: `asn_module/asn_module/doctype/asn/asn.py`
 - Create: `asn_module/edi_856/tests/test_service.py`
 - Modify: `asn_module/asn_module/doctype/asn/test_asn.py`
-
-- [ ] **Step 1: Write failing service tests for default bypass and enforced gate paths**
+- **Step 1: Write failing service tests for default bypass and enforced gate paths**
 
 ```python
 def test_export_856_allows_bypass_when_requires_855_false(self):
@@ -294,12 +300,12 @@ def test_export_856_blocks_when_requires_855_true_and_reference_missing(self):
         export_856_for_asn(asn.name)
 ```
 
-- [ ] **Step 2: Run service tests to confirm failure**
+- **Step 2: Run service tests to confirm failure**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/bench16 && bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_service --lightmode`  
 Expected: FAIL because export service/gate does not exist.
 
-- [ ] **Step 3: Implement gate and export integration**
+- **Step 3: Implement gate and export integration**
 
 ```python
 def _derive_purchase_order_reference(asn_doc):
@@ -328,17 +334,19 @@ def export_edi_856(asn_name: str) -> dict:
     return export_856_for_asn(asn_name)
 ```
 
-- [ ] **Step 4: Re-run ASN + service tests**
+- **Step 4: Re-run ASN + service tests**
 
 Run:
+
 ```bash
 cd /Users/gurudattkulkarni/Workspace/bench16
 bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_service --lightmode
 bench --site frappe16.localhost run-tests --module asn_module.asn_module.doctype.asn.test_asn --lightmode
 ```
+
 Expected: PASS for both modules.
 
-- [ ] **Step 5: Commit**
+- **Step 5: Commit**
 
 ```bash
 git add asn_module/edi_856/service.py asn_module/asn_module/doctype/asn/asn.py asn_module/edi_856/tests/test_service.py asn_module/asn_module/doctype/asn/test_asn.py
@@ -348,10 +356,10 @@ git commit -m "feat(edi-856): enforce optional 855 precondition gate on 856 expo
 ### Task 5: Create Compliance Matrix Artifact and Wire Verification Commands
 
 **Files:**
+
 - Create: `docs/edi/856-baseline-compliance-matrix.md`
 - Modify: `README.md` (if needed for operator-facing commands)
-
-- [ ] **Step 1: Write matrix doc with rule IDs, descriptions, and test references**
+- **Step 1: Write matrix doc with rule IDs, descriptions, and test references**
 
 ```markdown
 | Rule ID | Rule | Test |
@@ -359,28 +367,32 @@ git commit -m "feat(edi-856): enforce optional 855 precondition gate on 856 expo
 | SEG-BSN-REQ-001 | BSN segment required once | asn_module/edi_856/tests/test_validator.py::test_validator_flags_missing_bsn_rule_id |
 ```
 
-- [ ] **Step 2: Run full new EDI-856 test package**
+- **Step 2: Run full new EDI-856 test package**
 
 Run:
+
 ```bash
 cd /Users/gurudattkulkarni/Workspace/bench16
 bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_parser --lightmode
 bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_validator --lightmode
 bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_service --lightmode
 ```
+
 Expected: PASS.
 
-- [ ] **Step 3: Run lint and formatting checks**
+- **Step 3: Run lint and formatting checks**
 
 Run:
+
 ```bash
 cd /Users/gurudattkulkarni/Workspace/asn_module
 ruff check asn_module/
 npx eslint asn_module/ --quiet
 ```
+
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- **Step 4: Commit**
 
 ```bash
 git add docs/edi/856-baseline-compliance-matrix.md README.md
@@ -390,11 +402,12 @@ git commit -m "docs(edi-856): add baseline compliance matrix and verification co
 ### Task 6: End-to-End Verification Gate
 
 **Files:**
-- Verification-only task.
 
-- [ ] **Step 1: Run targeted regression suite around ASN and EDI-856**
+- Verification-only task.
+- **Step 1: Run targeted regression suite around ASN and EDI-856**
 
 Run:
+
 ```bash
 cd /Users/gurudattkulkarni/Workspace/bench16
 bench --site frappe16.localhost run-tests --module asn_module.asn_module.doctype.asn.test_asn --lightmode
@@ -403,14 +416,15 @@ bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test
 bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_validator --lightmode
 bench --site frappe16.localhost run-tests --module asn_module.edi_856.tests.test_service --lightmode
 ```
+
 Expected: PASS.
 
-- [ ] **Step 2: Final pre-commit gate**
+- **Step 2: Final pre-commit gate**
 
 Run: `cd /Users/gurudattkulkarni/Workspace/asn_module && pre-commit run --all-files`  
 Expected: PASS.
 
-- [ ] **Step 3: Final implementation commit**
+- **Step 3: Final implementation commit**
 
 ```bash
 git add -A
@@ -426,3 +440,4 @@ git commit -m "feat(edi-856): deliver baseline compliance validator with optiona
 - Keep all user-visible labels and errors in plain business language (no raw `850/855/856/810` code references).
 - When acknowledgment is not required, always populate ASN reference from purchase order data deterministically.
 - Enforce one-ASN-one-PO validation before reference derivation, so fallback never handles mixed PO sets.
+
