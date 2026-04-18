@@ -70,13 +70,18 @@ class TestValidate856Baseline(TestCase):
 		self.assertFalse(result.is_compliant)
 		self.assertIn("ORD-ST-FIRST-001", [finding.rule_id for finding in result.errors])
 
-	def test_computed_metrics_are_immutable(self):
+	def test_computed_metrics_match_contract(self):
 		from asn_module.edi_856.validator import validate_856_baseline
 
 		result = validate_856_baseline(parse_edi(VALID_PAYLOAD))
 
-		with self.assertRaises(TypeError):
-			result.computed_metrics["segment_count"] = 0
+		self.assertIsInstance(result.computed_metrics, dict)
+		self.assertEqual(result.computed_metrics["segment_count"], 5)
+		self.assertEqual(result.computed_metrics["error_count"], 0)
+		self.assertEqual(result.computed_metrics["warning_count"], 0)
+		self.assertEqual(result.computed_metrics["has_st"], 1)
+		self.assertEqual(result.computed_metrics["has_bsn"], 1)
+		self.assertEqual(result.computed_metrics["has_se"], 1)
 
 	def test_reporting_smoke(self):
 		from asn_module.edi_856.reporting import compliance_result_to_dict, compliance_result_to_text

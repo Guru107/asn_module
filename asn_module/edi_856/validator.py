@@ -1,6 +1,4 @@
 from dataclasses import dataclass
-from types import MappingProxyType
-from typing import Any, Mapping
 
 from asn_module.edi_856.parser import ParsedEdi
 from asn_module.edi_856.rules_4010 import (
@@ -14,10 +12,10 @@ class ComplianceFinding:
 	rule_id: str
 	severity: str
 	message: str
-	segment_tag: str
+	segment_tag: str | None
 	segment_index: int | None
 	element_index: int | None
-	fix_hint: str
+	fix_hint: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +23,7 @@ class ComplianceResult:
 	is_compliant: bool
 	errors: tuple[ComplianceFinding, ...]
 	warnings: tuple[ComplianceFinding, ...]
-	computed_metrics: Mapping[str, Any]
+	computed_metrics: dict[str, int]
 
 
 def _missing_required_segment_rule_id(tag: str) -> str:
@@ -106,16 +104,14 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 				)
 			)
 
-	computed_metrics = MappingProxyType(
-		{
-			"segment_count": len(segments),
-			"error_count": len(errors),
-			"warning_count": len(warnings),
-			"has_st": st_segment is not None,
-			"has_bsn": bsn_segment is not None,
-			"has_se": se_segment is not None,
-		}
-	)
+	computed_metrics = {
+		"segment_count": len(segments),
+		"error_count": len(errors),
+		"warning_count": len(warnings),
+		"has_st": int(st_segment is not None),
+		"has_bsn": int(bsn_segment is not None),
+		"has_se": int(se_segment is not None),
+	}
 
 	return ComplianceResult(
 		is_compliant=not errors,

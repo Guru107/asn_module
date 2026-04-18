@@ -14,9 +14,12 @@ def compliance_result_to_text(result: ComplianceResult) -> str:
 	lines = [f"compliant={result.is_compliant}"]
 	for label, findings in (("errors", result.errors), ("warnings", result.warnings)):
 		for finding in findings:
+			segment_tag = finding.segment_tag or "-"
+			segment_index = "-" if finding.segment_index is None else str(finding.segment_index)
+			element_index = "-" if finding.element_index is None else str(finding.element_index)
 			lines.append(
-				f"{label}: {finding.rule_id} {finding.segment_tag}[{finding.segment_index}]"
-				f" element={finding.element_index} {finding.message}"
+				f"{label}: {finding.rule_id} {segment_tag}[{segment_index}]"
+				f" element={element_index} {finding.message}"
 			)
 	return "\n".join(lines)
 
