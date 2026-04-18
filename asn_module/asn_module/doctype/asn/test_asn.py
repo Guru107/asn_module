@@ -386,18 +386,34 @@ class TestASN(FrappeTestCase):
 		po_one = create_purchase_order(qty=10, do_not_submit=True)
 		po_two = create_purchase_order(qty=5, do_not_submit=True, supplier=po_one.supplier)
 
-		asn = make_test_asn(purchase_order=po_one, qty=2)
+		po_one_item = po_one.items[0]
 		po_two_item = po_two.items[0]
-		asn.append(
-			"items",
+		asn = frappe.get_doc(
 			{
-				"purchase_order": po_one.name,
-				"purchase_order_item": po_two_item.name,
-				"item_code": po_two_item.item_code,
-				"qty": 1,
-				"uom": po_two_item.uom,
-				"rate": po_two_item.rate,
-			},
+				"doctype": "ASN",
+				"supplier": po_one.supplier,
+				"supplier_invoice_no": f"INV-{frappe.generate_hash(length=8)}",
+				"supplier_invoice_date": today(),
+				"expected_delivery_date": today(),
+				"items": [
+					{
+						"purchase_order": po_one.name,
+						"purchase_order_item": po_one_item.name,
+						"item_code": po_one_item.item_code,
+						"qty": 2,
+						"uom": po_one_item.uom,
+						"rate": po_one_item.rate,
+					},
+					{
+						"purchase_order": po_two.name,
+						"purchase_order_item": po_two_item.name,
+						"item_code": po_two_item.item_code,
+						"qty": 1,
+						"uom": po_two_item.uom,
+						"rate": po_two_item.rate,
+					},
+				],
+			}
 		)
 
 		with self.assertRaises(frappe.ValidationError):
