@@ -1,10 +1,22 @@
 from dataclasses import dataclass
 from itertools import pairwise
 
-from asn_module.edi_856.parser import ParsedEdi
+from asn_module.edi_856.parser import ParsedEdi, Segment, parse_edi
 from asn_module.edi_856.rules_4010 import (
+	CNT_CTT01_HL_COUNT_001,
 	CNT_SE01_SCOPE_COUNT_001,
 	CNT_SE02_ST02_MATCH_001,
+	ELM_BSN01_REQ_001,
+	ELM_BSN02_REQ_001,
+	ELM_BSN03_REQ_001,
+	ELM_CTT01_NUMERIC_001,
+	ELM_SE02_REQ_001,
+	ELM_ST01_856_001,
+	ELM_ST02_REQ_001,
+	FMT_BSN03_DATE_001,
+	HL_HL01_REQ_001,
+	HL_HL01_UNIQUE_001,
+	HL_PARENT_REF_001,
 	ORD_BSN_HL_001,
 	ORD_CTT_SE_001,
 	ORD_HL_CTT_001,
@@ -87,28 +99,141 @@ def _expected_missing_segment_index(tag: str, segment_by_tag: dict[str, list[int
 	return 0
 
 
-def _transaction_scope_indices(segments: list) -> tuple[int | None, int | None]:
-	st_index = next((segment.index for segment in segments if segment.tag == "ST"), None)
-	if st_index is None:
-		return None, None
+def _segment_element(segment: Segment, element_index: int) -> str:
+	zero_based_index = element_index - 1
+	if zero_based_index < 0 or zero_based_index >= len(segment.elements):
+		return ""
+	return segment.elements[zero_based_index]
 
-	se_index = next((segment.index for segment in segments if segment.tag == "SE" and segment.index > st_index), None)
-	if se_index is None:
-		return st_index, segments[-1].index if segments else st_index
 
-	return st_index, se_index
+def _selected_transaction_segments(
+	segments: list[Segment],
+) -> tuple[int | None, int | None, Segment | None, Segment | None]:
+	first_st_segment: Segment | None = None
+	selected_st_segment: Segment | None = None
+
+	for segment in segments:
+		if segment.tag != "ST":
+			continue
+
+		if first_st_segment is None:
+			first_st_segment = segment
+		if _segment_element(segment, 1) == "856":
+			selected_st_segment = segment
+			break
+
+	if selected_st_segment is None:
+		selected_st_segment = first_st_segment
+	if selected_st_segment is None:
+		return None, None, None, None
+
+	selected_se_segment = next(
+		(segment for segment in segments if segment.tag == "SE" and segment.index > selected_st_segment.index),
+		None,
+	)
+	scope_end = selected_se_segment.index if selected_se_segment is not None else segments[-1].index
+	return selected_st_segment.index, scope_end, selected_st_segment, selected_se_segment
 
 
 def _is_envelope_tag(tag: str) -> bool:
 	return tag in {"ISA", "GS", "GE", "IEA"}
 
 
-def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
+def _append_error(
+	errors: list[ComplianceFinding],
+	*,
+	rule_id: str,
+	message: str,
+	segment_tag: str | None,
+	segment_index: int | None,
+	element_index: int | None = None,
+	fix_hint: str | None = None,
+) -> None:
+	errors.append(
+		ComplianceFinding(
+			rule_id=rule_id,
+			severity="error",
+			message=message,
+			segment_tag=segment_tag,
+			segment_index=segment_index,
+			element_index=element_index,
+			fix_hint=fix_hint,
+		)
+	)
+
+
+def _validate_hl_hierarchy(
+	scope_segments: list[Segment], errors: list[ComplianceFinding]
+) -> tuple[int, int, int]:
+	hl_segments = [segment for segment in scope_segments if segment.tag == "HL"]
+	seen_hl_ids: set[str] = set()
+	hl_depths: dict[str, int] = {}
+	max_hl_depth = 0
+	item_hl_count = 0
+
+	for segment in hl_segments:
+		hl01 = _segment_element(segment, 1)
+		hl02 = _segment_element(segment, 2)
+		hl03 = _segment_element(segment, 3)
+
+		if hl03 == "I":
+			item_hl_count += 1
+
+		if hl01 == "":
+			_append_error(
+				errors,
+				rule_id=HL_HL01_REQ_001,
+				message="HL01 is required.",
+				segment_tag="HL",
+				segment_index=segment.index,
+				element_index=1,
+				fix_hint="Populate HL01 with a non-empty hierarchical ID.",
+			)
+			continue
+
+		if hl01 in seen_hl_ids:
+			_append_error(
+				errors,
+				rule_id=HL_HL01_UNIQUE_001,
+				message=f"HL01 '{hl01}' must be unique.",
+				segment_tag="HL",
+				segment_index=segment.index,
+				element_index=1,
+				fix_hint="Assign a unique HL01 value to each HL segment.",
+			)
+			continue
+
+		depth = 1
+		if hl02:
+			if hl02 not in seen_hl_ids:
+				_append_error(
+					errors,
+					rule_id=HL_PARENT_REF_001,
+					message=f"HL02 '{hl02}' does not reference an earlier HL01.",
+					segment_tag="HL",
+					segment_index=segment.index,
+					element_index=2,
+					fix_hint="Point HL02 to an existing earlier HL01, or leave it blank for the root HL.",
+				)
+			else:
+				depth = hl_depths[hl02] + 1
+
+		seen_hl_ids.add(hl01)
+		hl_depths[hl01] = depth
+		max_hl_depth = max(max_hl_depth, depth)
+
+	return len(hl_segments), item_hl_count, max_hl_depth
+
+
+def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 	errors: list[ComplianceFinding] = []
 	warnings: list[ComplianceFinding] = []
 
+	if isinstance(parsed, str):
+		parsed = parse_edi(parsed)
+
 	segments = parsed.segments
-	scope_start, scope_end = _transaction_scope_indices(list(segments))
+	scope_start, scope_end, st_segment, se_segment = _selected_transaction_segments(list(segments))
 
 	if scope_start is None:
 		scope_segments = list(segments)
@@ -119,9 +244,8 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 	for segment in scope_segments:
 		segment_by_tag.setdefault(segment.tag, []).append(segment.index)
 
-	st_segment = next((segment for segment in scope_segments if segment.tag == "ST"), None)
 	bsn_segment = next((segment for segment in scope_segments if segment.tag == "BSN"), None)
-	se_segment = next((segment for segment in scope_segments if segment.tag == "SE"), None)
+	ctt_segment = next((segment for segment in scope_segments if segment.tag == "CTT"), None)
 
 	if scope_start is not None:
 		outside_scope_segments = [
@@ -133,34 +257,28 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 		outside_scope_segments = [segment for segment in segments if not _is_envelope_tag(segment.tag)]
 
 	for segment in outside_scope_segments:
-		errors.append(
-			ComplianceFinding(
-				rule_id=SEG_OUTSIDE_SCOPE_001,
-				severity="error",
-				message=f"{segment.tag or 'segment'} is outside the transaction scope.",
-				segment_tag=segment.tag or None,
-				segment_index=segment.index,
-				element_index=None,
-				fix_hint="Move business segments inside the ST..SE transaction set.",
-			)
+		_append_error(
+			errors,
+			rule_id=SEG_OUTSIDE_SCOPE_001,
+			message=f"{segment.tag or 'segment'} is outside the transaction scope.",
+			segment_tag=segment.tag or None,
+			segment_index=segment.index,
+			fix_hint="Move business segments inside the selected ST..SE transaction set.",
 		)
 
 	for required_tag in REQUIRED_SEGMENTS:
 		if required_tag not in segment_by_tag:
-			errors.append(
-				ComplianceFinding(
-					rule_id=_missing_required_segment_rule_id(required_tag),
-					severity="error",
-					message=f"Missing required {required_tag} segment.",
-					segment_tag=required_tag,
-					segment_index=_expected_missing_segment_index(required_tag, segment_by_tag),
-					element_index=None,
-					fix_hint=(
-						"Add a BSN segment after ST."
-						if required_tag == "BSN"
-						else f"Add a {required_tag} segment in the transaction set."
-					),
-				)
+			_append_error(
+				errors,
+				rule_id=_missing_required_segment_rule_id(required_tag),
+				message=f"Missing required {required_tag} segment.",
+				segment_tag=required_tag,
+				segment_index=_expected_missing_segment_index(required_tag, segment_by_tag),
+				fix_hint=(
+					"Add a BSN segment after ST."
+					if required_tag == "BSN"
+					else f"Add a {required_tag} segment in the transaction set."
+				),
 			)
 
 	full_segment_by_tag: dict[str, list[int]] = {}
@@ -170,16 +288,13 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 	for singleton_tag in ("ST", "BSN", "CTT", "SE"):
 		positions = full_segment_by_tag.get(singleton_tag, [])
 		if len(positions) > 1:
-			errors.append(
-				ComplianceFinding(
-					rule_id=_singleton_cardinality_rule_id(singleton_tag),
-					severity="error",
-					message=f"Duplicate {singleton_tag} segment.",
-					segment_tag=singleton_tag,
-					segment_index=positions[1],
-					element_index=None,
-					fix_hint=f"Keep only one {singleton_tag} segment.",
-				)
+			_append_error(
+				errors,
+				rule_id=_singleton_cardinality_rule_id(singleton_tag),
+				message=f"Duplicate {singleton_tag} segment.",
+				segment_tag=singleton_tag,
+				segment_index=positions[1],
+				fix_hint=f"Keep only one {singleton_tag} segment.",
 			)
 
 	ordered_required_tags = ("ST", "BSN", "HL", "CTT", "SE")
@@ -187,51 +302,137 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 		left_index = segment_by_tag.get(left_tag, [None])[0]
 		right_index = segment_by_tag.get(right_tag, [None])[0]
 		if left_index is not None and right_index is not None and left_index > right_index:
-			errors.append(
-				ComplianceFinding(
-					rule_id=_sequence_rule_id(left_tag, right_tag),
-					severity="error",
-					message=f"{left_tag} appears after {right_tag}.",
-					segment_tag=right_tag,
-					segment_index=right_index,
-					element_index=None,
-					fix_hint="Restore the required order: ST -> BSN -> HL -> CTT -> SE.",
-				)
+			_append_error(
+				errors,
+				rule_id=_sequence_rule_id(left_tag, right_tag),
+				message=f"{left_tag} appears after {right_tag}.",
+				segment_tag=right_tag,
+				segment_index=right_index,
+				fix_hint="Restore the required order: ST -> BSN -> HL -> CTT -> SE.",
 			)
 
+	if st_segment is not None:
+		st01 = _segment_element(st_segment, 1)
+		st02 = _segment_element(st_segment, 2)
+		if st01 != "856":
+			_append_error(
+				errors,
+				rule_id=ELM_ST01_856_001,
+				message=f"ST01 '{st01}' must be '856'.",
+				segment_tag="ST",
+				segment_index=st_segment.index,
+				element_index=1,
+				fix_hint="Set ST01 to 856 for the ASN transaction set.",
+			)
+		if st02 == "":
+			_append_error(
+				errors,
+				rule_id=ELM_ST02_REQ_001,
+				message="ST02 is required.",
+				segment_tag="ST",
+				segment_index=st_segment.index,
+				element_index=2,
+				fix_hint="Populate ST02 with the transaction set control number.",
+			)
+
+	if bsn_segment is not None:
+		for element_index, rule_id in (
+			(1, ELM_BSN01_REQ_001),
+			(2, ELM_BSN02_REQ_001),
+			(3, ELM_BSN03_REQ_001),
+		):
+			if _segment_element(bsn_segment, element_index) == "":
+				_append_error(
+					errors,
+					rule_id=rule_id,
+					message=f"BSN{element_index:02d} is required.",
+					segment_tag="BSN",
+					segment_index=bsn_segment.index,
+					element_index=element_index,
+					fix_hint=f"Populate BSN{element_index:02d}.",
+				)
+
+		bsn03 = _segment_element(bsn_segment, 3)
+		if bsn03 != "" and (len(bsn03) != 8 or not bsn03.isdigit()):
+			_append_error(
+				errors,
+				rule_id=FMT_BSN03_DATE_001,
+				message=f"BSN03 '{bsn03}' must use CCYYMMDD format.",
+				segment_tag="BSN",
+				segment_index=bsn_segment.index,
+				element_index=3,
+				fix_hint="Set BSN03 to an 8-digit CCYYMMDD date.",
+			)
+
+	hl_count, item_hl_count, max_hl_depth = _validate_hl_hierarchy(scope_segments, errors)
+
+	if ctt_segment is not None:
+		ctt01 = _segment_element(ctt_segment, 1)
+		if not ctt01.isdigit():
+			_append_error(
+				errors,
+				rule_id=ELM_CTT01_NUMERIC_001,
+				message=f"CTT01 '{ctt01}' must be numeric.",
+				segment_tag="CTT",
+				segment_index=ctt_segment.index,
+				element_index=1,
+				fix_hint="Set CTT01 to a numeric HL count.",
+			)
+		else:
+			expected_ctt_count = item_hl_count if item_hl_count > 0 else hl_count
+			count_basis = "item-level HL count" if item_hl_count > 0 else "total HL count"
+			if int(ctt01) != expected_ctt_count:
+				_append_error(
+					errors,
+					rule_id=CNT_CTT01_HL_COUNT_001,
+					message=f"CTT01 '{ctt01}' does not match {count_basis} '{expected_ctt_count}'.",
+					segment_tag="CTT",
+					segment_index=ctt_segment.index,
+					element_index=1,
+					fix_hint=(
+						f"Set CTT01 to {expected_ctt_count}; baseline validation uses the {count_basis}."
+					),
+				)
+
+	st_control = _segment_element(st_segment, 2) if st_segment is not None else ""
+	se_control = _segment_element(se_segment, 2) if se_segment is not None else ""
 	if st_segment is not None and se_segment is not None:
 		st_index = st_segment.index
 		se_index = se_segment.index
 		if se_index > st_index:
 			actual_segment_count = se_index - st_index + 1
-			se01 = se_segment.elements[0] if len(se_segment.elements) > 0 else ""
+			se01 = _segment_element(se_segment, 1)
 			if se01 != str(actual_segment_count):
-				errors.append(
-					ComplianceFinding(
-						rule_id=CNT_SE01_SCOPE_COUNT_001,
-						severity="error",
-						message=f"SE01 '{se01}' does not match count '{actual_segment_count}'.",
-						segment_tag="SE",
-						segment_index=se_index,
-						element_index=1,
-						fix_hint=f"Set SE01 to {actual_segment_count}.",
-					)
+				_append_error(
+					errors,
+					rule_id=CNT_SE01_SCOPE_COUNT_001,
+					message=f"SE01 '{se01}' does not match count '{actual_segment_count}'.",
+					segment_tag="SE",
+					segment_index=se_index,
+					element_index=1,
+					fix_hint=f"Set SE01 to {actual_segment_count}.",
 				)
 
-		st_control = st_segment.elements[1] if len(st_segment.elements) > 1 else ""
-		se_control = se_segment.elements[1] if len(se_segment.elements) > 1 else ""
+		if se_control == "":
+			_append_error(
+				errors,
+				rule_id=ELM_SE02_REQ_001,
+				message="SE02 is required.",
+				segment_tag="SE",
+				segment_index=se_segment.index,
+				element_index=2,
+				fix_hint="Populate SE02 with the transaction set control number.",
+			)
 
 		if st_control != se_control:
-			errors.append(
-				ComplianceFinding(
-					rule_id=CNT_SE02_ST02_MATCH_001,
-					severity="error",
-					message=f"SE02 '{se_control}' does not match ST02 '{st_control}'.",
-					segment_tag="SE",
-					segment_index=se_segment.index,
-					element_index=2,
-					fix_hint="Set SE02 to match ST02.",
-				)
+			_append_error(
+				errors,
+				rule_id=CNT_SE02_ST02_MATCH_001,
+				message=f"SE02 '{se_control}' does not match ST02 '{st_control}'.",
+				segment_tag="SE",
+				segment_index=se_segment.index,
+				element_index=2,
+				fix_hint="Set SE02 to match ST02.",
 			)
 
 	computed_metrics = {
@@ -241,6 +442,12 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 		"has_st": int(st_segment is not None),
 		"has_bsn": int(bsn_segment is not None),
 		"has_se": int(se_segment is not None),
+		"hl_count": hl_count,
+		"item_hl_count": item_hl_count,
+		"max_hl_depth": max_hl_depth,
+		"has_st_control": int(st_control != ""),
+		"has_se_control": int(se_control != ""),
+		"st_se_control_match": int(st_control != "" and st_control == se_control),
 	}
 
 	return ComplianceResult(
