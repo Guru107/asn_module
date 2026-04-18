@@ -148,6 +148,11 @@ def _indexes_in_range(start: int, end: int) -> set[int]:
 	return set(range(start, end + 1))
 
 
+def _control_ref_to_metric(control_ref: str) -> int:
+	# Keep metrics integer-only. Non-numeric control refs collapse to -1.
+	return int(control_ref) if control_ref.isdigit() else -1
+
+
 def _is_envelope_tag(tag: str) -> bool:
 	return tag in {"ISA", "GS", "GE", "IEA"}
 
@@ -247,7 +252,7 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 
 	segments = parsed.segments
 	transaction_ranges = _transaction_ranges(list(segments))
-	scope_start, scope_end, st_segment, se_segment = _selected_transaction_segments(list(segments))
+	scope_start, scope_end, st_segment, _selected_se_segment = _selected_transaction_segments(list(segments))
 
 	if scope_start is None:
 		scope_segments = list(segments)
@@ -266,8 +271,10 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 	for segment in scope_segments:
 		segment_by_tag.setdefault(segment.tag, []).append(segment.index)
 
+	scope_st_segment = next((segment for segment in scope_segments if segment.tag == "ST"), None)
 	bsn_segment = next((segment for segment in scope_segments if segment.tag == "BSN"), None)
 	ctt_segment = next((segment for segment in scope_segments if segment.tag == "CTT"), None)
+	scope_se_segment = next((segment for segment in scope_segments if segment.tag == "SE"), None)
 
 	if scope_start is not None:
 		outside_scope_segments = [
@@ -339,16 +346,16 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 				fix_hint="Restore the required order: ST -> BSN -> HL -> CTT -> SE.",
 			)
 
-	if st_segment is not None:
-		st01 = _segment_element(st_segment, 1)
-		st02 = _segment_element(st_segment, 2)
+	if scope_st_segment is not None:
+		st01 = _segment_element(scope_st_segment, 1)
+		st02 = _segment_element(scope_st_segment, 2)
 		if st01 != "856":
 			_append_error(
 				errors,
 				rule_id=ELM_ST01_856_001,
 				message=f"ST01 '{st01}' must be '856'.",
 				segment_tag="ST",
-				segment_index=st_segment.index,
+				segment_index=scope_st_segment.index,
 				element_index=1,
 				fix_hint="Set ST01 to 856 for the ASN transaction set.",
 			)
@@ -358,7 +365,7 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 				rule_id=ELM_ST02_REQ_001,
 				message="ST02 is required.",
 				segment_tag="ST",
-				segment_index=st_segment.index,
+				segment_index=scope_st_segment.index,
 				element_index=2,
 				fix_hint="Populate ST02 with the transaction set control number.",
 			)
@@ -422,14 +429,14 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 					),
 				)
 
-	st_control = _segment_element(st_segment, 2) if st_segment is not None else ""
-	se_control = _segment_element(se_segment, 2) if se_segment is not None else ""
-	if st_segment is not None and se_segment is not None:
-		st_index = st_segment.index
-		se_index = se_segment.index
+	st_control = _segment_element(scope_st_segment, 2) if scope_st_segment is not None else ""
+	se_control = _segment_element(scope_se_segment, 2) if scope_se_segment is not None else ""
+	if scope_st_segment is not None and scope_se_segment is not None:
+		st_index = scope_st_segment.index
+		se_index = scope_se_segment.index
 		if se_index > st_index:
 			actual_segment_count = se_index - st_index + 1
-			se01 = _segment_element(se_segment, 1)
+			se01 = _segment_element(scope_se_segment, 1)
 			if se01 != str(actual_segment_count):
 				_append_error(
 					errors,
@@ -447,7 +454,7 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 				rule_id=ELM_SE02_REQ_001,
 				message="SE02 is required.",
 				segment_tag="SE",
-				segment_index=se_segment.index,
+				segment_index=scope_se_segment.index,
 				element_index=2,
 				fix_hint="Populate SE02 with the transaction set control number.",
 			)
@@ -458,7 +465,7 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 				rule_id=CNT_SE02_ST02_MATCH_001,
 				message=f"SE02 '{se_control}' does not match ST02 '{st_control}'.",
 				segment_tag="SE",
-				segment_index=se_segment.index,
+				segment_index=scope_se_segment.index,
 				element_index=2,
 				fix_hint="Set SE02 to match ST02.",
 			)
@@ -467,14 +474,16 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 		"segment_count": len(segments),
 		"error_count": len(errors),
 		"warning_count": len(warnings),
-		"has_st": int(any(segment.tag == "ST" for segment in segments)),
-		"has_bsn": int(any(segment.tag == "BSN" for segment in segments)),
-		"has_se": int(any(segment.tag == "SE" for segment in segments)),
+		"has_st": int(scope_st_segment is not None),
+		"has_bsn": int(bsn_segment is not None),
+		"has_se": int(scope_se_segment is not None),
 		"hl_count": hl_count,
 		"item_hl_count": item_hl_count,
 		"max_hl_depth": max_hl_depth,
 		"has_st_control": int(st_control != ""),
 		"has_se_control": int(se_control != ""),
+		"st_control_ref": _control_ref_to_metric(st_control),
+		"se_control_ref": _control_ref_to_metric(se_control),
 		"st_se_control_match": int(st_control != "" and st_control == se_control),
 	}
 

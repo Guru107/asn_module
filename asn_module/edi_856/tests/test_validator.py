@@ -63,6 +63,22 @@ class TestValidate856Baseline(TestCase):
 		self.assertNotIn(SEG_ST_CARD_001, self.error_rule_ids(result))
 		self.assertNotIn(ELM_ST01_856_001, self.error_rule_ids(result))
 		self.assertNotIn(SEG_BSN_REQ_001, self.error_rule_ids(result))
+		self.assertEqual(result.computed_metrics["has_st"], 1)
+		self.assertEqual(result.computed_metrics["has_bsn"], 1)
+		self.assertEqual(result.computed_metrics["has_se"], 1)
+
+	def test_mixed_interchange_has_metrics_use_selected_856_scope(self):
+		payload = (
+			"ST*850*0009~BEG*00*SA*PO123~SE*3*0009~"
+			"ST*856*0001~BSN*00*12345*20260418~HL*1**S~CTT*1~"
+		)
+
+		result = validate_856_baseline(payload)
+
+		self.assertFalse(result.is_compliant)
+		self.assertEqual(result.computed_metrics["has_st"], 1)
+		self.assertEqual(result.computed_metrics["has_bsn"], 1)
+		self.assertEqual(result.computed_metrics["has_se"], 0)
 
 	def test_non_856_transaction_fails_st01_rule(self):
 		result = validate_856_baseline(
@@ -242,7 +258,7 @@ class TestValidate856Baseline(TestCase):
 
 	def test_computed_metrics_include_hierarchy_and_control_indicators(self):
 		result = validate_856_baseline(
-			"ST*856*0001~BSN*00*12345*20260418~HL*1**S~HL*2*1*O~HL*3*2*I~CTT*1~SE*7*0001~"
+			"ST*856*1234~BSN*00*12345*20260418~HL*1**S~HL*2*1*O~HL*3*2*I~CTT*1~SE*7*1234~"
 		)
 
 		self.assertTrue(result.is_compliant)
@@ -253,6 +269,8 @@ class TestValidate856Baseline(TestCase):
 		self.assertEqual(result.computed_metrics["has_st_control"], 1)
 		self.assertEqual(result.computed_metrics["has_se_control"], 1)
 		self.assertEqual(result.computed_metrics["st_se_control_match"], 1)
+		self.assertEqual(result.computed_metrics["st_control_ref"], 1234)
+		self.assertEqual(result.computed_metrics["se_control_ref"], 1234)
 
 	def test_reporting_serializes_enriched_metrics_contract(self):
 		from asn_module.edi_856.reporting import compliance_result_to_dict, compliance_result_to_text
@@ -273,6 +291,8 @@ class TestValidate856Baseline(TestCase):
 			"max_hl_depth": 1,
 			"has_st_control": 1,
 			"has_se_control": 1,
+			"st_control_ref": 1,
+			"se_control_ref": 1,
 			"st_se_control_match": 1,
 		})
 		self.assertEqual(
