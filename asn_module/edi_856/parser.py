@@ -21,13 +21,11 @@ def parse_edi(
 	segments: list[Segment] = []
 
 	for raw_segment in text.split(segment_separator):
-		segment_text = raw_segment.strip()
-		if not segment_text:
+		segment_text = raw_segment.strip("\r\n")
+		if segment_text == "":
 			continue
 
 		parts = segment_text.split(element_separator)
-		if not parts[0]:
-			continue
 
 		segments.append(
 			Segment(
