@@ -109,30 +109,43 @@ def _segment_element(segment: Segment, element_index: int) -> str:
 def _selected_transaction_segments(
 	segments: list[Segment],
 ) -> tuple[int | None, int | None, Segment | None, Segment | None]:
-	first_st_segment: Segment | None = None
-	selected_st_segment: Segment | None = None
-
-	for segment in segments:
-		if segment.tag != "ST":
-			continue
-
-		if first_st_segment is None:
-			first_st_segment = segment
-		if _segment_element(segment, 1) == "856":
-			selected_st_segment = segment
-			break
-
-	if selected_st_segment is None:
-		selected_st_segment = first_st_segment
-	if selected_st_segment is None:
+	transaction_ranges = _transaction_ranges(segments)
+	if not transaction_ranges:
 		return None, None, None, None
 
-	selected_se_segment = next(
-		(segment for segment in segments if segment.tag == "SE" and segment.index > selected_st_segment.index),
-		None,
+	selected_range = next(
+		(transaction_range for transaction_range in transaction_ranges if _segment_element(transaction_range[2], 1) == "856"),
+		transaction_ranges[0],
 	)
-	scope_end = selected_se_segment.index if selected_se_segment is not None else segments[-1].index
-	return selected_st_segment.index, scope_end, selected_st_segment, selected_se_segment
+	scope_start, scope_end, selected_st_segment, selected_se_segment = selected_range
+	return scope_start, scope_end, selected_st_segment, selected_se_segment
+
+
+def _transaction_ranges(
+	segments: list[Segment],
+) -> list[tuple[int, int, Segment, Segment | None]]:
+	transaction_ranges: list[tuple[int, int, Segment, Segment | None]] = []
+	open_st_segment: Segment | None = None
+
+	for segment in segments:
+		if segment.tag == "ST":
+			if open_st_segment is not None:
+				transaction_ranges.append((open_st_segment.index, segment.index - 1, open_st_segment, None))
+			open_st_segment = segment
+			continue
+
+		if segment.tag == "SE" and open_st_segment is not None:
+			transaction_ranges.append((open_st_segment.index, segment.index, open_st_segment, segment))
+			open_st_segment = None
+
+	if open_st_segment is not None:
+		transaction_ranges.append((open_st_segment.index, segments[-1].index, open_st_segment, None))
+
+	return transaction_ranges
+
+
+def _indexes_in_range(start: int, end: int) -> set[int]:
+	return set(range(start, end + 1))
 
 
 def _is_envelope_tag(tag: str) -> bool:
@@ -233,12 +246,21 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 		parsed = parse_edi(parsed)
 
 	segments = parsed.segments
+	transaction_ranges = _transaction_ranges(list(segments))
 	scope_start, scope_end, st_segment, se_segment = _selected_transaction_segments(list(segments))
 
 	if scope_start is None:
 		scope_segments = list(segments)
+		selected_scope_indexes: set[int] = {segment.index for segment in segments}
+		other_transaction_indexes: set[int] = set()
 	else:
 		scope_segments = [segment for segment in segments if scope_start <= segment.index <= scope_end]
+		selected_scope_indexes = _indexes_in_range(scope_start, scope_end)
+		other_transaction_indexes = set()
+		for start, end, range_st_segment, _ in transaction_ranges:
+			if range_st_segment.index == st_segment.index:
+				continue
+			other_transaction_indexes.update(_indexes_in_range(start, end))
 
 	segment_by_tag: dict[str, list[int]] = {}
 	for segment in scope_segments:
@@ -251,10 +273,14 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 		outside_scope_segments = [
 			segment
 			for segment in segments
-			if not (scope_start <= segment.index <= scope_end) and not _is_envelope_tag(segment.tag)
+			if (
+				segment.index not in selected_scope_indexes
+				and segment.index not in other_transaction_indexes
+				and not _is_envelope_tag(segment.tag)
+			)
 		]
 	else:
-		outside_scope_segments = [segment for segment in segments if not _is_envelope_tag(segment.tag)]
+		outside_scope_segments = []
 
 	for segment in outside_scope_segments:
 		_append_error(
@@ -283,6 +309,8 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 
 	full_segment_by_tag: dict[str, list[int]] = {}
 	for segment in segments:
+		if segment.index in other_transaction_indexes:
+			continue
 		full_segment_by_tag.setdefault(segment.tag, []).append(segment.index)
 
 	for singleton_tag in ("ST", "BSN", "CTT", "SE"):
@@ -424,7 +452,7 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 				fix_hint="Populate SE02 with the transaction set control number.",
 			)
 
-		if st_control != se_control:
+		if st_control != "" and se_control != "" and st_control != se_control:
 			_append_error(
 				errors,
 				rule_id=CNT_SE02_ST02_MATCH_001,
@@ -439,9 +467,9 @@ def validate_856_baseline(parsed: ParsedEdi | str) -> ComplianceResult:
 		"segment_count": len(segments),
 		"error_count": len(errors),
 		"warning_count": len(warnings),
-		"has_st": int(st_segment is not None),
-		"has_bsn": int(bsn_segment is not None),
-		"has_se": int(se_segment is not None),
+		"has_st": int(any(segment.tag == "ST" for segment in segments)),
+		"has_bsn": int(any(segment.tag == "BSN" for segment in segments)),
+		"has_se": int(any(segment.tag == "SE" for segment in segments)),
 		"hl_count": hl_count,
 		"item_hl_count": item_hl_count,
 		"max_hl_depth": max_hl_depth,

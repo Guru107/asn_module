@@ -19,6 +19,7 @@ from asn_module.edi_856.rules_4010 import (
 	HL_PARENT_REF_001,
 	ORD_BSN_HL_001,
 	ORD_HL_CTT_001,
+	SEG_BSN_CARD_001,
 	SEG_BSN_REQ_001,
 	SEG_CTT_CARD_001,
 	SEG_OUTSIDE_SCOPE_001,
@@ -57,8 +58,9 @@ class TestValidate856Baseline(TestCase):
 
 		result = validate_856_baseline(payload)
 
-		self.assertFalse(result.is_compliant)
-		self.assertIn(SEG_OUTSIDE_SCOPE_001, self.error_rule_ids(result))
+		self.assertTrue(result.is_compliant)
+		self.assertNotIn(SEG_OUTSIDE_SCOPE_001, self.error_rule_ids(result))
+		self.assertNotIn(SEG_ST_CARD_001, self.error_rule_ids(result))
 		self.assertNotIn(ELM_ST01_856_001, self.error_rule_ids(result))
 		self.assertNotIn(SEG_BSN_REQ_001, self.error_rule_ids(result))
 
@@ -98,12 +100,27 @@ class TestValidate856Baseline(TestCase):
 		missing_bsn = self.error_for(result, SEG_BSN_REQ_001)
 		self.assertEqual(missing_bsn.segment_index, 2)
 
+	def test_missing_st_validates_in_place_without_outside_scope_noise(self):
+		result = validate_856_baseline("BSN*00*12345*20260418~HL*1**S~CTT*1~SE*4*0001~")
+
+		self.assertFalse(result.is_compliant)
+		self.assertNotIn(SEG_OUTSIDE_SCOPE_001, self.error_rule_ids(result))
+		self.assertEqual(result.computed_metrics["has_st"], 0)
+		self.assertEqual(result.computed_metrics["has_se"], 1)
+
 	def test_st02_and_se02_are_required(self):
 		result = validate_856_baseline("ST*856~BSN*00*12345*20260418~HL*1**S~CTT*1~SE*5~")
 
 		self.assertFalse(result.is_compliant)
 		self.assertEqual(self.error_for(result, ELM_ST02_REQ_001).element_index, 2)
 		self.assertEqual(self.error_for(result, ELM_SE02_REQ_001).element_index, 2)
+
+	def test_control_mismatch_is_not_reported_when_either_control_is_missing(self):
+		missing_st02 = validate_856_baseline("ST*856~BSN*00*12345*20260418~HL*1**S~CTT*1~SE*5*0001~")
+		missing_se02 = validate_856_baseline("ST*856*0001~BSN*00*12345*20260418~HL*1**S~CTT*1~SE*5~")
+
+		self.assertNotIn(CNT_SE02_ST02_MATCH_001, self.error_rule_ids(missing_st02))
+		self.assertNotIn(CNT_SE02_ST02_MATCH_001, self.error_rule_ids(missing_se02))
 
 	def test_bsn_required_elements_are_enforced(self):
 		result = validate_856_baseline("ST*856*0001~BSN***~HL*1**S~CTT*1~SE*5*0001~")
@@ -207,12 +224,12 @@ class TestValidate856Baseline(TestCase):
 
 	def test_duplicate_singletons_still_produce_cardinality_errors(self):
 		result = validate_856_baseline(
-			"ST*856*0001~ST*856*0002~BSN*00*12345*20260418~BSN*00*12346*20260418~HL*1**S~HL*2*1*I~CTT*1~CTT*2~SE*9*0001~SE*9*0002~"
+			"ST*856*0001~BSN*00*12345*20260418~BSN*00*12346*20260418~HL*1**S~CTT*1~CTT*2~SE*7*0001~SE*1*0002~"
 		)
 
 		self.assertFalse(result.is_compliant)
 		self.assertIn(SEG_OUTSIDE_SCOPE_001, self.error_rule_ids(result))
-		self.assertIn(SEG_ST_CARD_001, self.error_rule_ids(result))
+		self.assertIn(SEG_BSN_CARD_001, self.error_rule_ids(result))
 		self.assertIn(SEG_CTT_CARD_001, self.error_rule_ids(result))
 		self.assertIn(SEG_SE_CARD_001, self.error_rule_ids(result))
 
