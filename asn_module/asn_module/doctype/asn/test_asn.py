@@ -321,6 +321,21 @@ class TestASN(FrappeTestCase):
 			"Require purchase order acknowledgment before shipment notice",
 		)
 
+		supplier_group = _first_or_none("Supplier Group") or "All Supplier Groups"
+		supplier_name = f"_Test ASN Supplier Default {frappe.generate_hash(length=8)}"
+		supplier = frappe.get_doc(
+			{
+				"doctype": "Supplier",
+				"supplier_name": supplier_name,
+				"supplier_type": "Company",
+				"supplier_group": supplier_group,
+			}
+		)
+		self.assertEqual(frappe.utils.cint(supplier.requires_855_ack), 0)
+		supplier.insert(ignore_permissions=True)
+		supplier.reload()
+		self.assertEqual(frappe.utils.cint(supplier.requires_855_ack), 0)
+
 	def test_insert_rejects_empty_items(self):
 		asn = make_test_asn()
 		asn.set("items", [])
@@ -376,7 +391,7 @@ class TestASN(FrappeTestCase):
 		asn.append(
 			"items",
 			{
-				"purchase_order": po_two.name,
+				"purchase_order": po_one.name,
 				"purchase_order_item": po_two_item.name,
 				"item_code": po_two_item.item_code,
 				"qty": 1,

@@ -165,7 +165,40 @@ class ASN(WebsiteGenerator):
 			frappe.throw(_("Row {0}: Quantity must be greater than 0").format(row.idx))
 
 	def _validate_single_purchase_order(self):
-		purchase_orders = {row.purchase_order for row in self.items or [] if row.purchase_order}
+		rows = [row for row in self.items or [] if row.purchase_order_item]
+		if not rows:
+			return
+
+		purchase_order_item_names = [row.purchase_order_item for row in rows]
+		po_item_rows = frappe.get_all(
+			"Purchase Order Item",
+			filters={"name": ["in", purchase_order_item_names]},
+			fields=["name", "parent"],
+		)
+		parent_by_item = {row.name: row.parent for row in po_item_rows}
+		missing_items = sorted(set(purchase_order_item_names) - set(parent_by_item))
+		if missing_items:
+			frappe.throw(
+				_("ASN rows reference missing Purchase Order Item values: {0}").format(
+					", ".join(missing_items)
+				)
+			)
+
+		purchase_orders = set()
+		mismatched_rows = []
+		for row in rows:
+			parent_purchase_order = parent_by_item[row.purchase_order_item]
+			purchase_orders.add(parent_purchase_order)
+			if row.purchase_order and row.purchase_order != parent_purchase_order:
+				mismatched_rows.append(
+					_("Row {0}: Purchase Order {1} does not match Purchase Order Item parent {2}").format(
+						row.idx, row.purchase_order, parent_purchase_order
+					)
+				)
+
+		if mismatched_rows:
+			frappe.throw(_("ASN Purchase Order references are inconsistent:\n{0}").format("\n".join(mismatched_rows)))
+
 		if len(purchase_orders) <= 1:
 			return
 
