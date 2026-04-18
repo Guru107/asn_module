@@ -40,8 +40,8 @@ class TestValidate856Baseline(TestCase):
 		result = validate_856_baseline(parse_edi(VALID_PAYLOAD))
 
 		self.assertTrue(result.is_compliant)
-		self.assertEqual(result.errors, ())
-		self.assertEqual(result.warnings, ())
+		self.assertEqual(result.errors, [])
+		self.assertEqual(result.warnings, [])
 
 	def test_se01_segment_count_mismatch_produces_error(self):
 		from asn_module.edi_856.validator import validate_856_baseline

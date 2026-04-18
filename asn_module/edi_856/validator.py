@@ -36,8 +36,8 @@ class ComplianceFinding:
 @dataclass(frozen=True, slots=True)
 class ComplianceResult:
 	is_compliant: bool
-	errors: tuple[ComplianceFinding, ...]
-	warnings: tuple[ComplianceFinding, ...]
+	errors: list[ComplianceFinding]
+	warnings: list[ComplianceFinding]
 	computed_metrics: dict[str, int]
 
 
@@ -190,7 +190,7 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 
 	return ComplianceResult(
 		is_compliant=not errors,
-		errors=tuple(errors),
-		warnings=tuple(warnings),
+		errors=errors,
+		warnings=warnings,
 		computed_metrics=computed_metrics,
 	)
