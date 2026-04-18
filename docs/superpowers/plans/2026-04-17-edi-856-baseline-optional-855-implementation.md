@@ -245,11 +245,11 @@ class ComplianceFinding:
     element_index: int | None
     fix_hint: str | None
 
-@dataclass(frozen=True)
+@dataclass
 class ComplianceResult:
     is_compliant: bool
-    errors: tuple[ComplianceFinding, ...]
-    warnings: tuple[ComplianceFinding, ...]
+    errors: list[ComplianceFinding]
+    warnings: list[ComplianceFinding]
     computed_metrics: dict[str, int]
 ```
 
