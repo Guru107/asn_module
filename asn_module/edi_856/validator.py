@@ -11,9 +11,14 @@ from asn_module.edi_856.rules_4010 import (
 	ORD_ST_BSN_001,
 	REQUIRED_SEGMENTS,
 	SEG_BSN_CARD_001,
+	SEG_BSN_REQ_001,
 	SEG_CTT_CARD_001,
+	SEG_CTT_REQ_001,
+	SEG_HL_REQ_001,
 	SEG_SE_CARD_001,
+	SEG_SE_REQ_001,
 	SEG_ST_CARD_001,
+	SEG_ST_REQ_001,
 )
 
 
@@ -37,7 +42,13 @@ class ComplianceResult:
 
 
 def _missing_required_segment_rule_id(tag: str) -> str:
-	return f"SEG-{tag}-REQ-001"
+	return {
+		"ST": SEG_ST_REQ_001,
+		"BSN": SEG_BSN_REQ_001,
+		"HL": SEG_HL_REQ_001,
+		"CTT": SEG_CTT_REQ_001,
+		"SE": SEG_SE_REQ_001,
+	}.get(tag, f"SEG-{tag}-REQ-001")
 
 
 def _sequence_rule_id(left_tag: str, right_tag: str) -> str:
@@ -134,16 +145,16 @@ def validate_856_baseline(parsed: ParsedEdi) -> ComplianceResult:
 			se01 = se_segment.elements[0] if len(se_segment.elements) > 0 else ""
 			if se01 != str(actual_segment_count):
 				errors.append(
-					ComplianceFinding(
-						rule_id=CNT_SE01_SCOPE_COUNT_001,
-						severity="error",
-						message=f"SE01 '{se01}' does not match count '{actual_segment_count}'.",
-						segment_tag="SE",
-						segment_index=se_index,
-						element_index=0,
-						fix_hint=f"Set SE01 to {actual_segment_count}.",
-					)
+				ComplianceFinding(
+					rule_id=CNT_SE01_SCOPE_COUNT_001,
+					severity="error",
+					message=f"SE01 '{se01}' does not match count '{actual_segment_count}'.",
+					segment_tag="SE",
+					segment_index=se_index,
+					element_index=1,
+					fix_hint=f"Set SE01 to {actual_segment_count}.",
 				)
+			)
 
 		st_control = st_segment.elements[1] if len(st_segment.elements) > 1 else ""
 		se_control = se_segment.elements[1] if len(se_segment.elements) > 1 else ""

@@ -8,6 +8,19 @@ VALID_PAYLOAD = (FIXTURES_DIR / "valid_856_minimal.txt").read_text()
 
 
 class TestValidate856Baseline(TestCase):
+	def test_se01_segment_count_mismatch_pins_metadata_and_reporting(self):
+		from asn_module.edi_856.reporting import compliance_result_to_text
+		from asn_module.edi_856.validator import validate_856_baseline
+
+		result = validate_856_baseline(parse_edi("ST*856*0001~BSN*00*12345~HL*1**S~CTT*1~SE*4*0001~"))
+
+		self.assertFalse(result.is_compliant)
+		self.assertEqual(result.errors[0].rule_id, "CNT-SE01-SCOPE-COUNT-001")
+		self.assertEqual(result.errors[0].segment_tag, "SE")
+		self.assertEqual(result.errors[0].segment_index, 4)
+		self.assertEqual(result.errors[0].element_index, 1)
+		self.assertIn("element=1", compliance_result_to_text(result))
+
 	def test_valid_payload_is_compliant(self):
 		from asn_module.edi_856.validator import validate_856_baseline
 

@@ -10,8 +10,12 @@ from asn_module.edi_856.rules_4010 import (
 	SEG_BSN_CARD_001,
 	SEG_BSN_REQ_001,
 	SEG_CTT_CARD_001,
+	SEG_CTT_REQ_001,
+	SEG_HL_REQ_001,
 	SEG_SE_CARD_001,
+	SEG_SE_REQ_001,
 	SEG_ST_CARD_001,
+	SEG_ST_REQ_001,
 )
 from asn_module.edi_856.validator import ComplianceFinding, ComplianceResult, validate_856_baseline
 
@@ -30,8 +34,12 @@ __all__ = sorted(
 		"SEG_BSN_CARD_001",
 		"SEG_BSN_REQ_001",
 		"SEG_CTT_CARD_001",
+		"SEG_CTT_REQ_001",
+		"SEG_HL_REQ_001",
 		"SEG_SE_CARD_001",
+		"SEG_SE_REQ_001",
 		"SEG_ST_CARD_001",
+		"SEG_ST_REQ_001",
 		"Segment",
 		"parse_edi",
 		"validate_856_baseline",
