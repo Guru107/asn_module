@@ -7,6 +7,9 @@
 		"scan_timestamp",
 		"user",
 		"action",
+		"barcode_flow_definition",
+		"barcode_flow_transition",
+		"scope_resolution_key",
 		"source_doctype",
 		"source_name",
 		"device_info",
@@ -35,6 +38,24 @@
 			"label": "Action",
 			"read_only": 1,
 			"reqd": 1
+		},
+		{
+			"fieldname": "barcode_flow_definition",
+			"fieldtype": "Data",
+			"label": "Barcode Flow Definition",
+			"read_only": 1
+		},
+		{
+			"fieldname": "barcode_flow_transition",
+			"fieldtype": "Data",
+			"label": "Barcode Flow Transition",
+			"read_only": 1
+		},
+		{
+			"fieldname": "scope_resolution_key",
+			"fieldtype": "Data",
+			"label": "Scope Resolution Key",
+			"read_only": 1
 		},
 		{
 			"fieldname": "source_doctype",

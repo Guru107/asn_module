@@ -1,6 +1,7 @@
 """Integration tests for error branches in ``asn_module/qr_engine/dispatch.py``."""
 
 import secrets
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -52,29 +53,37 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 		super().tearDown()
 
 	def test_handler_returning_string_raises_validation_error(self):
-		code = self._create_scan_code("create_purchase_receipt", "ASN", "Fake-ASN-For-Test")
+		code = self._create_scan_code("create_purchase_receipt", "DocType", "QR Action Registry")
 		self.addCleanup(self._cleanup_scan_code, code)
+		flow = SimpleNamespace(name="FLOW-STRING-ERROR")
+		transition = SimpleNamespace(transition_key="string-error")
 
 		with integration_user_context():
-			with patch(
-				"asn_module.qr_engine.dispatch._call_handler",
-				return_value="not a dict",
+			with (
+				patch("asn_module.qr_engine.dispatch._validate_source_doctype", return_value=None),
+				patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-test")),
+				patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
+				patch("asn_module.qr_engine.dispatch.execute_transition_binding", return_value="not a dict"),
 			):
 				with self.assertRaises(frappe.ValidationError) as cm:
 					dispatch(code=code, device_info="test")
 				self.assertIn("Invalid handler result", str(cm.exception))
 
 	def test_handler_returning_error_dict_raises_validation_error(self):
-		code = self._create_scan_code("create_purchase_receipt", "ASN", "Fake-ASN-For-Test")
+		code = self._create_scan_code("create_purchase_receipt", "DocType", "QR Action Registry")
 		self.addCleanup(self._cleanup_scan_code, code)
+		flow = SimpleNamespace(name="FLOW-DICT-ERROR")
+		transition = SimpleNamespace(transition_key="dict-error")
 
-		def error_handler(handler_method, source_doctype, source_name, payload):
+		def error_handler(*, transition, source_doc, flow_definition):
 			return {"success": False, "message": "intentional handler error"}
 
 		with integration_user_context():
-			with patch(
-				"asn_module.qr_engine.dispatch._call_handler",
-				side_effect=error_handler,
+			with (
+				patch("asn_module.qr_engine.dispatch._validate_source_doctype", return_value=None),
+				patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-test")),
+				patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
+				patch("asn_module.qr_engine.dispatch.execute_transition_binding", side_effect=error_handler),
 			):
 				with self.assertRaises(frappe.ValidationError) as cm:
 					dispatch(code=code, device_info="test")

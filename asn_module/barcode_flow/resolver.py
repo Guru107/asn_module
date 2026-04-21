@@ -23,6 +23,11 @@ class _ScopeCandidate:
 
 def resolve_flow(context: dict) -> Document:
 	"""Resolve one active Barcode Flow Definition for the provided context."""
+	return resolve_flow_with_scope(context)[0]
+
+
+def resolve_flow_with_scope(context: dict) -> tuple[Document, str]:
+	"""Resolve flow and winning scope key for the provided context."""
 	normalized_context = {fieldname: _normalize_value(context.get(fieldname)) for fieldname in SCOPE_MATCH_FIELDS}
 	matching_candidates: list[_ScopeCandidate] = []
 
@@ -41,7 +46,9 @@ def resolve_flow(context: dict) -> Document:
 	if not matching_candidates:
 		raise NoMatchingFlowError(f"No active barcode flow matches context: {context}")
 
-	return _pick_winner(matching_candidates, context)
+	winner = _pick_winner(matching_candidates, context)
+	return winner.flow, winner.scope_key
+
 
 def _get_active_flow_definitions() -> list[Document]:
 	flow_names = frappe.get_all(
@@ -87,7 +94,7 @@ def _build_candidate(*, flow: Document, scope: Any) -> _ScopeCandidate:
 	)
 
 
-def _pick_winner(candidates: list[_ScopeCandidate], context: dict) -> Document:
+def _pick_winner(candidates: list[_ScopeCandidate], context: dict) -> _ScopeCandidate:
 	max_specificity = max(candidate.specificity for candidate in candidates)
 	specificity_winners = [
 		candidate for candidate in candidates if candidate.specificity == max_specificity
@@ -97,11 +104,11 @@ def _pick_winner(candidates: list[_ScopeCandidate], context: dict) -> Document:
 	priority_winners = [candidate for candidate in specificity_winners if candidate.priority == max_priority]
 
 	if len(priority_winners) == 1:
-		return priority_winners[0].flow
+		return priority_winners[0]
 
 	default_winners = [candidate for candidate in priority_winners if candidate.is_default]
 	if len(default_winners) == 1:
-		return default_winners[0].flow
+		return default_winners[0]
 
 	raise AmbiguousFlowScopeError(_format_ambiguity_message(context, priority_winners))
 

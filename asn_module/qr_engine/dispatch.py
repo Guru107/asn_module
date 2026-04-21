@@ -1,6 +1,11 @@
 import frappe
 from frappe import _
+from frappe.utils import cint
 
+from asn_module.barcode_flow.cache import get_condition_by_key, get_enabled_transitions
+from asn_module.barcode_flow.conditions import evaluate_conditions
+from asn_module.barcode_flow.resolver import resolve_flow_with_scope
+from asn_module.barcode_flow.runtime import execute_transition_binding
 from asn_module.qr_engine.scan_codes import (
 	get_scan_code_doc,
 	normalize_scan_code,
@@ -18,6 +23,10 @@ class PermissionDeniedError(frappe.PermissionError):
 
 
 class ScanCodeNotFoundError(frappe.ValidationError):
+	pass
+
+
+class TransitionResolutionError(frappe.ValidationError):
 	pass
 
 
@@ -93,6 +102,9 @@ def _log_scan(
 	result_doctype: str | None = None,
 	result_name: str | None = None,
 	error_message: str | None = None,
+	barcode_flow_definition: str | None = None,
+	barcode_flow_transition: str | None = None,
+	scope_resolution_key: str | None = None,
 ) -> None:
 	frappe.get_doc(
 		{
@@ -105,32 +117,107 @@ def _log_scan(
 			"result_doctype": result_doctype,
 			"result_name": result_name,
 			"error_message": error_message,
+			"barcode_flow_definition": barcode_flow_definition,
+			"barcode_flow_transition": barcode_flow_transition,
+			"scope_resolution_key": scope_resolution_key,
 		}
 	).insert(ignore_permissions=True)
 
 
-def _call_handler(handler_method: str, source_doctype: str, source_name: str, payload: dict) -> dict:
-	module_path, method_name = handler_method.rsplit(".", 1)
-	module = frappe.get_module(module_path)
-	handler_fn = getattr(module, method_name)
-	return handler_fn(source_doctype=source_doctype, source_name=source_name, payload=payload)
-
-
-def _payload_from_scan_code_registry(scan_doc: frappe.model.document.Document, device_info: str) -> dict:
+def _build_flow_resolution_context(source_doc: frappe.model.document.Document) -> dict:
 	return {
-		"action": scan_doc.action_key,
-		"source_doctype": scan_doc.source_doctype,
-		"source_name": scan_doc.source_name,
-		"created_at": str(scan_doc.generated_on or ""),
-		"created_by": scan_doc.generated_by or "",
-		"device_info": device_info,
-		"scan_code": scan_doc.name,
+		"source_doctype": _normalize_value(_get_value(source_doc, "doctype")),
+		"company": _normalize_value(_get_value(source_doc, "company")),
+		"warehouse": _normalize_value(
+			_get_value(source_doc, "warehouse") or _get_value(source_doc, "set_warehouse")
+		),
+		"supplier_type": _normalize_value(_resolve_supplier_type(source_doc)),
 	}
+
+
+def _resolve_supplier_type(source_doc: frappe.model.document.Document) -> str | None:
+	supplier_type = _normalize_value(_get_value(source_doc, "supplier_type"))
+	if supplier_type:
+		return supplier_type
+
+	supplier = _normalize_value(_get_value(source_doc, "supplier"))
+	if not supplier:
+		return None
+
+	try:
+		return _normalize_value(frappe.db.get_value("Supplier", supplier, "supplier_type"))
+	except Exception:
+		return None
+
+
+def _resolve_matching_transition(
+	flow_definition: frappe.model.document.Document,
+	action_key: str,
+	source_doc: frappe.model.document.Document,
+) -> frappe.model.document.Document:
+	matching: list[frappe.model.document.Document] = []
+
+	for transition in get_enabled_transitions(flow_definition):
+		if _normalize_value(_get_value(transition, "action_key")) != action_key:
+			continue
+
+		condition_key = _normalize_value(_get_value(transition, "condition_key"))
+		if condition_key:
+			condition = get_condition_by_key(flow_definition, condition_key)
+			if not condition:
+				transition_key = _normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
+				raise TransitionResolutionError(
+					f"Transition {transition_key} references unknown condition key: {condition_key}"
+				)
+			if not evaluate_conditions(source_doc, [condition]):
+				continue
+
+		matching.append(transition)
+
+	if not matching:
+		raise TransitionResolutionError(
+			f"No enabled barcode transition matched action '{action_key}' in flow '{flow_definition.name}'"
+		)
+
+	top_priority = max(_transition_priority(transition) for transition in matching)
+	winners = [transition for transition in matching if _transition_priority(transition) == top_priority]
+	if len(winners) > 1:
+		transition_keys = ", ".join(
+			sorted(
+				_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
+				for transition in winners
+			)
+		)
+		raise TransitionResolutionError(
+			f"Ambiguous barcode transition resolution in flow '{flow_definition.name}' for action '{action_key}'. "
+			f"Matching transitions: {transition_keys}"
+		)
+
+	return winners[0]
+
+
+def _transition_priority(transition: frappe.model.document.Document) -> int:
+	return cint(_get_value(transition, "priority") or 0)
+
+
+def _get_value(row: object, fieldname: str, default: object = None) -> object:
+	if isinstance(row, dict):
+		return row.get(fieldname, default)
+	return getattr(row, fieldname, default)
+
+
+def _normalize_value(value: object) -> str | None:
+	if value is None:
+		return None
+	if isinstance(value, str):
+		trimmed = value.strip()
+		return trimmed or None
+	return str(value)
 
 
 @frappe.whitelist(allow_guest=False)
 def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
-	"""Resolve a short scan ``code`` (URL param or raw) and run the registered handler."""
+	"""Resolve a short scan ``code`` (URL param or raw) and execute a configured flow transition."""
 	if not code:
 		code = frappe.form_dict.get("code")
 
@@ -140,6 +227,9 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 	action_key = "unknown"
 	source_doctype = "DocType"
 	source_name = "QR Action Registry"
+	barcode_flow_definition = None
+	barcode_flow_transition = None
+	scope_resolution_key = None
 
 	try:
 		if not normalized:
@@ -161,10 +251,20 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		_validate_source_doctype(action["source_doctype"], source_doctype)
 		_check_permission(action["allowed_roles"])
 
-		payload = _payload_from_scan_code_registry(scan_doc, device_info)
+		source_doc = frappe.get_doc(source_doctype, source_name)
+		flow_context = _build_flow_resolution_context(source_doc)
+		flow_definition, scope_resolution_key = resolve_flow_with_scope(flow_context)
+		transition = _resolve_matching_transition(flow_definition, action_key, source_doc)
+
+		barcode_flow_definition = flow_definition.name
+		barcode_flow_transition = _normalize_value(_get_value(transition, "transition_key"))
 
 		handler_result = _validate_handler_result(
-			_call_handler(action["handler"], source_doctype, source_name, payload)
+			execute_transition_binding(
+				transition=transition,
+				source_doc=source_doc,
+				flow_definition=flow_definition,
+			)
 		)
 
 		record_successful_scan(scan_doc.name, action_key)
@@ -178,6 +278,9 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 				device_info=device_info,
 				result_doctype=handler_result.get("doctype"),
 				result_name=handler_result.get("name"),
+				barcode_flow_definition=barcode_flow_definition,
+				barcode_flow_transition=barcode_flow_transition,
+				scope_resolution_key=scope_resolution_key,
 			)
 		frappe.local.flags.commit = True
 
@@ -198,6 +301,9 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			result="Failure",
 			device_info=device_info,
 			error_message=str(exc),
+			barcode_flow_definition=barcode_flow_definition,
+			barcode_flow_transition=barcode_flow_transition,
+			scope_resolution_key=scope_resolution_key,
 		)
 		frappe.db.commit()
 		raise
