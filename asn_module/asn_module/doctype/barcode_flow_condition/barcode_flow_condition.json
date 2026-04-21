@@ -50,7 +50,7 @@
 			"fieldname": "aggregate_fn",
 			"fieldtype": "Select",
 			"label": "Aggregate Function",
-			"options": "count\nsum\nmin\nmax\navg"
+			"options": "count\nsum\nmin\nmax\navg\nexists"
 		}
 	],
 	"index_web_pages_for_search": 0,

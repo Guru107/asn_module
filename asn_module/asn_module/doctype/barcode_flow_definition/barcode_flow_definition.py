@@ -179,43 +179,64 @@ class BarcodeFlowDefinition(Document):
 			trigger_event = (row.trigger_event or "").strip()
 			target_node_key = (row.target_node_key or "").strip()
 			target_transition_key = (row.target_transition_key or "").strip()
+			binding_key = self._get_row_key(row=row, key_fieldname="binding_key")
 
-			if trigger_event == "On Enter Node":
+			if trigger_event in {"On Enter Node", "On Exit Node"}:
 				if not target_node_key:
 					frappe.throw(
-						_("Target Node Key is required for {0} when trigger event is On Enter Node.").format(
-							self._get_row_key(row=row, key_fieldname="binding_key")
+						_("Target Node Key is required for {0} when trigger event is {1}.").format(
+							binding_key, trigger_event
 						)
 					)
 				if target_node_key not in node_keys:
 					frappe.throw(
 						_("Action Binding {0} references unknown target node key: {1}").format(
-							self._get_row_key(row=row, key_fieldname="binding_key"),
+							binding_key,
 							target_node_key,
 						)
 					)
+				if target_transition_key:
+					frappe.throw(
+						_("Target Transition Key must be empty for {0} when trigger event is {1}.").format(
+							binding_key,
+							trigger_event,
+						)
+					)
 
-			if trigger_event == "On Transition":
+			elif trigger_event == "On Transition":
 				if not target_transition_key:
 					frappe.throw(
 						_(
 							"Target Transition Key is required for {0} when trigger event is On Transition."
-						).format(self._get_row_key(row=row, key_fieldname="binding_key"))
+						).format(binding_key)
 					)
 				if target_transition_key not in transition_keys:
 					frappe.throw(
 						_("Action Binding {0} references unknown target transition key: {1}").format(
-							self._get_row_key(row=row, key_fieldname="binding_key"),
+							binding_key,
 							target_transition_key,
 						)
 					)
-
-			if trigger_event == "custom_handler" and not (row.custom_handler or "").strip():
-				frappe.throw(
-					_("Custom Handler is required for {0} when trigger event is custom_handler.").format(
-						self._get_row_key(row=row, key_fieldname="binding_key")
+				if target_node_key:
+					frappe.throw(
+						_("Target Node Key must be empty for {0} when trigger event is On Transition.").format(
+							binding_key
+						)
 					)
-				)
+
+			elif trigger_event == "custom_handler":
+				if not (row.custom_handler or "").strip():
+					frappe.throw(
+						_("Custom Handler is required for {0} when trigger event is custom_handler.").format(
+							binding_key
+						)
+					)
+				if target_node_key or target_transition_key:
+					frappe.throw(
+						_(
+							"Target Node Key and Target Transition Key must be empty for {0} when trigger event is custom_handler."
+						).format(binding_key)
+					)
 
 		for row in self.transitions or []:
 			binding_mode = (row.binding_mode or "").strip()

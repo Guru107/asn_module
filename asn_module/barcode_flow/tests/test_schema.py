@@ -277,6 +277,47 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			flow.insert(ignore_permissions=True)
 
+	def test_action_binding_on_exit_node_requires_target_node_key(self):
+		flow = self._new_flow(
+			nodes=[self._valid_node("scan", "Scan")],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "exit-scan",
+					"trigger_event": "On Exit Node",
+					"action_key": "create_purchase_receipt",
+				}
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_node_trigger_rejects_transition_target_field(self):
+		flow = self._new_flow(
+			nodes=[self._valid_node("scan", "Scan")],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-loop",
+					source_node_key="scan",
+					target_node_key="scan",
+				)
+			],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "enter-with-transition-target",
+					"trigger_event": "On Enter Node",
+					"target_node_key": "scan",
+					"target_transition_key": "scan-loop",
+					"action_key": "create_purchase_receipt",
+				}
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
 	def test_items_aggregate_condition_requires_aggregate_function(self):
 		flow = self._new_flow(
 			conditions=[
@@ -294,6 +335,23 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			flow.insert(ignore_permissions=True)
+
+	def test_items_aggregate_condition_accepts_exists_aggregate_function(self):
+		flow = self._new_flow(
+			conditions=[
+				{
+					"doctype": "Barcode Flow Condition",
+					"condition_key": "exists-aggregate",
+					"scope": "items_aggregate",
+					"field_path": "items.qty",
+					"operator": "exists",
+					"aggregate_fn": "exists",
+				}
+			]
+		)
+
+		flow.insert(ignore_permissions=True)
+		self.assertTrue(flow.name)
 
 	def test_non_aggregate_condition_rejects_aggregate_function(self):
 		flow = self._new_flow(
