@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from typing import Any
 
 ALLOWED_SCOPES = {"header", "items_any", "items_all", "items_aggregate"}
-ALLOWED_OPERATORS = {"=", "!=", ">", ">=", "<", "<=", "in", "contains", "is_set", "exists"}
+ALLOWED_OPERATORS = {"=", "!=", ">", ">=", "<", "<=", "in", "not_in", "contains", "is_set", "exists"}
 _OPERATOR_ALIASES = {
 	"eq": "=",
 	"ne": "!=",
@@ -16,6 +16,7 @@ _OPERATOR_ALIASES = {
 }
 _AGGREGATE_FUNCTIONS = {"exists", "count", "sum", "min", "max", "avg"}
 _MISSING = object()
+_NON_NUMERIC = object()
 
 
 def evaluate_conditions(doc: Any, rules: list[Any] | tuple[Any, ...] | None) -> bool:
@@ -44,7 +45,7 @@ def _evaluate_rule(doc: Any, rule: Any) -> bool:
 	if scope == "items_any":
 		return any(_evaluate_item_rule(item, rule) for item in items)
 	if scope == "items_all":
-		return all(_evaluate_item_rule(item, rule) for item in items)
+		return bool(items) and all(_evaluate_item_rule(item, rule) for item in items)
 	return _evaluate_aggregate_rule(items, rule)
 
 
@@ -88,10 +89,10 @@ def _evaluate_aggregate_rule(items: list[Any], rule: Any) -> bool:
 
 def _evaluate_exists_aggregate(items: list[Any], rule: Any) -> bool:
 	operator = _normalize_operator(_get_value(rule, "operator"))
-	if operator == "exists":
-		return bool(items)
-
 	field_path = _normalize_field_path(_get_value(rule, "field_path"), scope="items_aggregate")
+	if operator == "exists":
+		return any(_is_set(_resolve_field_path(item, field_path, default=_MISSING)) for item in items)
+
 	if operator == "is_set":
 		return any(_is_set(_resolve_field_path(item, field_path, default=_MISSING)) for item in items)
 
@@ -117,10 +118,15 @@ def _collect_values(items: list[Any], field_path: str) -> list[Any]:
 
 
 def _compute_aggregate_value(aggregate_fn: str, values: list[Any]) -> Any:
-	if aggregate_fn == "count":
-		return len(values)
+	numeric_values: list[float] = []
+	for value in values:
+		numeric_value = _to_number(value)
+		if numeric_value is None:
+			return _NON_NUMERIC
+		numeric_values.append(numeric_value)
 
-	numeric_values = [_to_number(value) for value in values if _to_number(value) is not None]
+	if aggregate_fn == "count":
+		return len(numeric_values)
 
 	if aggregate_fn == "sum":
 		return sum(numeric_values)
@@ -143,7 +149,7 @@ def _apply_operator(operator: Any, left_value: Any, right_value: Any) -> bool:
 		return left_value is not _MISSING
 	if normalized_operator == "is_set":
 		return _is_set(left_value)
-	if left_value is _MISSING:
+	if left_value in {_MISSING, _NON_NUMERIC}:
 		return False
 
 	if normalized_operator == "=":
@@ -160,6 +166,8 @@ def _apply_operator(operator: Any, left_value: Any, right_value: Any) -> bool:
 		return _safe_compare(left_value, right_value, "lte")
 	if normalized_operator == "in":
 		return _evaluate_in(left_value, right_value)
+	if normalized_operator == "not_in":
+		return not _evaluate_in(left_value, right_value)
 	if normalized_operator == "contains":
 		return _evaluate_contains(left_value, right_value)
 

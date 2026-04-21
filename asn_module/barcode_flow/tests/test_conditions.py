@@ -98,6 +98,75 @@ class TestBarcodeFlowConditions(TestCase):
 
 		self.assertTrue(ok)
 
+	def test_not_in_operator(self):
+		ok = evaluate_conditions(
+			self._doc(),
+			[
+				{
+					"scope": "header",
+					"field_path": "status",
+					"operator": "not_in",
+					"value": ["Closed", "Cancelled"],
+				}
+			],
+		)
+
+		self.assertTrue(ok)
+
+	def test_items_aggregate_exists_false_when_field_missing(self):
+		doc = SimpleNamespace(
+			items=[
+				{"item_code": "ITEM-1", "qty": 1},
+				{"item_code": "ITEM-2", "qty": 5},
+			]
+		)
+		ok = evaluate_conditions(
+			doc,
+			[
+				{
+					"scope": "items_aggregate",
+					"aggregate_fn": "exists",
+					"field_path": "inspection_required_before_purchase",
+					"operator": "exists",
+				}
+			],
+		)
+
+		self.assertFalse(ok)
+
+	def test_items_all_false_when_no_items(self):
+		doc = SimpleNamespace(items=[])
+		ok = evaluate_conditions(
+			doc,
+			[
+				{
+					"scope": "items_all",
+					"field_path": "qty",
+					"operator": ">=",
+					"value": 1,
+				}
+			],
+		)
+
+		self.assertFalse(ok)
+
+	def test_numeric_aggregate_fails_on_non_numeric_values(self):
+		doc = SimpleNamespace(items=[{"qty": 1}, {"qty": "bad"}])
+		ok = evaluate_conditions(
+			doc,
+			[
+				{
+					"scope": "items_aggregate",
+					"aggregate_fn": "sum",
+					"field_path": "qty",
+					"operator": ">",
+					"value": 0,
+				}
+			],
+		)
+
+		self.assertFalse(ok)
+
 	def test_unsupported_operator_raises(self):
 		with self.assertRaises(ValueError):
 			evaluate_conditions(
