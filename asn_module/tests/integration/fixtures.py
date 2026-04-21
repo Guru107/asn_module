@@ -91,7 +91,7 @@ def ensure_scoped_flow_route_fixtures(
 	action_key: str,
 	gate_handler: str,
 ) -> dict[str, dict[str, object]]:
-	"""Create scoped flow fixtures to route one action through gate-like and direct paths."""
+	"""Create scoped flow fixtures with disjoint resolver scopes for one action route."""
 	action_rows = get_canonical_actions()
 	action_row = next(
 		(
@@ -109,9 +109,18 @@ def ensure_scoped_flow_route_fixtures(
 	gate_scope_company = frappe.db.get_value("Company", {}, "name", order_by="creation asc")
 	if not gate_scope_company:
 		raise frappe.ValidationError("No Company records exist for scoped flow fixture setup")
-	direct_scope_warehouse = frappe.db.get_value("Warehouse", {}, "name", order_by="creation asc")
-	if not direct_scope_warehouse:
-		raise frappe.ValidationError("No Warehouse records exist for scoped flow fixture setup")
+	scope_warehouses = frappe.get_all(
+		"Warehouse",
+		filters={"company": gate_scope_company},
+		pluck="name",
+		order_by="name asc",
+		limit=2,
+	)
+	if len(scope_warehouses) < 2:
+		raise frappe.ValidationError(
+			f"Need at least two Warehouse rows for company {gate_scope_company} to build disjoint scopes"
+		)
+	gate_scope_warehouse, direct_scope_warehouse = scope_warehouses
 
 	gate_flow_name = f"{flow_name_prefix}::gate::{source_doctype}::{action_key}"
 	direct_flow_name = f"{flow_name_prefix}::direct::{source_doctype}::{action_key}"
@@ -125,7 +134,7 @@ def ensure_scoped_flow_route_fixtures(
 		handler_method=gate_handler,
 		scope_key="gate-like-scope",
 		scope_company=gate_scope_company,
-		scope_warehouse=None,
+		scope_warehouse=gate_scope_warehouse,
 		scope_supplier_type=None,
 		transition_key=gate_transition_key,
 		scope_priority=300,
@@ -151,7 +160,7 @@ def ensure_scoped_flow_route_fixtures(
 			"context": {
 				"source_doctype": source_doctype,
 				"company": gate_scope_company,
-				"warehouse": None,
+				"warehouse": gate_scope_warehouse,
 				"supplier_type": None,
 			},
 		},

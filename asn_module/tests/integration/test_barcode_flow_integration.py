@@ -4,6 +4,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+import asn_module.qr_engine.dispatch as dispatch_module
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
@@ -183,9 +184,18 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 	def _dispatch_asn_with_context(self, *, asn_name: str, context: dict, device_info: str) -> dict:
 		with integration_user_context():
 			scan_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn_name)
+
+			# Keep real source-doc context resolution and override only scoped-route selectors.
+			original_builder = dispatch_module._build_flow_resolution_context
+
+			def _patched_context(source_doc):
+				resolved = original_builder(source_doc)
+				resolved.update(context)
+				return resolved
+
 			with patch(
 				"asn_module.qr_engine.dispatch._build_flow_resolution_context",
-				return_value=context,
+				side_effect=_patched_context,
 			):
 				return dispatch(code=scan_code, device_info=device_info)
 
@@ -232,7 +242,10 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 	def test_scope_routes_asn_scan_directly_to_purchase_receipt_when_gate_scope_misses(self):
 		asn = self._make_submitted_asn()
 		route = self._scoped_routes["direct_pr"]
+		gate_route = self._scoped_routes["gate_like"]
 		device_info = f"it-direct-{frappe.generate_hash(length=6)}"
+		self.assertNotEqual(route["context"]["warehouse"], gate_route["context"]["warehouse"])
+		self.assertEqual(route["context"]["company"], gate_route["context"]["company"])
 
 		result = self._dispatch_asn_with_context(
 			asn_name=asn.name,
