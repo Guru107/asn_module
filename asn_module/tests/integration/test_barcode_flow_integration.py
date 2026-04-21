@@ -53,14 +53,20 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 			]
 		)
 		source_doc = {"doctype": "DocType", "name": "QR Action Registry"}
-		target_name = "ToDo"
+		target_todo = frappe.get_doc(
+			{
+				"doctype": "ToDo",
+				"description": f"IT child-scan target {frappe.generate_hash(length=10)}",
+			}
+		).insert(ignore_permissions=True)
+		target_name = target_todo.name
 
 		with patch(
 			"asn_module.barcode_flow.runtime._run_custom_handler",
 			return_value={
-				"doctype": "DocType",
+				"doctype": "ToDo",
 				"name": target_name,
-				"url": f"/app/doctype/{target_name}",
+				"url": f"/app/todo/{target_name}",
 			},
 		):
 			result = execute_transition_binding(
@@ -69,9 +75,9 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 				flow_definition=flow_definition,
 			)
 
-		self.assertEqual(result["doctype"], "DocType")
+		self.assertEqual(result["doctype"], "ToDo")
 		self.assertEqual(result["name"], target_name)
-		self.assertEqual(result["url"], f"/app/doctype/{target_name}")
+		self.assertEqual(result["url"], f"/app/todo/{target_name}")
 
 		generated = result["generated_scan_codes"]
 		self.assertEqual(len(generated), 2)
@@ -91,7 +97,7 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 					"Scan Code",
 					{
 						"action_key": action_key,
-						"source_doctype": "DocType",
+						"source_doctype": "ToDo",
 						"source_name": target_name,
 						"status": "Active",
 					},
@@ -103,7 +109,7 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 				"Scan Code",
 				{
 					"action_key": "create_stock_transfer",
-					"source_doctype": "DocType",
+					"source_doctype": "ToDo",
 					"source_name": target_name,
 					"status": "Active",
 				},
@@ -167,9 +173,9 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 		reg.save(ignore_permissions=True)
 		super().tearDownClass()
 
-	def _make_submitted_asn(self, *, warehouse: str) -> frappe.model.document.Document:
+	def _make_submitted_asn(self, *, company: str, warehouse: str) -> frappe.model.document.Document:
 		with integration_user_context():
-			purchase_order = create_purchase_order(qty=2, warehouse=warehouse)
+			purchase_order = create_purchase_order(qty=2, company=company, warehouse=warehouse)
 			asn = make_test_asn(
 				purchase_order=purchase_order,
 				supplier_invoice_no=f"SCOPED-{frappe.generate_hash(length=8)}",
@@ -209,7 +215,10 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 
 	def test_scope_routes_asn_scan_to_gate_like_step_first(self):
 		route = self._scoped_routes["gate_like"]
-		asn = self._make_submitted_asn(warehouse=route["context"]["warehouse"])
+		asn = self._make_submitted_asn(
+			company=route["context"]["company"],
+			warehouse=route["context"]["warehouse"],
+		)
 		device_info = f"it-gate-{frappe.generate_hash(length=6)}"
 		derived_context = dispatch_module._build_flow_resolution_context(asn)
 		self.assertEqual(derived_context["company"], route["context"]["company"])
@@ -231,7 +240,10 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 	def test_scope_routes_asn_scan_directly_to_purchase_receipt_when_gate_scope_misses(self):
 		route = self._scoped_routes["direct_pr"]
 		gate_route = self._scoped_routes["gate_like"]
-		asn = self._make_submitted_asn(warehouse=route["context"]["warehouse"])
+		asn = self._make_submitted_asn(
+			company=route["context"]["company"],
+			warehouse=route["context"]["warehouse"],
+		)
 		device_info = f"it-direct-{frappe.generate_hash(length=6)}"
 		derived_context = dispatch_module._build_flow_resolution_context(asn)
 		self.assertEqual(derived_context["company"], route["context"]["company"])
