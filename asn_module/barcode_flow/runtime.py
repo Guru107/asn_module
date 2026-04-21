@@ -203,10 +203,9 @@ def _resolve_target_doc_for_conditions(*, target_doc: Any, target_doctype: str, 
 def _matches_doc_identity(target_doc: Any, *, target_doctype: str, target_name: str) -> bool:
 	if not target_doc:
 		return False
-	return (
-		(_get_value(target_doc, "doctype") or "").strip() == target_doctype
-		and (_get_value(target_doc, "name") or "").strip() == target_name
-	)
+	return (_get_value(target_doc, "doctype") or "").strip() == target_doctype and (
+		_get_value(target_doc, "name") or ""
+	).strip() == target_name
 
 
 def build_scan_code_metadata(
@@ -321,7 +320,9 @@ def _run_custom_handler(
 
 
 def _source_identity(source_doc: Any) -> tuple[str, str]:
-	source_doctype = (_get_value(source_doc, "doctype") or _get_value(source_doc, "source_doctype") or "").strip()
+	source_doctype = (
+		_get_value(source_doc, "doctype") or _get_value(source_doc, "source_doctype") or ""
+	).strip()
 	source_name = (_get_value(source_doc, "name") or _get_value(source_doc, "source_name") or "").strip()
 	return source_doctype, source_name
 

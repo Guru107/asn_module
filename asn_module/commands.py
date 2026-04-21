@@ -90,9 +90,7 @@ def verify_qr_action_registry():
 	frappe.msgprint(
 		_(
 			"QR Action Registry drift detected. missing={0}, unexpected={1}, mismatched={2}, missing_flow_actions={3}"
-		).format(
-			len(missing), len(unexpected), len(mismatched), len(missing_flow_actions)
-		),
+		).format(len(missing), len(unexpected), len(mismatched), len(missing_flow_actions)),
 		title=_("QR Action Registry check"),
 		indicator="orange",
 	)

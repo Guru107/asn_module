@@ -217,7 +217,7 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 					source_node_key="scan",
 					target_node_key="missing-node",
 				)
-			]
+			],
 		)
 
 		with self.assertRaises(frappe.ValidationError):

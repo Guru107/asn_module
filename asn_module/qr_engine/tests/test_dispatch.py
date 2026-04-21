@@ -122,7 +122,9 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")),
+			patch(
+				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
+			),
 			patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
 			patch("asn_module.qr_engine.dispatch.execute_transition_binding", return_value=contract),
 		):
@@ -209,7 +211,9 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")),
+			patch(
+				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
+			),
 			patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
 			patch(
 				"asn_module.qr_engine.dispatch.execute_transition_binding",
@@ -250,7 +254,9 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")),
+			patch(
+				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
+			),
 			patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
 			patch(
 				"asn_module.qr_engine.dispatch.execute_transition_binding",
@@ -322,9 +328,14 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")),
+			patch(
+				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
+			),
 			patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
-			patch("asn_module.qr_engine.dispatch.execute_transition_binding", side_effect=return_scan_log_contract),
+			patch(
+				"asn_module.qr_engine.dispatch.execute_transition_binding",
+				side_effect=return_scan_log_contract,
+			),
 		):
 			result = dispatch(code=code, device_info="Handheld-Scanner-X")
 
@@ -355,7 +366,9 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-ambig")),
+			patch(
+				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-ambig")
+			),
 			patch(
 				"asn_module.qr_engine.dispatch._resolve_matching_transition",
 				side_effect=frappe.ValidationError("Ambiguous barcode transition resolution"),
@@ -390,7 +403,9 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")),
+			patch(
+				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
+			),
 			patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
 			patch(
 				"asn_module.qr_engine.dispatch.execute_transition_binding",

@@ -59,9 +59,7 @@ def ensure_integration_user(
 	return email
 
 
-def ensure_dispatch_flow_fixtures(
-	*, flow_name_prefix: str = "IT-Dispatch-Flow"
-) -> dict[str, dict[str, str]]:
+def ensure_dispatch_flow_fixtures(*, flow_name_prefix: str = "IT-Dispatch-Flow") -> dict[str, dict[str, str]]:
 	"""Seed active flow definitions for canonical dispatch actions (custom_handler binding mode)."""
 	action_rows = get_canonical_actions()
 	actions_by_source: dict[str, list[dict]] = {}
@@ -187,6 +185,12 @@ def cleanup_dispatch_flow_fixtures(*, flow_name_prefix: str = "IT-Dispatch-Flow"
 		pluck="name",
 	):
 		frappe.delete_doc("Barcode Flow Definition", flow_name, force=True, ignore_permissions=True)
+
+
+def cleanup_conflicting_scoped_flow_fixtures() -> None:
+	"""Remove scoped-routing fixture flows that can leak across test modules."""
+	for prefix in ("IT-Dispatch-Flow-ScopedRoutingIntegration", "IT-Dispatch-Flow-Scoped"):
+		cleanup_dispatch_flow_fixtures(flow_name_prefix=prefix)
 
 
 def _upsert_flow_definition(*, flow_name: str, source_doctype: str, action_rows: list[dict]):

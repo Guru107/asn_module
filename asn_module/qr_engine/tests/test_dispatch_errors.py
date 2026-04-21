@@ -61,7 +61,9 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 		with integration_user_context():
 			with (
 				patch("asn_module.qr_engine.dispatch._validate_source_doctype", return_value=None),
-				patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-test")),
+				patch(
+					"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-test")
+				),
 				patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
 				patch("asn_module.qr_engine.dispatch.execute_transition_binding", return_value="not a dict"),
 			):
@@ -81,7 +83,9 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 		with integration_user_context():
 			with (
 				patch("asn_module.qr_engine.dispatch._validate_source_doctype", return_value=None),
-				patch("asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-test")),
+				patch(
+					"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-test")
+				),
 				patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
 				patch("asn_module.qr_engine.dispatch.execute_transition_binding", side_effect=error_handler),
 			):

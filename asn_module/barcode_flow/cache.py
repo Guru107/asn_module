@@ -28,7 +28,7 @@ def _get_condition_index(flow_definition: Any) -> dict[str, Any]:
 		return cached
 
 	index: dict[str, Any] = {}
-	for row in (getattr(flow_definition, "conditions", None) or []):
+	for row in getattr(flow_definition, "conditions", None) or []:
 		if not _is_enabled(row):
 			continue
 		key = (_get_value(row, "condition_key") or "").strip()

@@ -77,11 +77,17 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="mapping",
 			target_doctype="Purchase Receipt",
-			field_maps=[SimpleNamespace(mapping_type="constant", target_field_path="supplier", constant_value="SUP-001")],
+			field_maps=[
+				SimpleNamespace(
+					mapping_type="constant", target_field_path="supplier", constant_value="SUP-001"
+				)
+			],
 		)
 		target_doc = _FakeTargetDoc()
 
-		with patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc) as build_target_doc:
+		with patch(
+			"asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc
+		) as build_target_doc:
 			result = execute_transition_binding(transition=transition, source_doc={"name": "ASN-0001"})
 
 		build_target_doc.assert_called_once()
@@ -108,7 +114,9 @@ class TestBarcodeFlowRuntime(TestCase):
 		)
 		target_doc = _FakeTargetDoc()
 
-		with patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc) as build_target_doc:
+		with patch(
+			"asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc
+		) as build_target_doc:
 			execute_transition_binding(
 				transition=transition,
 				source_doc={"name": "ASN-0001"},
@@ -280,7 +288,9 @@ class TestBarcodeFlowRuntime(TestCase):
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
-			patch("asn_module.barcode_flow.runtime.evaluate_conditions", side_effect=_condition_result) as evaluate,
+			patch(
+				"asn_module.barcode_flow.runtime.evaluate_conditions", side_effect=_condition_result
+			) as evaluate,
 			patch(
 				"asn_module.barcode_flow.runtime.build_scan_code_metadata",
 				return_value={
@@ -299,7 +309,9 @@ class TestBarcodeFlowRuntime(TestCase):
 
 		self.assertEqual(evaluate.call_count, 2)
 		build_metadata.assert_called_once()
-		self.assertEqual([row["action_key"] for row in result["generated_scan_codes"]], ["create_purchase_invoice"])
+		self.assertEqual(
+			[row["action_key"] for row in result["generated_scan_codes"]], ["create_purchase_invoice"]
+		)
 
 	def test_duplicate_child_transitions_do_not_duplicate_generated_scan_codes(self):
 		transition = SimpleNamespace(
@@ -460,7 +472,9 @@ class TestBarcodeFlowRuntime(TestCase):
 			binding_key="custom-receive",
 		)
 		flow_definition = SimpleNamespace(
-			field_maps=[SimpleNamespace(map_key="warehouse-map", mapping_type="source", target_field_path="supplier")],
+			field_maps=[
+				SimpleNamespace(map_key="warehouse-map", mapping_type="source", target_field_path="supplier")
+			],
 			action_bindings=[
 				SimpleNamespace(
 					binding_key="custom-receive",
@@ -544,7 +558,10 @@ class TestBarcodeFlowRuntime(TestCase):
 			action_binding=SimpleNamespace(custom_handler="fake.module.handler"),
 		)
 
-		with patch("asn_module.barcode_flow.runtime.frappe.get_attr", return_value=MagicMock(return_value={"doctype": "X"})):
+		with patch(
+			"asn_module.barcode_flow.runtime.frappe.get_attr",
+			return_value=MagicMock(return_value={"doctype": "X"}),
+		):
 			with self.assertRaises(frappe.ValidationError) as ctx:
 				execute_transition_binding(transition=transition, source_doc={"name": "ASN-0001"})
 

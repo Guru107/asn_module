@@ -37,13 +37,17 @@ _ITEM_VALUE = st.one_of(
 	),
 )
 
-_OPERATORS = st.sampled_from(["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "contains", "is_set", "exists"])
+_OPERATORS = st.sampled_from(
+	["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "contains", "is_set", "exists"]
+)
 
 
 @st.composite
 def _scope_specs(draw):
 	return {
-		"scope_key": draw(st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=12)),
+		"scope_key": draw(
+			st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=12)
+		),
 		"is_active": draw(st.sampled_from([0, 1])),
 		"priority": draw(st.integers(min_value=-2, max_value=5)),
 		"is_default": draw(st.sampled_from([0, 1])),
@@ -121,7 +125,9 @@ def _build_flows(flow_specs: list[dict]) -> list[SimpleNamespace]:
 					supplier_type=scope_spec["supplier_type"],
 				)
 			)
-		flows.append(SimpleNamespace(name=f"FLOW-{flow_idx}", is_active=flow_spec["is_active"], scopes=scopes))
+		flows.append(
+			SimpleNamespace(name=f"FLOW-{flow_idx}", is_active=flow_spec["is_active"], scopes=scopes)
+		)
 	return flows
 
 
@@ -167,7 +173,9 @@ def _expected_resolver_outcome(
 	context: dict,
 	flows: list[SimpleNamespace],
 ) -> tuple[str, str | None, str | None]:
-	normalized_context = {fieldname: _normalize_value(context.get(fieldname)) for fieldname in _SCOPE_MATCH_FIELDS}
+	normalized_context = {
+		fieldname: _normalize_value(context.get(fieldname)) for fieldname in _SCOPE_MATCH_FIELDS
+	}
 	candidates: list[dict[str, object]] = []
 	for flow in flows:
 		if not _is_enabled(flow):
@@ -234,7 +242,9 @@ def _resolve_outcome(context: dict, flows: list[SimpleNamespace]) -> tuple[str, 
 		return "resolved", flow.name, scope_key
 
 
-def _build_rule(*, scope: str, field_path: str, operator: str, value: object, aggregate_fn: str | None = None) -> dict:
+def _build_rule(
+	*, scope: str, field_path: str, operator: str, value: object, aggregate_fn: str | None = None
+) -> dict:
 	rule = {
 		"scope": scope,
 		"field_path": field_path,

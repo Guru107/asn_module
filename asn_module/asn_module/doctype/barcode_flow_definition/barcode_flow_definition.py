@@ -179,16 +179,12 @@ class BarcodeFlowDefinition(Document):
 					)
 				if constant_value:
 					frappe.throw(
-						_("Constant Value must be empty for {0} when mapping type is source.").format(
-							map_key
-						)
+						_("Constant Value must be empty for {0} when mapping type is source.").format(map_key)
 					)
 			if mapping_type == "constant":
 				if not constant_value:
 					frappe.throw(
-						_("Constant Value is required for {0} when mapping type is constant.").format(
-							map_key
-						)
+						_("Constant Value is required for {0} when mapping type is constant.").format(map_key)
 					)
 				if source_field_path:
 					frappe.throw(
@@ -241,9 +237,9 @@ class BarcodeFlowDefinition(Document):
 					)
 				if target_node_key:
 					frappe.throw(
-						_("Target Node Key must be empty for {0} when trigger event is On Transition.").format(
-							binding_key
-						)
+						_(
+							"Target Node Key must be empty for {0} when trigger event is On Transition."
+						).format(binding_key)
 					)
 
 			elif trigger_event == "custom_handler":
@@ -322,9 +318,9 @@ class BarcodeFlowDefinition(Document):
 
 			if scope != "items_aggregate" and aggregate_fn:
 				frappe.throw(
-					_(
-						"Aggregate Function must be empty for {0} when scope is not items_aggregate."
-					).format(condition_key)
+					_("Aggregate Function must be empty for {0} when scope is not items_aggregate.").format(
+						condition_key
+					)
 				)
 
 			if scope == "items_aggregate" and aggregate_fn == "exists":
@@ -344,9 +340,7 @@ class BarcodeFlowDefinition(Document):
 
 			if operator not in {"exists", "is_set"} and not value:
 				frappe.throw(
-					_("Value is required for {0} unless operator is exists or is_set.").format(
-						condition_key
-					)
+					_("Value is required for {0} unless operator is exists or is_set.").format(condition_key)
 				)
 
 	def _collect_key_set(self, rows, key_fieldname: str) -> set[str]:

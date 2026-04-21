@@ -37,7 +37,9 @@ class TestBarcodeFlowMapping(TestCase):
 		]
 
 		with patch("asn_module.barcode_flow.mapping.frappe.get_doc", side_effect=lambda payload: payload):
-			payload = build_target_doc(source_doc=source_doc, mappings=mappings, target_doctype="Purchase Receipt")
+			payload = build_target_doc(
+				source_doc=source_doc, mappings=mappings, target_doctype="Purchase Receipt"
+			)
 
 		self.assertEqual(payload["doctype"], "Purchase Receipt")
 		self.assertEqual(payload["set_warehouse"], "WH-001")
@@ -59,7 +61,9 @@ class TestBarcodeFlowMapping(TestCase):
 		]
 
 		with patch("asn_module.barcode_flow.mapping.frappe.get_doc", side_effect=lambda payload: payload):
-			payload = build_target_doc(source_doc=source_doc, mappings=mappings, target_doctype="Purchase Receipt")
+			payload = build_target_doc(
+				source_doc=source_doc, mappings=mappings, target_doctype="Purchase Receipt"
+			)
 
 		self.assertEqual(payload["set_warehouse"], "WH-CONSTANT")
 		self.assertEqual(payload["company"], "COMP-001")

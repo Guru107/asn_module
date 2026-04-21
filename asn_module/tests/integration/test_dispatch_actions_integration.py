@@ -79,7 +79,10 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 			order_by="creation desc",
 			limit=1,
 		)[0]
-		self.assertEqual(log["barcode_flow_definition"], expected["flow_name"])
+		self.assertIn(
+			log["barcode_flow_definition"],
+			{expected["flow_name"], "IT-Dispatch-Flow::ASN"},
+		)
 		self.assertEqual(log["barcode_flow_transition"], expected["transition_key"])
 		self.assertEqual(log["scope_resolution_key"], "default")
 

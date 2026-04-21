@@ -209,7 +209,9 @@ def _resolve_matching_transition(
 		if condition_key and _should_revalidate_condition_at_scan_time(transition):
 			condition = get_condition_by_key(flow_definition, condition_key)
 			if not condition:
-				transition_key = _normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
+				transition_key = (
+					_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
+				)
 				raise TransitionResolutionError(
 					f"Transition {transition_key} references unknown condition key: {condition_key}"
 				)
@@ -229,9 +231,7 @@ def _resolve_matching_transition(
 		# Deterministic tie-break for same-priority transitions:
 		# dispatch-time execution should prefer runtime-capable transitions over hybrid/immediate.
 		top_mode_rank = max(_generation_mode_rank(transition) for transition in winners)
-		winners = [
-			transition for transition in winners if _generation_mode_rank(transition) == top_mode_rank
-		]
+		winners = [transition for transition in winners if _generation_mode_rank(transition) == top_mode_rank]
 
 	if len(winners) == 1:
 		return winners[0]
@@ -247,6 +247,7 @@ def _resolve_matching_transition(
 			f"Ambiguous barcode transition resolution in flow '{flow_definition.name}' for action '{action_key}'. "
 			f"Matching transitions: {transition_keys}"
 		)
+
 
 def _transition_priority(transition: frappe.model.document.Document) -> int:
 	return cint(_get_value(transition, "priority") or 0)

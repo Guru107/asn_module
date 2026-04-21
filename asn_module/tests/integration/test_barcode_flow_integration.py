@@ -81,7 +81,9 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 
 		generated = result["generated_scan_codes"]
 		self.assertEqual(len(generated), 2)
-		self.assertEqual({row["action_key"] for row in generated}, {"create_purchase_invoice", "confirm_putaway"})
+		self.assertEqual(
+			{row["action_key"] for row in generated}, {"create_purchase_invoice", "confirm_putaway"}
+		)
 		self.assertNotIn("create_stock_transfer", {row["action_key"] for row in generated})
 		self.assertEqual(
 			{row["generation_mode"] for row in generated},
