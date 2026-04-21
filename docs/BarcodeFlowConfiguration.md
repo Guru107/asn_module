@@ -106,6 +106,8 @@ Use this when one warehouse requires a gate step before receipt creation.
 
 ### Flow A1: ASN to Gate In simulation
 
+This first transition can use a custom action key that is not part of canonical defaults, but it must exist in `QR Action Registry` with `source_doctype=ASN`.
+
 `Barcode Flow Definition`:
 - `flow_name`: `Inbound::GateIn::ASN`
 - `is_active`: checked
@@ -126,7 +128,7 @@ Use this when one warehouse requires a gate step before receipt creation.
 - `binding_key`: `binding-asn-gate-in`
 - `trigger_event`: `custom_handler`
 - `action_key`: `asn_gate_in_simulation`
-- `custom_handler`: `asn_module.tests.integration.test_barcode_flow_integration._simulate_gate_in_handler`
+- `custom_handler`: `custom_app.handlers.gate_flow.create_gate_in_step`
 
 `transitions` row:
 - `transition_key`: `asn-to-gate-in`
@@ -140,33 +142,40 @@ Use this when one warehouse requires a gate step before receipt creation.
 
 ### Flow A2: Gate In simulation to Purchase Receipt
 
-Use a second flow with `source_doctype` equal to the gate-step document doctype returned by your handler (for example `ToDo` in simulation).
+Use a second flow with `source_doctype` equal to the gate-step document doctype returned by your handler (for example `Gate Pass`).
+
+Important:
+- Do not reuse canonical `create_purchase_receipt` for a non-`ASN` source.
+- Create a dedicated `QR Action Registry` row (example action key below) with `source_doctype=Gate Pass`.
 
 `Barcode Flow Definition`:
 - `flow_name`: `Inbound::GateInToPR`
 
 `scopes` row:
 - `scope_key`: `gate-step-source`
-- `source_doctype`: `ToDo`
+- `source_doctype`: `Gate Pass`
 - `priority`: `300`
 
 `nodes` rows:
 - `gate_in_done` (`Start`)
 - `pr_draft` (`End`)
 
-`field_maps` rows (example):
-- `map_key`: `gate_to_pr_desc`, `mapping_type`: `source`, `source_field_path`: `description`, `target_field_path`: `remarks`
+`field_maps` row (example):
 - `map_key`: `gate_to_pr_wh`, `mapping_type`: `constant`, `constant_value`: `_Test ASN Scoped Gate Warehouse - WPL`, `target_field_path`: `set_warehouse`
 
 `transitions` row:
 - `transition_key`: `gate-in-to-pr`
 - `source_node_key`: `gate_in_done`
 - `target_node_key`: `pr_draft`
-- `action_key`: `create_purchase_receipt`
+- `action_key`: `create_purchase_receipt_from_gate_pass`
 - `generation_mode`: `hybrid`
 - `binding_mode`: `mapping`
-- `field_map_key`: `gate_to_pr_wh` (or use hydrated map rows)
+- `field_map_key`: `gate_to_pr_wh`
 - `target_doctype`: `Purchase Receipt`
+
+Mapping behavior note:
+- Runtime resolves `field_map_key` to one `field_maps` row per transition.
+- If multiple fields are needed, use `binding_mode=both`/`custom_handler` to populate additional fields in handler logic.
 
 ## Example B: ASN -> Purchase Receipt (Direct, no gate)
 
@@ -210,21 +219,25 @@ Use this when outbound requires gate-out verification before final dispatch mark
 ### Option 1 (recommended): two explicit transitions with separate actions
 
 1. Outbound source document scan creates/opens gate-out step using `custom_handler`.
-2. Gate-out document scan triggers `mark_dispatched` action (custom handler or mapping) to set final dispatched state.
+2. Gate-out document scan triggers a dedicated dispatch-complete action to set final dispatched state.
 
 `Flow C1` scope example:
 - `source_doctype`: `Subcontracting Order`
 - `scope_key`: `outbound-gate-out`
 - `action_key` on transition: `create_subcontracting_dispatch`
 - `binding_mode`: `custom_handler`
-- `custom_handler`: `asn_module.tests.integration.test_barcode_flow_integration._simulate_gate_in_handler`
+- `custom_handler`: `custom_app.handlers.gate_flow.create_gate_out_step`
 
 `Flow C2` scope example:
-- `source_doctype`: `ToDo`
+- `source_doctype`: `Gate Pass`
 - `scope_key`: `outbound-mark-dispatched`
-- `action_key` on transition: `create_subcontracting_receipt`
+- `action_key` on transition: `mark_subcontracting_dispatch_complete`
 - `binding_mode`: `custom_handler`
-- `custom_handler`: `asn_module.handlers.subcontracting.create_receipt_from_subcontracting_order`
+- `custom_handler`: `custom_app.handlers.dispatch.mark_dispatch_complete`
+
+Important:
+- Do not reuse canonical `create_subcontracting_receipt` for non-`Subcontracting Order` sources.
+- Create a dedicated `QR Action Registry` row for `mark_subcontracting_dispatch_complete` with `source_doctype=Gate Pass`.
 
 Trade-off:
 - Clear operational checkpoints and auditability, but one extra scan step.

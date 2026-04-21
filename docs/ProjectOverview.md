@@ -101,6 +101,8 @@ ruff check asn_module/
 ruff format asn_module/
 
 # JavaScript linting
+npx eslint asn_module/ --quiet
+# If npx resolves ESLint 9/10 (flat-config mode), use:
 npx eslint@8 asn_module/ --quiet
 
 # Run all pre-commit hooks
