@@ -68,8 +68,7 @@ class TestBarcodeFlowConditions(TestCase):
 					"scope": "items_aggregate",
 					"aggregate_fn": "exists",
 					"field_path": "inspection_required_before_purchase",
-					"operator": "=",
-					"value": 1,
+					"operator": "exists",
 				}
 			],
 		)
