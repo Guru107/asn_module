@@ -13,6 +13,8 @@ from contextlib import contextmanager
 
 import frappe
 
+from asn_module.setup_actions import get_canonical_actions
+
 # Roles required together for create_purchase_receipt + create_purchase_invoice dispatch.
 DEFAULT_INTEGRATION_ROLES = (
 	"Stock User",
@@ -53,6 +55,142 @@ def ensure_integration_user(
 		user.save(ignore_permissions=True)
 
 	return email
+
+
+def ensure_dispatch_flow_fixtures(
+	*, flow_name_prefix: str = "IT-Dispatch-Flow"
+) -> dict[str, dict[str, str]]:
+	"""Seed active flow definitions for canonical dispatch actions (custom_handler binding mode)."""
+	action_rows = get_canonical_actions()
+	actions_by_source: dict[str, list[dict]] = {}
+	for row in action_rows:
+		actions_by_source.setdefault(row["source_doctype"], []).append(row)
+
+	mapping: dict[str, dict[str, str]] = {}
+	for source_doctype, rows in actions_by_source.items():
+		flow_name = f"{flow_name_prefix}::{source_doctype}"
+		flow = _upsert_flow_definition(
+			flow_name=flow_name,
+			source_doctype=source_doctype,
+			action_rows=sorted(rows, key=lambda item: item["action_key"]),
+		)
+		for row in rows:
+			action_key = row["action_key"]
+			mapping[action_key] = {
+				"flow_name": flow.name,
+				"transition_key": _transition_key_for_action(action_key),
+			}
+
+	return mapping
+
+
+def _upsert_flow_definition(*, flow_name: str, source_doctype: str, action_rows: list[dict]):
+	if frappe.db.exists("Barcode Flow Definition", flow_name):
+		flow = frappe.get_doc("Barcode Flow Definition", flow_name)
+	else:
+		flow = frappe.get_doc({"doctype": "Barcode Flow Definition", "flow_name": flow_name})
+
+	flow.flow_name = flow_name
+	flow.is_active = 1
+	flow.description = "Integration fixture for dispatch flow resolution"
+	flow.set(
+		"scopes",
+		[
+			{
+				"doctype": "Barcode Flow Scope",
+				"scope_key": "default",
+				"priority": 0,
+				"is_default": 1,
+				"source_doctype": source_doctype,
+				"company": None,
+				"warehouse": None,
+				"supplier_type": None,
+				"source_name_field": None,
+				"description": None,
+			}
+		],
+	)
+	flow.set(
+		"nodes",
+		[
+			{
+				"doctype": "Barcode Flow Node",
+				"node_key": "scan",
+				"label": "Scan",
+				"node_type": "Start",
+			},
+			{
+				"doctype": "Barcode Flow Node",
+				"node_key": "handled",
+				"label": "Handled",
+				"node_type": "End",
+			},
+		],
+	)
+	flow.set("conditions", [])
+	flow.set("field_maps", [])
+	flow.set(
+		"action_bindings",
+		[
+			{
+				"doctype": "Barcode Flow Action Binding",
+				"binding_key": _binding_key_for_action(row["action_key"]),
+				"enabled": 1,
+				"trigger_event": "custom_handler",
+				"action_key": row["action_key"],
+				"custom_handler": row["handler_method"],
+				"handler_override_wins": 0,
+			}
+			for row in action_rows
+		],
+	)
+	flow.set(
+		"transitions",
+		[
+			{
+				"doctype": "Barcode Flow Transition",
+				"transition_key": _transition_key_for_action(row["action_key"]),
+				"generation_mode": "runtime",
+				"source_node_key": "scan",
+				"target_node_key": "handled",
+				"action_key": row["action_key"],
+				"binding_mode": "custom_handler",
+				"binding_key": _binding_key_for_action(row["action_key"]),
+				"priority": 100,
+			}
+			for row in action_rows
+		],
+	)
+
+	if flow.is_new():
+		flow.insert(ignore_permissions=True)
+	else:
+		flow.save(ignore_permissions=True)
+
+	# Explicitly clear optional scope filters to keep fixture matching broad and deterministic.
+	for scope in flow.scopes or []:
+		frappe.db.set_value(
+			"Barcode Flow Scope",
+			scope.name,
+			{
+				"company": "",
+				"warehouse": "",
+				"supplier_type": "",
+				"source_name_field": "",
+				"description": "",
+			},
+			update_modified=False,
+		)
+
+	return flow
+
+
+def _binding_key_for_action(action_key: str) -> str:
+	return f"binding-{action_key}"
+
+
+def _transition_key_for_action(action_key: str) -> str:
+	return f"transition-{action_key}"
 
 
 @contextmanager

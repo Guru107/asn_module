@@ -10,7 +10,11 @@ from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
-from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
+from asn_module.tests.integration.fixtures import (
+	ensure_dispatch_flow_fixtures,
+	ensure_integration_user,
+	integration_user_context,
+)
 from asn_module.utils.test_setup import before_tests
 
 
@@ -37,6 +41,7 @@ class TestEndToEndFlow(FrappeTestCase):
 		cls._registry_snapshot = cls._snapshot_registry_actions()
 		register_actions()
 		ensure_integration_user()
+		cls._flow_fixture_map = ensure_dispatch_flow_fixtures()
 
 	@classmethod
 	def tearDownClass(cls):

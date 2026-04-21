@@ -144,10 +144,7 @@ def _resolve_supplier_type(source_doc: frappe.model.document.Document) -> str | 
 	if not supplier:
 		return None
 
-	try:
-		return _normalize_value(frappe.db.get_value("Supplier", supplier, "supplier_type"))
-	except Exception:
-		return None
+	return _normalize_value(frappe.db.get_value("Supplier", supplier, "supplier_type"))
 
 
 def _resolve_matching_transition(

@@ -15,7 +15,11 @@ from asn_module.tests.integration.dispatch_flow import (
 	run_asn_pr_pi_via_dispatch,
 	run_asn_pr_submitted_via_dispatch,
 )
-from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
+from asn_module.tests.integration.fixtures import (
+	ensure_dispatch_flow_fixtures,
+	ensure_integration_user,
+	integration_user_context,
+)
 from asn_module.utils.test_setup import before_tests
 
 
@@ -40,6 +44,7 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		cls._registry_snapshot = cls._snapshot_registry_actions()
 		register_actions()
 		ensure_integration_user()
+		cls._flow_fixture_map = ensure_dispatch_flow_fixtures()
 
 	@classmethod
 	def tearDownClass(cls):
@@ -57,6 +62,22 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 			qty=2,
 		)
 		self.assertTrue(out.pi.name)
+		expected = self._flow_fixture_map["create_purchase_receipt"]
+		log = frappe.get_all(
+			"Scan Log",
+			filters={
+				"action": "create_purchase_receipt",
+				"source_doctype": "ASN",
+				"source_name": out.asn.name,
+				"result": "Success",
+			},
+			fields=["barcode_flow_definition", "barcode_flow_transition", "scope_resolution_key"],
+			order_by="creation desc",
+			limit=1,
+		)[0]
+		self.assertEqual(log["barcode_flow_definition"], expected["flow_name"])
+		self.assertEqual(log["barcode_flow_transition"], expected["transition_key"])
+		self.assertEqual(log["scope_resolution_key"], "default")
 
 	def test_confirm_putaway_via_dispatch(self):
 		out = run_asn_pr_submitted_via_dispatch(
