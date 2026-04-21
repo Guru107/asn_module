@@ -113,8 +113,8 @@ Use this when one warehouse requires a gate step before receipt creation.
 `scopes` row:
 - `scope_key`: `gate-like-scope`
 - `source_doctype`: `ASN`
-- `company`: `Your Company`
-- `warehouse`: `Main Stores - YC`
+- `company`: `Wind Power LLC`
+- `warehouse`: `_Test ASN Scoped Gate Warehouse - WPL`
 - `priority`: `300`
 - `is_default`: checked
 
@@ -126,7 +126,7 @@ Use this when one warehouse requires a gate step before receipt creation.
 - `binding_key`: `binding-asn-gate-in`
 - `trigger_event`: `custom_handler`
 - `action_key`: `asn_gate_in_simulation`
-- `custom_handler`: `your_app.handlers.gate_in_simulation.handle`
+- `custom_handler`: `asn_module.tests.integration.test_barcode_flow_integration._simulate_gate_in_handler`
 
 `transitions` row:
 - `transition_key`: `asn-to-gate-in`
@@ -155,8 +155,8 @@ Use a second flow with `source_doctype` equal to the gate-step document doctype 
 - `pr_draft` (`End`)
 
 `field_maps` rows (example):
-- `map_key`: `gate_to_pr_supplier`, `mapping_type`: `source`, `source_field_path`: `reference_name`, `target_field_path`: `supplier`
-- `map_key`: `gate_to_pr_wh`, `mapping_type`: `constant`, `constant_value`: `Main Stores - YC`, `target_field_path`: `set_warehouse`
+- `map_key`: `gate_to_pr_desc`, `mapping_type`: `source`, `source_field_path`: `description`, `target_field_path`: `remarks`
+- `map_key`: `gate_to_pr_wh`, `mapping_type`: `constant`, `constant_value`: `_Test ASN Scoped Gate Warehouse - WPL`, `target_field_path`: `set_warehouse`
 
 `transitions` row:
 - `transition_key`: `gate-in-to-pr`
@@ -165,7 +165,7 @@ Use a second flow with `source_doctype` equal to the gate-step document doctype 
 - `action_key`: `create_purchase_receipt`
 - `generation_mode`: `hybrid`
 - `binding_mode`: `mapping`
-- `field_map_key`: `gate_to_pr_supplier` (or use hydrated map rows)
+- `field_map_key`: `gate_to_pr_wh` (or use hydrated map rows)
 - `target_doctype`: `Purchase Receipt`
 
 ## Example B: ASN -> Purchase Receipt (Direct, no gate)
@@ -178,8 +178,8 @@ Use this where gate handling is not applicable.
 `scopes` row:
 - `scope_key`: `direct-pr-scope`
 - `source_doctype`: `ASN`
-- `company`: `Your Company`
-- `warehouse`: `Secondary Stores - YC`
+- `company`: `Wind Power LLC`
+- `warehouse`: `_Test ASN Scoped Direct Warehouse - WPL`
 - `priority`: `200`
 - `is_default`: checked
 
@@ -217,12 +217,14 @@ Use this when outbound requires gate-out verification before final dispatch mark
 - `scope_key`: `outbound-gate-out`
 - `action_key` on transition: `create_subcontracting_dispatch`
 - `binding_mode`: `custom_handler`
+- `custom_handler`: `asn_module.tests.integration.test_barcode_flow_integration._simulate_gate_in_handler`
 
 `Flow C2` scope example:
-- `source_doctype`: `Delivery Note` (or your gate out doctype)
+- `source_doctype`: `ToDo`
 - `scope_key`: `outbound-mark-dispatched`
-- `action_key` on transition: `mark_dispatched`
-- `binding_mode`: `custom_handler` or `both`
+- `action_key` on transition: `create_subcontracting_receipt`
+- `binding_mode`: `custom_handler`
+- `custom_handler`: `asn_module.handlers.subcontracting.create_receipt_from_subcontracting_order`
 
 Trade-off:
 - Clear operational checkpoints and auditability, but one extra scan step.

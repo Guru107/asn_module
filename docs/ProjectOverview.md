@@ -4,7 +4,7 @@ This is a **Frappe framework** custom app called `asn_module`. It follows standa
 
 ## Barcode Flow Configuration
 
-- Operator/System Manager runbook: `docs/BarcodeFlowConfiguration.md`
+- Operator/System Manager runbook: [BarcodeFlowConfiguration.md](BarcodeFlowConfiguration.md)
 - Covers scoped flow selection, transition binding modes, required child-table keys, and troubleshooting for resolution/configuration errors.
 
 ## Bench server setups
@@ -101,8 +101,7 @@ ruff check asn_module/
 ruff format asn_module/
 
 # JavaScript linting
-npx eslint asn_module/
-npx eslint asn_module/ --quiet
+npx eslint@8 asn_module/ --quiet
 
 # Run all pre-commit hooks
 pre-commit run --all-files
