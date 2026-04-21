@@ -159,21 +159,42 @@ class BarcodeFlowDefinition(Document):
 	def _validate_mode_specific_invariants(self):
 		node_keys = self._collect_key_set(self.nodes, "node_key")
 		transition_keys = self._collect_key_set(self.transitions, "transition_key")
+		action_binding_trigger_by_key = {
+			self._get_row_key(row=row, key_fieldname="binding_key"): (row.trigger_event or "").strip()
+			for row in self.action_bindings or []
+		}
 
 		for row in self.field_maps or []:
 			mapping_type = (row.mapping_type or "").strip()
-			if mapping_type == "source" and not (row.source_field_path or "").strip():
-				frappe.throw(
-					_("Source Field Path is required for {0} when mapping type is source.").format(
-						self._get_row_key(row=row, key_fieldname="map_key")
+			map_key = self._get_row_key(row=row, key_fieldname="map_key")
+			source_field_path = (row.source_field_path or "").strip()
+			constant_value = (row.constant_value or "").strip()
+			if mapping_type == "source":
+				if not source_field_path:
+					frappe.throw(
+						_("Source Field Path is required for {0} when mapping type is source.").format(
+							map_key
+						)
 					)
-				)
-			if mapping_type == "constant" and not (row.constant_value or "").strip():
-				frappe.throw(
-					_("Constant Value is required for {0} when mapping type is constant.").format(
-						self._get_row_key(row=row, key_fieldname="map_key")
+				if constant_value:
+					frappe.throw(
+						_("Constant Value must be empty for {0} when mapping type is source.").format(
+							map_key
+						)
 					)
-				)
+			if mapping_type == "constant":
+				if not constant_value:
+					frappe.throw(
+						_("Constant Value is required for {0} when mapping type is constant.").format(
+							map_key
+						)
+					)
+				if source_field_path:
+					frappe.throw(
+						_("Source Field Path must be empty for {0} when mapping type is constant.").format(
+							map_key
+						)
+					)
 
 		for row in self.action_bindings or []:
 			trigger_event = (row.trigger_event or "").strip()
@@ -240,13 +261,27 @@ class BarcodeFlowDefinition(Document):
 
 		for row in self.transitions or []:
 			binding_mode = (row.binding_mode or "").strip()
-			if binding_mode in {"custom_handler", "both"} and not (
-				(getattr(row, "binding_key", None) or "").strip()
-			):
+			transition_key = self._get_row_key(row=row, key_fieldname="transition_key")
+			binding_key = (getattr(row, "binding_key", None) or "").strip()
+			if binding_mode in {"custom_handler", "both"} and not binding_key:
 				frappe.throw(
 					_("Binding Key is required for {0} when binding mode is {1}.").format(
-						self._get_row_key(row=row, key_fieldname="transition_key"),
+						transition_key,
 						binding_mode,
+					)
+				)
+			if binding_mode in {"custom_handler", "both"} and binding_key:
+				binding_trigger = action_binding_trigger_by_key.get(binding_key)
+				if binding_trigger != "custom_handler":
+					frappe.throw(
+						_(
+							"Transition {0} requires Binding Key {1} to point to an action binding with trigger event custom_handler."
+						).format(transition_key, binding_key)
+					)
+			if binding_mode == "mapping" and binding_key:
+				frappe.throw(
+					_("Binding Key must be empty for {0} when binding mode is mapping.").format(
+						transition_key
 					)
 				)
 
@@ -255,11 +290,12 @@ class BarcodeFlowDefinition(Document):
 			value = (row.value or "").strip()
 			scope = (row.scope or "").strip()
 			aggregate_fn = (row.aggregate_fn or "").strip()
+			condition_key = self._get_row_key(row=row, key_fieldname="condition_key")
 
 			if scope == "items_aggregate" and not aggregate_fn:
 				frappe.throw(
 					_("Aggregate Function is required for {0} when scope is items_aggregate.").format(
-						self._get_row_key(row=row, key_fieldname="condition_key")
+						condition_key
 					)
 				)
 
@@ -267,13 +303,28 @@ class BarcodeFlowDefinition(Document):
 				frappe.throw(
 					_(
 						"Aggregate Function must be empty for {0} when scope is not items_aggregate."
-					).format(self._get_row_key(row=row, key_fieldname="condition_key"))
+					).format(condition_key)
+				)
+
+			if scope == "items_aggregate" and aggregate_fn == "exists":
+				if operator not in {"=", "!=", "is_set", "exists"}:
+					frappe.throw(
+						_(
+							"Operator must be one of =, !=, is_set, exists for {0} when aggregate function is exists."
+						).format(condition_key)
+					)
+
+			if scope == "items_aggregate" and aggregate_fn != "exists" and operator == "exists":
+				frappe.throw(
+					_("Operator exists is only allowed for {0} when aggregate function is exists.").format(
+						condition_key
+					)
 				)
 
 			if operator != "exists" and not value:
 				frappe.throw(
 					_("Value is required for {0} when operator is not exists.").format(
-						self._get_row_key(row=row, key_fieldname="condition_key")
+						condition_key
 					)
 				)
 

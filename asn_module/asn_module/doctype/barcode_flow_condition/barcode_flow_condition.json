@@ -38,7 +38,7 @@
 			"fieldtype": "Select",
 			"in_list_view": 1,
 			"label": "Operator",
-			"options": "eq\nne\nin\nnot_in\ngt\ngte\nlt\nlte\ncontains\nexists",
+			"options": "eq\nne\n=\n!=\nin\nnot_in\ngt\ngte\nlt\nlte\ncontains\nis_set\nexists",
 			"reqd": 1
 		},
 		{

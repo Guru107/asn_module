@@ -237,6 +237,40 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			flow.insert(ignore_permissions=True)
 
+	def test_field_map_constant_mapping_rejects_source_field_path(self):
+		flow = self._new_flow(
+			field_maps=[
+				{
+					"doctype": "Barcode Flow Field Map",
+					"map_key": "constant-warehouse",
+					"mapping_type": "constant",
+					"source_field_path": "header.set_warehouse",
+					"target_field_path": "target.set_warehouse",
+					"constant_value": "WH-001",
+				}
+			]
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_field_map_source_mapping_rejects_constant_value(self):
+		flow = self._new_flow(
+			field_maps=[
+				{
+					"doctype": "Barcode Flow Field Map",
+					"map_key": "source-warehouse",
+					"mapping_type": "source",
+					"source_field_path": "header.set_warehouse",
+					"target_field_path": "target.set_warehouse",
+					"constant_value": "WH-001",
+				}
+			]
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
 	def test_action_binding_on_enter_node_requires_target_node_key(self):
 		flow = self._new_flow(
 			nodes=[self._valid_node("scan", "Scan")],
@@ -318,6 +352,64 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			flow.insert(ignore_permissions=True)
 
+	def test_custom_handler_transition_requires_custom_handler_binding_trigger(self):
+		flow = self._new_flow(
+			nodes=[
+				self._valid_node("scan", "Scan"),
+				self._valid_node("received", "Received"),
+			],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "enter-scan",
+					"trigger_event": "On Enter Node",
+					"target_node_key": "scan",
+					"action_key": "create_purchase_receipt",
+				}
+			],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-to-received",
+					source_node_key="scan",
+					target_node_key="received",
+					binding_mode="custom_handler",
+					binding_key="enter-scan",
+				)
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_mapping_transition_rejects_binding_key(self):
+		flow = self._new_flow(
+			nodes=[
+				self._valid_node("scan", "Scan"),
+				self._valid_node("received", "Received"),
+			],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "some-binding",
+					"trigger_event": "custom_handler",
+					"action_key": "create_purchase_receipt",
+					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
+				}
+			],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-to-received",
+					source_node_key="scan",
+					target_node_key="received",
+					binding_mode="mapping",
+					binding_key="some-binding",
+				)
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
 	def test_items_aggregate_condition_requires_aggregate_function(self):
 		flow = self._new_flow(
 			conditions=[
@@ -352,6 +444,41 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 
 		flow.insert(ignore_permissions=True)
 		self.assertTrue(flow.name)
+
+	def test_items_aggregate_exists_aggregate_rejects_incompatible_operator(self):
+		flow = self._new_flow(
+			conditions=[
+				{
+					"doctype": "Barcode Flow Condition",
+					"condition_key": "exists-aggregate",
+					"scope": "items_aggregate",
+					"field_path": "items.qty",
+					"operator": "gt",
+					"value": "0",
+					"aggregate_fn": "exists",
+				}
+			]
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_items_aggregate_non_exists_aggregate_rejects_operator_exists(self):
+		flow = self._new_flow(
+			conditions=[
+				{
+					"doctype": "Barcode Flow Condition",
+					"condition_key": "sum-aggregate",
+					"scope": "items_aggregate",
+					"field_path": "items.qty",
+					"operator": "exists",
+					"aggregate_fn": "sum",
+				}
+			]
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
 
 	def test_non_aggregate_condition_rejects_aggregate_function(self):
 		flow = self._new_flow(
