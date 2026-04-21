@@ -29,6 +29,19 @@ def _build_dispatch_url(code: str) -> str:
 	return f"{site_url}/api/method/asn_module.qr_engine.dispatch.dispatch?code={safe_code}"
 
 
+def build_scan_code_metadata(
+	*, action_key: str, source_doctype: str, source_name: str, generation_mode: str
+) -> dict:
+	"""Create scan-code metadata for downstream display/dispatch payloads."""
+	scan_code = get_or_create_scan_code(action_key, source_doctype, source_name)
+	return {
+		"action_key": action_key,
+		"scan_code": scan_code,
+		"human_readable": format_scan_code_for_display(scan_code),
+		"generation_mode": (generation_mode or "").strip().lower(),
+	}
+
+
 def generate_qr(action: str, source_doctype: str, source_name: str) -> dict:
 	code = get_or_create_scan_code(action, source_doctype, source_name)
 	url = _build_dispatch_url(code)

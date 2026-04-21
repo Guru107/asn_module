@@ -14,6 +14,13 @@ if not hasattr(frappe_stub, "get_attr"):
 if not hasattr(frappe_stub, "get_doc"):
 	frappe_stub.get_doc = lambda payload: payload
 
+frappe_utils_stub = sys.modules.get("frappe.utils")
+if frappe_utils_stub is None:
+	frappe_utils_stub = ModuleType("frappe.utils")
+	sys.modules["frappe.utils"] = frappe_utils_stub
+if not hasattr(frappe_utils_stub, "cint"):
+	frappe_utils_stub.cint = lambda value: int(value or 0)
+
 import frappe
 
 from asn_module.barcode_flow.runtime import execute_transition_binding
@@ -61,7 +68,10 @@ class TestBarcodeFlowRuntime(TestCase):
 		self.assertIs(payload["transition"], transition)
 		self.assertIs(payload["action_binding"], action_binding)
 		self.assertIsNone(payload["target_doc"])
-		self.assertEqual(result, self._handler_result())
+		self.assertEqual(result["doctype"], "Purchase Receipt")
+		self.assertEqual(result["name"], "PR-0009")
+		self.assertEqual(result["url"], "/app/purchase-receipt/PR-0009")
+		self.assertEqual(result["generated_scan_codes"], [])
 
 	def test_mapping_mode_builds_and_inserts_target_doc(self):
 		transition = SimpleNamespace(
@@ -109,6 +119,187 @@ class TestBarcodeFlowRuntime(TestCase):
 		resolved_mappings = build_target_doc.call_args.kwargs["mappings"]
 		self.assertEqual(len(resolved_mappings), 1)
 		self.assertEqual(resolved_mappings[0].map_key, "warehouse-map")
+
+	def test_hybrid_mode_pre_generates_child_code(self):
+		transition = SimpleNamespace(
+			binding_mode="mapping",
+			target_doctype="Purchase Receipt",
+			target_node_key="received",
+			field_maps=[],
+		)
+		flow_definition = SimpleNamespace(
+			transitions=[
+				SimpleNamespace(
+					transition_key="to-putaway",
+					source_node_key="received",
+					action_key="confirm_putaway",
+					generation_mode="hybrid",
+				)
+			]
+		)
+		target_doc = _FakeTargetDoc()
+
+		with (
+			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime.build_scan_code_metadata",
+				return_value={
+					"action_key": "confirm_putaway",
+					"scan_code": "PUTAWAY123",
+					"human_readable": "PUTAWAY123",
+					"generation_mode": "hybrid",
+				},
+			) as build_metadata,
+		):
+			result = execute_transition_binding(
+				transition=transition,
+				source_doc={"name": "ASN-0001"},
+				flow_definition=flow_definition,
+			)
+
+		build_metadata.assert_called_once_with(
+			action_key="confirm_putaway",
+			source_doctype="Purchase Receipt",
+			source_name="PR-0001",
+			generation_mode="hybrid",
+		)
+		self.assertEqual(len(result["generated_scan_codes"]), 1)
+		self.assertEqual(result["generated_scan_codes"][0]["action_key"], "confirm_putaway")
+
+	def test_immediate_mode_pre_generates_child_code(self):
+		transition = SimpleNamespace(
+			binding_mode="mapping",
+			target_doctype="Purchase Receipt",
+			target_node_key="received",
+			field_maps=[],
+		)
+		flow_definition = SimpleNamespace(
+			transitions=[
+				SimpleNamespace(
+					transition_key="to-invoice",
+					source_node_key="received",
+					action_key="create_purchase_invoice",
+					generation_mode="immediate",
+				)
+			]
+		)
+		target_doc = _FakeTargetDoc()
+
+		with (
+			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime.build_scan_code_metadata",
+				return_value={
+					"action_key": "create_purchase_invoice",
+					"scan_code": "INV123",
+					"human_readable": "INV123",
+					"generation_mode": "immediate",
+				},
+			) as build_metadata,
+		):
+			result = execute_transition_binding(
+				transition=transition,
+				source_doc={"name": "ASN-0001"},
+				flow_definition=flow_definition,
+			)
+
+		build_metadata.assert_called_once_with(
+			action_key="create_purchase_invoice",
+			source_doctype="Purchase Receipt",
+			source_name="PR-0001",
+			generation_mode="immediate",
+		)
+		self.assertEqual(len(result["generated_scan_codes"]), 1)
+		self.assertEqual(result["generated_scan_codes"][0]["action_key"], "create_purchase_invoice")
+
+	def test_runtime_mode_does_not_pre_generate_child_codes(self):
+		transition = SimpleNamespace(
+			binding_mode="mapping",
+			target_doctype="Purchase Receipt",
+			target_node_key="received",
+			field_maps=[],
+		)
+		flow_definition = SimpleNamespace(
+			transitions=[
+				SimpleNamespace(
+					transition_key="to-runtime-only",
+					source_node_key="received",
+					action_key="create_purchase_invoice",
+					generation_mode="runtime",
+				)
+			]
+		)
+		target_doc = _FakeTargetDoc()
+
+		with (
+			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch("asn_module.barcode_flow.runtime.build_scan_code_metadata") as build_metadata,
+		):
+			result = execute_transition_binding(
+				transition=transition,
+				source_doc={"name": "ASN-0001"},
+				flow_definition=flow_definition,
+			)
+
+		build_metadata.assert_not_called()
+		self.assertEqual(result["generated_scan_codes"], [])
+
+	def test_condition_gated_child_generation_only_includes_true_conditions(self):
+		transition = SimpleNamespace(
+			binding_mode="mapping",
+			target_doctype="Purchase Receipt",
+			target_node_key="received",
+			field_maps=[],
+		)
+		flow_definition = SimpleNamespace(
+			transitions=[
+				SimpleNamespace(
+					transition_key="to-invoice-allowed",
+					source_node_key="received",
+					action_key="create_purchase_invoice",
+					generation_mode="hybrid",
+					condition_key="allow-condition",
+				),
+				SimpleNamespace(
+					transition_key="to-putaway-blocked",
+					source_node_key="received",
+					action_key="confirm_putaway",
+					generation_mode="immediate",
+					condition_key="block-condition",
+				),
+			],
+			conditions=[
+				SimpleNamespace(condition_key="allow-condition"),
+				SimpleNamespace(condition_key="block-condition"),
+			],
+		)
+		target_doc = _FakeTargetDoc()
+
+		def _condition_result(_doc, rules):
+			return rules[0].condition_key == "allow-condition"
+
+		with (
+			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch("asn_module.barcode_flow.runtime.evaluate_conditions", side_effect=_condition_result) as evaluate,
+			patch(
+				"asn_module.barcode_flow.runtime.build_scan_code_metadata",
+				return_value={
+					"action_key": "create_purchase_invoice",
+					"scan_code": "ALLOW123",
+					"human_readable": "ALLOW123",
+					"generation_mode": "hybrid",
+				},
+			) as build_metadata,
+		):
+			result = execute_transition_binding(
+				transition=transition,
+				source_doc={"name": "ASN-0001"},
+				flow_definition=flow_definition,
+			)
+
+		self.assertEqual(evaluate.call_count, 2)
+		build_metadata.assert_called_once()
+		self.assertEqual([row["action_key"] for row in result["generated_scan_codes"]], ["create_purchase_invoice"])
 
 	def test_custom_handler_resolves_binding_by_key_and_uses_dispatch_style_kwargs(self):
 		handler = MagicMock(return_value=self._handler_result("PR-BIND"))

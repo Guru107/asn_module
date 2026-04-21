@@ -4,7 +4,11 @@ from typing import Any
 
 import frappe
 
+from asn_module.barcode_flow.cache import get_condition_by_key, get_enabled_transitions
+from asn_module.barcode_flow.conditions import evaluate_conditions
 from asn_module.barcode_flow.mapping import build_target_doc
+
+_PREGENERATE_MODES = {"immediate", "hybrid"}
 
 
 def execute_transition_binding(transition: Any, source_doc: Any, flow_definition: Any = None) -> dict:
@@ -18,11 +22,16 @@ def execute_transition_binding(transition: Any, source_doc: Any, flow_definition
 	target_doctype = _resolve_target_doctype(transition)
 
 	if binding_mode == "custom_handler":
-		return _run_custom_handler(
+		contract = _run_custom_handler(
 			transition=transition,
 			action_binding=action_binding,
 			source_doc=source_doc,
 			target_doc=None,
+		)
+		return _attach_generated_scan_codes(
+			contract=contract,
+			transition=transition,
+			flow_definition=flow_definition,
 		)
 
 	if binding_mode == "mapping":
@@ -33,7 +42,12 @@ def execute_transition_binding(transition: Any, source_doc: Any, flow_definition
 			flow_definition=flow_definition,
 		)
 		target_doc.insert(ignore_permissions=True)
-		return _mapped_doc_contract(target_doc)
+		return _attach_generated_scan_codes(
+			contract=_mapped_doc_contract(target_doc),
+			transition=transition,
+			flow_definition=flow_definition,
+			target_doc=target_doc,
+		)
 
 	if binding_mode == "both":
 		override_wins = _as_bool(_get_value(action_binding, "handler_override_wins", 0))
@@ -46,10 +60,16 @@ def execute_transition_binding(transition: Any, source_doc: Any, flow_definition
 					target_doctype=target_doctype,
 					flow_definition=flow_definition,
 				)
-			return _run_custom_handler(
+			contract = _run_custom_handler(
 				transition=transition,
 				action_binding=action_binding,
 				source_doc=source_doc,
+				target_doc=target_doc,
+			)
+			return _attach_generated_scan_codes(
+				contract=contract,
+				transition=transition,
+				flow_definition=flow_definition,
 				target_doc=target_doc,
 			)
 
@@ -60,9 +80,140 @@ def execute_transition_binding(transition: Any, source_doc: Any, flow_definition
 			flow_definition=flow_definition,
 		)
 		target_doc.insert(ignore_permissions=True)
-		return _mapped_doc_contract(target_doc)
+		return _attach_generated_scan_codes(
+			contract=_mapped_doc_contract(target_doc),
+			transition=transition,
+			flow_definition=flow_definition,
+			target_doc=target_doc,
+		)
 
 	raise frappe.ValidationError(f"Unsupported binding mode: {binding_mode}")
+
+
+def _attach_generated_scan_codes(
+	*,
+	contract: dict,
+	transition: Any,
+	flow_definition: Any = None,
+	target_doc: Any = None,
+) -> dict:
+	"""Attach pre-generated child scan-code metadata to the runtime contract."""
+	result = dict(contract)
+	result["generated_scan_codes"] = _generate_child_scan_codes(
+		transition=transition,
+		flow_definition=flow_definition,
+		target_doctype=_get_value(result, "doctype"),
+		target_name=_get_value(result, "name"),
+		target_doc=target_doc,
+	)
+	return result
+
+
+def _generate_child_scan_codes(
+	*,
+	transition: Any,
+	flow_definition: Any = None,
+	target_doctype: str = "",
+	target_name: str = "",
+	target_doc: Any = None,
+) -> list[dict]:
+	if not flow_definition:
+		return []
+
+	source_node_key = (_get_value(transition, "target_node_key") or "").strip()
+	target_doctype = (target_doctype or "").strip()
+	target_name = (target_name or "").strip()
+	if not source_node_key or not target_doctype or not target_name:
+		return []
+
+	generated: list[dict] = []
+	for child_transition in get_enabled_transitions(flow_definition):
+		if (_get_value(child_transition, "source_node_key") or "").strip() != source_node_key:
+			continue
+
+		generation_mode = (_get_value(child_transition, "generation_mode") or "runtime").strip().lower()
+		if generation_mode not in _PREGENERATE_MODES:
+			continue
+
+		action_key = (_get_value(child_transition, "action_key") or "").strip()
+		if not action_key:
+			continue
+
+		if not _is_child_transition_condition_met(
+			flow_definition=flow_definition,
+			child_transition=child_transition,
+			target_doctype=target_doctype,
+			target_name=target_name,
+			target_doc=target_doc,
+		):
+			continue
+
+		generated.append(
+			build_scan_code_metadata(
+				action_key=action_key,
+				source_doctype=target_doctype,
+				source_name=target_name,
+				generation_mode=generation_mode,
+			)
+		)
+
+	return generated
+
+
+def _is_child_transition_condition_met(
+	*,
+	flow_definition: Any,
+	child_transition: Any,
+	target_doctype: str,
+	target_name: str,
+	target_doc: Any = None,
+) -> bool:
+	condition_key = (_get_value(child_transition, "condition_key") or "").strip()
+	if not condition_key:
+		return True
+
+	condition = get_condition_by_key(flow_definition, condition_key)
+	if not condition:
+		transition_key = (_get_value(child_transition, "transition_key") or "<unknown-transition>").strip()
+		raise frappe.ValidationError(
+			f"Transition {transition_key} references unknown condition key: {condition_key}"
+		)
+
+	resolved_target_doc = _resolve_target_doc_for_conditions(
+		target_doc=target_doc,
+		target_doctype=target_doctype,
+		target_name=target_name,
+	)
+	return evaluate_conditions(resolved_target_doc, [condition])
+
+
+def _resolve_target_doc_for_conditions(*, target_doc: Any, target_doctype: str, target_name: str) -> Any:
+	if _matches_doc_identity(target_doc, target_doctype=target_doctype, target_name=target_name):
+		return target_doc
+	return frappe.get_doc(target_doctype, target_name)
+
+
+def _matches_doc_identity(target_doc: Any, *, target_doctype: str, target_name: str) -> bool:
+	if not target_doc:
+		return False
+	return (
+		(_get_value(target_doc, "doctype") or "").strip() == target_doctype
+		and (_get_value(target_doc, "name") or "").strip() == target_name
+	)
+
+
+def build_scan_code_metadata(
+	*, action_key: str, source_doctype: str, source_name: str, generation_mode: str
+) -> dict:
+	"""Thin wrapper for scan-code metadata helper to keep runtime imports lightweight."""
+	from asn_module.qr_engine.generate import build_scan_code_metadata as _build_scan_code_metadata
+
+	return _build_scan_code_metadata(
+		action_key=action_key,
+		source_doctype=source_doctype,
+		source_name=source_name,
+		generation_mode=generation_mode,
+	)
 
 
 def _build_mapped_doc(
