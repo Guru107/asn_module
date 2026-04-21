@@ -132,14 +132,54 @@ def _log_scan(
 
 
 def _build_flow_resolution_context(source_doc: frappe.model.document.Document) -> dict:
+	source_doctype = _normalize_value(_get_value(source_doc, "doctype"))
+	company = _normalize_value(_get_value(source_doc, "company"))
+	warehouse = _normalize_value(
+		_get_value(source_doc, "warehouse") or _get_value(source_doc, "set_warehouse")
+	)
+	if source_doctype == "ASN" and (not company or not warehouse):
+		derived_company, derived_warehouse = _derive_asn_scope_fields(source_doc)
+		company = company or derived_company
+		warehouse = warehouse or derived_warehouse
+
 	return {
-		"source_doctype": _normalize_value(_get_value(source_doc, "doctype")),
-		"company": _normalize_value(_get_value(source_doc, "company")),
-		"warehouse": _normalize_value(
-			_get_value(source_doc, "warehouse") or _get_value(source_doc, "set_warehouse")
-		),
+		"source_doctype": source_doctype,
+		"company": company,
+		"warehouse": warehouse,
 		"supplier_type": _normalize_value(_resolve_supplier_type(source_doc)),
 	}
+
+
+def _derive_asn_scope_fields(source_doc: frappe.model.document.Document) -> tuple[str | None, str | None]:
+	"""Best-effort scope derivation for ASN from linked purchase order rows."""
+	items = _get_value(source_doc, "items") or []
+	if not items:
+		return None, None
+
+	first_item = items[0]
+	purchase_order = _normalize_value(_get_value(first_item, "purchase_order"))
+	purchase_order_item = _normalize_value(_get_value(first_item, "purchase_order_item"))
+
+	company = None
+	if purchase_order:
+		company = _normalize_value(frappe.db.get_value("Purchase Order", purchase_order, "company"))
+
+	warehouse = None
+	if purchase_order_item:
+		warehouse = _normalize_value(
+			frappe.db.get_value("Purchase Order Item", purchase_order_item, "warehouse")
+		)
+	if not warehouse and purchase_order:
+		warehouse = _normalize_value(
+			frappe.db.get_value(
+				"Purchase Order Item",
+				{"parent": purchase_order},
+				"warehouse",
+				order_by="idx asc",
+			)
+		)
+
+	return company, warehouse
 
 
 def _resolve_supplier_type(source_doc: frappe.model.document.Document) -> str | None:

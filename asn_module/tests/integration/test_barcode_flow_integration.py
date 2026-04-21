@@ -4,13 +4,13 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-import asn_module.qr_engine.dispatch as dispatch_module
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
 	real_asn_attachment_context,
 )
 from asn_module.barcode_flow.runtime import execute_transition_binding
+from asn_module.qr_engine import dispatch as dispatch_module
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
@@ -167,9 +167,9 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 		reg.save(ignore_permissions=True)
 		super().tearDownClass()
 
-	def _make_submitted_asn(self) -> frappe.model.document.Document:
+	def _make_submitted_asn(self, *, warehouse: str) -> frappe.model.document.Document:
 		with integration_user_context():
-			purchase_order = create_purchase_order(qty=2)
+			purchase_order = create_purchase_order(qty=2, warehouse=warehouse)
 			asn = make_test_asn(
 				purchase_order=purchase_order,
 				supplier_invoice_no=f"SCOPED-{frappe.generate_hash(length=8)}",
@@ -181,23 +181,10 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 			asn.reload()
 			return asn
 
-	def _dispatch_asn_with_context(self, *, asn_name: str, context: dict, device_info: str) -> dict:
+	def _dispatch_asn(self, *, asn_name: str, device_info: str) -> dict:
 		with integration_user_context():
 			scan_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn_name)
-
-			# Keep real source-doc context resolution and override only scoped-route selectors.
-			original_builder = dispatch_module._build_flow_resolution_context
-
-			def _patched_context(source_doc):
-				resolved = original_builder(source_doc)
-				resolved.update(context)
-				return resolved
-
-			with patch(
-				"asn_module.qr_engine.dispatch._build_flow_resolution_context",
-				side_effect=_patched_context,
-			):
-				return dispatch(code=scan_code, device_info=device_info)
+			return dispatch(code=scan_code, device_info=device_info)
 
 	def _latest_scan_log(self, *, asn_name: str, device_info: str) -> dict:
 		return frappe.get_all(
@@ -221,13 +208,15 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 		)[0]
 
 	def test_scope_routes_asn_scan_to_gate_like_step_first(self):
-		asn = self._make_submitted_asn()
 		route = self._scoped_routes["gate_like"]
+		asn = self._make_submitted_asn(warehouse=route["context"]["warehouse"])
 		device_info = f"it-gate-{frappe.generate_hash(length=6)}"
+		derived_context = dispatch_module._build_flow_resolution_context(asn)
+		self.assertEqual(derived_context["company"], route["context"]["company"])
+		self.assertEqual(derived_context["warehouse"], route["context"]["warehouse"])
 
-		result = self._dispatch_asn_with_context(
+		result = self._dispatch_asn(
 			asn_name=asn.name,
-			context=route["context"],
 			device_info=device_info,
 		)
 		self.assertTrue(result.get("success"))
@@ -240,16 +229,17 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 		self.assertEqual(log["result_doctype"], "ToDo")
 
 	def test_scope_routes_asn_scan_directly_to_purchase_receipt_when_gate_scope_misses(self):
-		asn = self._make_submitted_asn()
 		route = self._scoped_routes["direct_pr"]
 		gate_route = self._scoped_routes["gate_like"]
+		asn = self._make_submitted_asn(warehouse=route["context"]["warehouse"])
 		device_info = f"it-direct-{frappe.generate_hash(length=6)}"
-		self.assertNotEqual(route["context"]["warehouse"], gate_route["context"]["warehouse"])
-		self.assertEqual(route["context"]["company"], gate_route["context"]["company"])
+		derived_context = dispatch_module._build_flow_resolution_context(asn)
+		self.assertEqual(derived_context["company"], route["context"]["company"])
+		self.assertEqual(derived_context["warehouse"], route["context"]["warehouse"])
+		self.assertNotEqual(derived_context["warehouse"], gate_route["context"]["warehouse"])
 
-		result = self._dispatch_asn_with_context(
+		result = self._dispatch_asn(
 			asn_name=asn.name,
-			context=route["context"],
 			device_info=device_info,
 		)
 		self.assertTrue(result.get("success"))

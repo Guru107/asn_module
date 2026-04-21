@@ -24,6 +24,8 @@ DEFAULT_INTEGRATION_ROLES = (
 )
 
 INTEGRATION_USER_EMAIL = "asn.integration.ops@asn-module.test"
+SCOPED_GATE_WAREHOUSE_NAME = "_Test ASN Scoped Gate Warehouse"
+SCOPED_DIRECT_WAREHOUSE_NAME = "_Test ASN Scoped Direct Warehouse"
 
 
 def ensure_integration_user(
@@ -109,18 +111,9 @@ def ensure_scoped_flow_route_fixtures(
 	gate_scope_company = frappe.db.get_value("Company", {}, "name", order_by="creation asc")
 	if not gate_scope_company:
 		raise frappe.ValidationError("No Company records exist for scoped flow fixture setup")
-	scope_warehouses = frappe.get_all(
-		"Warehouse",
-		filters={"company": gate_scope_company},
-		pluck="name",
-		order_by="name asc",
-		limit=2,
-	)
-	if len(scope_warehouses) < 2:
-		raise frappe.ValidationError(
-			f"Need at least two Warehouse rows for company {gate_scope_company} to build disjoint scopes"
-		)
-	gate_scope_warehouse, direct_scope_warehouse = scope_warehouses
+	scoped_warehouses = ensure_scoped_test_warehouses(company=gate_scope_company)
+	gate_scope_warehouse = scoped_warehouses["gate"]
+	direct_scope_warehouse = scoped_warehouses["direct"]
 
 	gate_flow_name = f"{flow_name_prefix}::gate::{source_doctype}::{action_key}"
 	direct_flow_name = f"{flow_name_prefix}::direct::{source_doctype}::{action_key}"
@@ -175,6 +168,14 @@ def ensure_scoped_flow_route_fixtures(
 				"supplier_type": None,
 			},
 		},
+	}
+
+
+def ensure_scoped_test_warehouses(*, company: str) -> dict[str, str]:
+	"""Create deterministic warehouses for scoped integration routing tests."""
+	return {
+		"gate": _ensure_warehouse_for_company(SCOPED_GATE_WAREHOUSE_NAME, company),
+		"direct": _ensure_warehouse_for_company(SCOPED_DIRECT_WAREHOUSE_NAME, company),
 	}
 
 
@@ -295,6 +296,26 @@ def _binding_key_for_action(action_key: str) -> str:
 
 def _transition_key_for_action(action_key: str) -> str:
 	return f"transition-{action_key}"
+
+
+def _ensure_warehouse_for_company(warehouse_name: str, company: str) -> str:
+	existing = frappe.db.get_value(
+		"Warehouse",
+		{"warehouse_name": warehouse_name, "company": company},
+		"name",
+	)
+	if existing:
+		return existing
+
+	warehouse = frappe.get_doc(
+		{
+			"doctype": "Warehouse",
+			"warehouse_name": warehouse_name,
+			"company": company,
+		}
+	)
+	warehouse.insert(ignore_permissions=True)
+	return warehouse.name
 
 
 def _upsert_scoped_single_action_flow_definition(
