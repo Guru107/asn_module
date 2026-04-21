@@ -176,6 +176,7 @@ Important:
 Mapping behavior note:
 - Runtime resolves `field_map_key` to one `field_maps` row per transition.
 - If multiple fields are needed, use `binding_mode=both`/`custom_handler` to populate additional fields in handler logic.
+- For `binding_mode=both`, handler result is returned only when the linked action binding has `handler_override_wins=1`; otherwise the mapped document is inserted and returned.
 
 ## Example B: ASN -> Purchase Receipt (Direct, no gate)
 
