@@ -27,8 +27,13 @@ def execute_transition_binding(transition: Any, source_doc: Any) -> dict:
 		return _mapped_doc_contract(target_doc)
 
 	if binding_mode == "both":
-		target_doc = _build_mapped_doc(transition=transition, source_doc=source_doc, target_doctype=target_doctype)
-		if _as_bool(_get_value(action_binding, "handler_override_wins", 0)):
+		override_wins = _as_bool(_get_value(action_binding, "handler_override_wins", 0))
+		if override_wins:
+			target_doc = _try_build_mapped_doc(
+				transition=transition,
+				source_doc=source_doc,
+				target_doctype=target_doctype,
+			)
 			return _run_custom_handler(
 				transition=transition,
 				action_binding=action_binding,
@@ -36,11 +41,11 @@ def execute_transition_binding(transition: Any, source_doc: Any) -> dict:
 				target_doc=target_doc,
 			)
 
+		target_doc = _build_mapped_doc(transition=transition, source_doc=source_doc, target_doctype=target_doctype)
 		target_doc.insert(ignore_permissions=True)
 		return _mapped_doc_contract(target_doc)
 
 	raise frappe.ValidationError(f"Unsupported binding mode: {binding_mode}")
-
 
 
 def _build_mapped_doc(transition: Any, source_doc: Any, target_doctype: str) -> Any:
@@ -53,6 +58,16 @@ def _build_mapped_doc(transition: Any, source_doc: Any, target_doctype: str) -> 
 		target_doctype=target_doctype,
 	)
 
+
+def _try_build_mapped_doc(transition: Any, source_doc: Any, target_doctype: str) -> Any | None:
+	try:
+		return _build_mapped_doc(
+			transition=transition,
+			source_doc=source_doc,
+			target_doctype=target_doctype,
+		)
+	except frappe.ValidationError:
+		return None
 
 
 def _run_custom_handler(
@@ -80,7 +95,6 @@ def _run_custom_handler(
 	return _validate_handler_result(handler_result)
 
 
-
 def _validate_handler_result(handler_result: object) -> dict:
 	if not isinstance(handler_result, dict):
 		raise frappe.ValidationError("Invalid handler result: expected a dict")
@@ -91,7 +105,6 @@ def _validate_handler_result(handler_result: object) -> dict:
 		raise frappe.ValidationError(f"Invalid handler result: missing {', '.join(missing_keys)}")
 
 	return handler_result
-
 
 
 def _mapped_doc_contract(target_doc: Any) -> dict:
@@ -105,14 +118,12 @@ def _mapped_doc_contract(target_doc: Any) -> dict:
 	return {"doctype": doctype, "name": name, "url": url}
 
 
-
 def _extract_doc_url(doc: Any) -> str:
 	get_url = getattr(doc, "get_url", None)
 	if callable(get_url):
 		return get_url() or ""
 
 	return _get_value(doc, "url") or ""
-
 
 
 def _resolve_action_binding(transition: Any) -> Any:
@@ -123,13 +134,11 @@ def _resolve_action_binding(transition: Any) -> Any:
 	)
 
 
-
 def _resolve_target_doctype(transition: Any, action_binding: Any) -> str:
 	return (
 		(_get_value(transition, "target_doctype") or "").strip()
 		or (_get_value(action_binding, "target_doctype") or "").strip()
 	)
-
 
 
 def _as_bool(value: Any) -> bool:
@@ -144,7 +153,6 @@ def _as_bool(value: Any) -> bool:
 		return bool(int(value))
 	except (TypeError, ValueError):
 		return bool(value)
-
 
 
 def _get_value(row: Any, fieldname: str, default: Any = "") -> Any:

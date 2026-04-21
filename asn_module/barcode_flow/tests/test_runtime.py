@@ -102,6 +102,34 @@ class TestBarcodeFlowRuntime(TestCase):
 		self.assertIs(handler.call_args.kwargs["target_doc"], target_doc)
 		self.assertEqual(result, handler_result)
 
+	def test_both_override_with_missing_target_doctype_still_calls_handler(self):
+		handler_result = {
+			"doctype": "Purchase Receipt",
+			"name": "PR-OVERRIDE-NO-MAP",
+			"url": "/app/purchase-receipt/PR-OVERRIDE-NO-MAP",
+		}
+		handler = MagicMock(return_value=handler_result)
+		transition = SimpleNamespace(
+			binding_mode="both",
+			target_doctype="",
+			field_maps=[],
+			action_binding=SimpleNamespace(
+				custom_handler="fake.module.handler",
+				handler_override_wins=1,
+			),
+		)
+
+		with (
+			patch("asn_module.barcode_flow.runtime.build_target_doc") as build_target_doc,
+			patch("asn_module.barcode_flow.runtime.frappe.get_attr", return_value=handler),
+		):
+			result = execute_transition_binding(transition=transition, source_doc={"name": "ASN-0001"})
+
+		build_target_doc.assert_not_called()
+		handler.assert_called_once()
+		self.assertIsNone(handler.call_args.kwargs["target_doc"])
+		self.assertEqual(result, handler_result)
+
 	def test_both_mode_without_override_inserts_mapped_doc(self):
 		target_doc = _FakeTargetDoc()
 		transition = SimpleNamespace(
