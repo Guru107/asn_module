@@ -149,7 +149,7 @@ def _apply_operator(operator: Any, left_value: Any, right_value: Any) -> bool:
 		return left_value is not _MISSING
 	if normalized_operator == "is_set":
 		return _is_set(left_value)
-	if left_value in {_MISSING, _NON_NUMERIC}:
+	if left_value is _MISSING or left_value is _NON_NUMERIC:
 		return False
 
 	if normalized_operator == "=":
