@@ -127,6 +127,7 @@ def _generate_child_scan_codes(
 		return []
 
 	generated: list[dict] = []
+	seen_scan_entries: set[tuple[str, str]] = set()
 	for child_transition in get_enabled_transitions(flow_definition):
 		if (_get_value(child_transition, "source_node_key") or "").strip() != source_node_key:
 			continue
@@ -148,14 +149,20 @@ def _generate_child_scan_codes(
 		):
 			continue
 
-		generated.append(
-			build_scan_code_metadata(
-				action_key=action_key,
-				source_doctype=target_doctype,
-				source_name=target_name,
-				generation_mode=generation_mode,
-			)
+		metadata = build_scan_code_metadata(
+			action_key=action_key,
+			source_doctype=target_doctype,
+			source_name=target_name,
+			generation_mode=generation_mode,
 		)
+		dedupe_key = (
+			(_get_value(metadata, "action_key") or "").strip(),
+			(_get_value(metadata, "scan_code") or "").strip(),
+		)
+		if dedupe_key in seen_scan_entries:
+			continue
+		seen_scan_entries.add(dedupe_key)
+		generated.append(metadata)
 
 	return generated
 

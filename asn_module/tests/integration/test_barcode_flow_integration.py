@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.barcode_flow.runtime import execute_transition_binding
@@ -36,12 +37,13 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 			]
 		)
 		source_doc = {"doctype": "DocType", "name": "QR Action Registry"}
+		target_name = f"BFI-{frappe.generate_hash(length=8)}"
 
 		def handler(**_kwargs):
 			return {
 				"doctype": "DocType",
-				"name": "QR Action Registry",
-				"url": "/app/doctype/qr-action-registry",
+				"name": target_name,
+				"url": f"/app/doctype/{target_name}",
 			}
 
 		with patch("asn_module.barcode_flow.runtime.frappe.get_attr", return_value=handler):
@@ -52,8 +54,8 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 			)
 
 		self.assertEqual(result["doctype"], "DocType")
-		self.assertEqual(result["name"], "QR Action Registry")
-		self.assertEqual(result["url"], "/app/doctype/qr-action-registry")
+		self.assertEqual(result["name"], target_name)
+		self.assertEqual(result["url"], f"/app/doctype/{target_name}")
 
 		generated = result["generated_scan_codes"]
 		self.assertEqual(len(generated), 2)
@@ -66,3 +68,28 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 		for row in generated:
 			self.assertTrue(row["scan_code"])
 			self.assertTrue(row["human_readable"])
+
+		for action_key in ("create_purchase_invoice", "confirm_putaway"):
+			self.assertTrue(
+				frappe.db.exists(
+					"Scan Code",
+					{
+						"action_key": action_key,
+						"source_doctype": "DocType",
+						"source_name": target_name,
+						"status": "Active",
+					},
+				)
+			)
+
+		self.assertFalse(
+			frappe.db.exists(
+				"Scan Code",
+				{
+					"action_key": "create_stock_transfer",
+					"source_doctype": "DocType",
+					"source_name": target_name,
+					"status": "Active",
+				},
+			)
+		)

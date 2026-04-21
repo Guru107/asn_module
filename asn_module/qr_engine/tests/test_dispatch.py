@@ -476,3 +476,54 @@ class TestDispatch(FrappeTestCase):
 			)
 
 		self.assertIn("Ambiguous barcode transition resolution", str(ctx.exception))
+
+	def test_resolve_matching_transition_skips_scan_time_condition_for_immediate_mode(self):
+		flow_definition = SimpleNamespace(
+			name="FLOW-IMMEDIATE-CONDITION",
+			transitions=[
+				SimpleNamespace(
+					transition_key="scan-immediate",
+					action_key="create_purchase_receipt",
+					priority=100,
+					generation_mode="immediate",
+					condition_key="only-once",
+				),
+			],
+			conditions=[SimpleNamespace(condition_key="only-once")],
+		)
+
+		with patch("asn_module.qr_engine.dispatch.evaluate_conditions", return_value=False) as evaluate:
+			winner = _resolve_matching_transition(
+				flow_definition=flow_definition,
+				action_key="create_purchase_receipt",
+				source_doc=SimpleNamespace(),
+			)
+
+		evaluate.assert_not_called()
+		self.assertEqual(winner.transition_key, "scan-immediate")
+
+	def test_resolve_matching_transition_revalidates_condition_for_hybrid_mode(self):
+		flow_definition = SimpleNamespace(
+			name="FLOW-HYBRID-CONDITION",
+			transitions=[
+				SimpleNamespace(
+					transition_key="scan-hybrid",
+					action_key="create_purchase_receipt",
+					priority=100,
+					generation_mode="hybrid",
+					condition_key="must-pass",
+				),
+			],
+			conditions=[SimpleNamespace(condition_key="must-pass")],
+		)
+
+		with patch("asn_module.qr_engine.dispatch.evaluate_conditions", return_value=False) as evaluate:
+			with self.assertRaises(TransitionResolutionError) as ctx:
+				_resolve_matching_transition(
+					flow_definition=flow_definition,
+					action_key="create_purchase_receipt",
+					source_doc=SimpleNamespace(),
+				)
+
+		evaluate.assert_called_once()
+		self.assertIn("No enabled barcode transition matched action", str(ctx.exception))

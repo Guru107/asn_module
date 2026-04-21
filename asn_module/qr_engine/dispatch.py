@@ -166,7 +166,7 @@ def _resolve_matching_transition(
 			continue
 
 		condition_key = _normalize_value(_get_value(transition, "condition_key"))
-		if condition_key:
+		if condition_key and _should_revalidate_condition_at_scan_time(transition):
 			condition = get_condition_by_key(flow_definition, condition_key)
 			if not condition:
 				transition_key = _normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
@@ -210,6 +210,12 @@ def _resolve_matching_transition(
 
 def _transition_priority(transition: frappe.model.document.Document) -> int:
 	return cint(_get_value(transition, "priority") or 0)
+
+
+def _should_revalidate_condition_at_scan_time(transition: frappe.model.document.Document) -> bool:
+	"""Immediate transitions trust pre-generation eligibility and skip scan-time condition recheck."""
+	generation_mode = (_normalize_value(_get_value(transition, "generation_mode")) or "").lower()
+	return generation_mode != "immediate"
 
 
 def _generation_mode_rank(transition: frappe.model.document.Document) -> int:

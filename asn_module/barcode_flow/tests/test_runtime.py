@@ -301,6 +301,62 @@ class TestBarcodeFlowRuntime(TestCase):
 		build_metadata.assert_called_once()
 		self.assertEqual([row["action_key"] for row in result["generated_scan_codes"]], ["create_purchase_invoice"])
 
+	def test_duplicate_child_transitions_do_not_duplicate_generated_scan_codes(self):
+		transition = SimpleNamespace(
+			binding_mode="mapping",
+			target_doctype="Purchase Receipt",
+			target_node_key="received",
+			field_maps=[],
+		)
+		flow_definition = SimpleNamespace(
+			transitions=[
+				SimpleNamespace(
+					transition_key="to-invoice-a",
+					source_node_key="received",
+					action_key="create_purchase_invoice",
+					generation_mode="immediate",
+				),
+				SimpleNamespace(
+					transition_key="to-invoice-b",
+					source_node_key="received",
+					action_key="create_purchase_invoice",
+					generation_mode="hybrid",
+				),
+			]
+		)
+		target_doc = _FakeTargetDoc()
+
+		with (
+			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime.build_scan_code_metadata",
+				side_effect=[
+					{
+						"action_key": "create_purchase_invoice",
+						"scan_code": "DUPLICATE123",
+						"human_readable": "DUPLICATE123",
+						"generation_mode": "immediate",
+					},
+					{
+						"action_key": "create_purchase_invoice",
+						"scan_code": "DUPLICATE123",
+						"human_readable": "DUPLICATE123",
+						"generation_mode": "hybrid",
+					},
+				],
+			) as build_metadata,
+		):
+			result = execute_transition_binding(
+				transition=transition,
+				source_doc={"name": "ASN-0001"},
+				flow_definition=flow_definition,
+			)
+
+		self.assertEqual(build_metadata.call_count, 2)
+		self.assertEqual(len(result["generated_scan_codes"]), 1)
+		self.assertEqual(result["generated_scan_codes"][0]["action_key"], "create_purchase_invoice")
+		self.assertEqual(result["generated_scan_codes"][0]["scan_code"], "DUPLICATE123")
+
 	def test_custom_handler_resolves_binding_by_key_and_uses_dispatch_style_kwargs(self):
 		handler = MagicMock(return_value=self._handler_result("PR-BIND"))
 		transition = SimpleNamespace(binding_mode="custom_handler", binding_key="custom-receive")
