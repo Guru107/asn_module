@@ -56,7 +56,7 @@
 			"fieldtype": "Select",
 			"in_list_view": 1,
 			"label": "Binding Mode",
-			"options": "direct\nmapping\ncustom_handler\nboth",
+			"options": "mapping\ncustom_handler\nboth",
 			"reqd": 1
 		},
 		{

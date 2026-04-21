@@ -55,7 +55,7 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 			"source_node_key": source_node_key,
 			"target_node_key": target_node_key,
 			"action_key": "create_purchase_receipt",
-			"binding_mode": "direct",
+			"binding_mode": "mapping",
 		}
 		payload.update(overrides)
 		return payload
@@ -410,6 +410,25 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			flow.insert(ignore_permissions=True)
 
+	def test_legacy_direct_binding_mode_is_normalized_to_mapping(self):
+		flow = self._new_flow(
+			nodes=[
+				self._valid_node("scan", "Scan"),
+				self._valid_node("received", "Received"),
+			],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-to-received",
+					source_node_key="scan",
+					target_node_key="received",
+					binding_mode="direct",
+				)
+			],
+		)
+
+		flow.insert(ignore_permissions=True)
+		self.assertEqual(flow.transitions[0].binding_mode, "mapping")
+
 	def test_items_aggregate_condition_requires_aggregate_function(self):
 		flow = self._new_flow(
 			conditions=[
@@ -497,3 +516,20 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			flow.insert(ignore_permissions=True)
+
+	def test_is_set_operator_does_not_require_value(self):
+		flow = self._new_flow(
+			conditions=[
+				{
+					"doctype": "Barcode Flow Condition",
+					"condition_key": "supplier-set",
+					"scope": "items_aggregate",
+					"field_path": "items.supplier",
+					"operator": "is_set",
+					"aggregate_fn": "exists",
+				}
+			]
+		)
+
+		flow.insert(ignore_permissions=True)
+		self.assertTrue(flow.name)

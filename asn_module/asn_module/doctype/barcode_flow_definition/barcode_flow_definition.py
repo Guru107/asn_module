@@ -163,6 +163,7 @@ class BarcodeFlowDefinition(Document):
 			self._get_row_key(row=row, key_fieldname="binding_key"): (row.trigger_event or "").strip()
 			for row in self.action_bindings or []
 		}
+		allowed_binding_modes = {"mapping", "custom_handler", "both"}
 
 		for row in self.field_maps or []:
 			mapping_type = (row.mapping_type or "").strip()
@@ -263,6 +264,19 @@ class BarcodeFlowDefinition(Document):
 			binding_mode = (row.binding_mode or "").strip()
 			transition_key = self._get_row_key(row=row, key_fieldname="transition_key")
 			binding_key = (getattr(row, "binding_key", None) or "").strip()
+
+			# Backward-compatible normalization for older drafts using legacy "direct".
+			if binding_mode == "direct":
+				row.binding_mode = "mapping"
+				binding_mode = "mapping"
+
+			if binding_mode not in allowed_binding_modes:
+				frappe.throw(
+					_("Binding Mode for {0} must be one of: mapping, custom_handler, both.").format(
+						transition_key
+					)
+				)
+
 			if binding_mode in {"custom_handler", "both"} and not binding_key:
 				frappe.throw(
 					_("Binding Key is required for {0} when binding mode is {1}.").format(
@@ -321,9 +335,9 @@ class BarcodeFlowDefinition(Document):
 					)
 				)
 
-			if operator != "exists" and not value:
+			if operator not in {"exists", "is_set"} and not value:
 				frappe.throw(
-					_("Value is required for {0} when operator is not exists.").format(
+					_("Value is required for {0} unless operator is exists or is_set.").format(
 						condition_key
 					)
 				)
