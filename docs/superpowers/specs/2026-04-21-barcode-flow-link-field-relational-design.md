@@ -21,7 +21,8 @@ Consequences:
 2. Per-flow owned records (no global reusable library in v1).
 3. Keep human-readable business keys (`node_key`, `transition_key`, etc.) for readability/search.
 4. Deterministic semantic naming for standalone records.
-5. Delete behavior: hard-block delete when referenced by transitions.
+5. Delete behavior: hard-block delete when entity has active inbound references.
+6. Introduce a concrete linkable action catalog doctype: `QR Action Definition`.
 
 ## 4. Scope and Non-Goals
 ### In Scope
@@ -80,7 +81,20 @@ Fields:
 - `constant_value` (`Small Text`, optional)
 - `transform_key` (`Data`, optional)
 
-### 6.4 Barcode Flow Action Binding
+### 6.4 QR Action Definition (new)
+Concrete, linkable action catalog used by flow transition and binding records.
+
+Fields:
+- `name`: deterministic semantic autoname
+- `action_key` (`Data`, required, unique)
+- `handler_method` (`Data`, required)
+- `source_doctype` (`Link` -> `DocType`, required)
+- `allowed_roles` (`Small Text`, required)
+- `is_active` (`Check`)
+
+`Barcode Flow Transition.action` and `Barcode Flow Action Binding.action` link to this doctype.
+
+### 6.5 Barcode Flow Action Binding
 Fields:
 - `name`: deterministic semantic autoname
 - `flow` (`Link` -> `Barcode Flow Definition`, required)
@@ -89,13 +103,16 @@ Fields:
 - `trigger_event` (`Select`, required)
 - `target_node` (`Link` -> `Barcode Flow Node`, optional)
 - `target_transition` (`Link` -> `Barcode Flow Transition`, optional)
-- `action` (`Link` -> action registry entity, required)
+- `action` (`Link` -> `QR Action Definition`, required)
 - `custom_handler` (`Data`, optional)
 - `handler_override_wins` (`Check`)
 
-Note: if action registry currently exists only as child rows under a singleton, introduce/normalize a linkable action entity for stable `Link` usage.
+Event semantics:
+- `trigger_event=custom_handler`: transition-level handler binding. Must not set `target_node` or `target_transition`.
+- `trigger_event=On Enter Node` / `On Exit Node`: requires `target_node`.
+- `trigger_event=On Transition`: requires `target_transition`.
 
-### 6.5 Barcode Flow Transition
+### 6.6 Barcode Flow Transition
 Fields:
 - `name`: deterministic semantic autoname
 - `flow` (`Link` -> `Barcode Flow Definition`, required)
@@ -103,7 +120,7 @@ Fields:
 - `generation_mode` (`Select`, required)
 - `source_node` (`Link` -> `Barcode Flow Node`, required)
 - `target_node` (`Link` -> `Barcode Flow Node`, required)
-- `action` (`Link` -> action registry entity, required)
+- `action` (`Link` -> `QR Action Definition`, required)
 - `target_doctype` (`Link` -> `DocType`, optional/required by mode)
 - `binding_mode` (`Select`, required)
 - `condition` (`Link` -> `Barcode Flow Condition`, optional)
@@ -118,11 +135,17 @@ All links on transition/binding must point to records with the same `flow`. Any 
 
 ### 7.2 Mode-Driven Requirements
 - `binding_mode=mapping`: requires `field_map` and valid `target_doctype`.
-- `binding_mode=custom_handler`: requires `action_binding` with handler contract.
+- `binding_mode=custom_handler`: requires `action_binding` with `trigger_event=custom_handler` and handler contract.
 - `binding_mode=both`: enforce both sides with existing override semantics.
+- `custom_handler` bindings may be created before transitions and then linked by transition.
+- Node/transition event bindings are independent runtime hooks and are not the transition-level `action_binding` reference.
 
 ### 7.3 Delete Rules (Hard Block)
-Deletion of `Barcode Flow Node`, `Condition`, `Field Map`, or `Action Binding` is blocked if referenced by any `Barcode Flow Transition`.
+Deletion is blocked for the following dependency edges:
+- `Barcode Flow Node` if referenced by any transition (`source_node`/`target_node`) or action binding (`target_node`).
+- `Barcode Flow Condition`, `Field Map`, or `Action Binding` if referenced by any transition.
+- `Barcode Flow Transition` if referenced by any action binding (`target_transition`).
+- `QR Action Definition` if referenced by any transition or action binding.
 
 Error message must include impacted `transition_key` values.
 
@@ -148,7 +171,14 @@ Execution flow:
 - Transition form uses `Link` pickers filtered by `flow`.
 - Action/doctype fields use native link dialogs.
 - Business keys stay visible in list/search for human-friendly operations.
-- Setup flow: create flow -> create linked entities -> create transitions via link pickers.
+- Setup flow (authoring order):
+  1. Create flow.
+  2. Create nodes, conditions, field maps.
+  3. Create `QR Action Definition` records.
+  4. Create transitions.
+  5. Create action bindings:
+     - custom handler bindings can be linked from transitions.
+     - node/transition event bindings can target existing nodes/transitions.
 
 ## 10. Indexing and Performance
 Add indexes to keep dispatch-time queries deterministic and fast:
