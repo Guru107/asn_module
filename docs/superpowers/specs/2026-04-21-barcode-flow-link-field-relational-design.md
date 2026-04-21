@@ -94,6 +94,11 @@ Fields:
 
 `Barcode Flow Transition.action` and `Barcode Flow Action Binding.action` link to this doctype.
 
+Relationship to existing registry:
+- `QR Action Definition` becomes the source of truth for action metadata.
+- Existing `QR Action Registry` singleton remains as a compatibility projection while legacy callers are migrated.
+- `register_actions`/setup pipeline seeds and syncs registry from `QR Action Definition`, not the other way around.
+
 ### 6.5 Barcode Flow Action Binding
 Fields:
 - `name`: deterministic semantic autoname
@@ -137,7 +142,7 @@ All links on transition/binding must point to records with the same `flow`. Any 
 - `binding_mode=mapping`: requires `field_map` and valid `target_doctype`.
 - `binding_mode=custom_handler`: requires `action_binding` with `trigger_event=custom_handler` and handler contract.
 - `binding_mode=both`: enforce both sides with existing override semantics.
-- `custom_handler` bindings may be created before transitions and then linked by transition.
+- `custom_handler` bindings are created before custom-handler transitions and then linked by transition.
 - Node/transition event bindings are independent runtime hooks and are not the transition-level `action_binding` reference.
 
 ### 7.3 Delete Rules (Hard Block)
@@ -147,7 +152,7 @@ Deletion is blocked for the following dependency edges:
 - `Barcode Flow Transition` if referenced by any action binding (`target_transition`).
 - `QR Action Definition` if referenced by any transition or action binding.
 
-Error message must include impacted `transition_key` values.
+Error message must include impacted record identifiers (`transition_key` and/or `binding_key` as applicable).
 
 ### 7.4 Key Uniqueness
 Unique constraints per `flow` for:
@@ -175,10 +180,9 @@ Execution flow:
   1. Create flow.
   2. Create nodes, conditions, field maps.
   3. Create `QR Action Definition` records.
-  4. Create transitions.
-  5. Create action bindings:
-     - custom handler bindings can be linked from transitions.
-     - node/transition event bindings can target existing nodes/transitions.
+  4. Create action bindings with `trigger_event=custom_handler` (for transition-linked handler modes).
+  5. Create transitions and link required custom-handler bindings.
+  6. Create optional node/transition event bindings (`On Enter Node`, `On Exit Node`, `On Transition`) after target nodes/transitions exist.
 
 ## 10. Indexing and Performance
 Add indexes to keep dispatch-time queries deterministic and fast:
