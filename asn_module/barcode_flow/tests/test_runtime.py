@@ -168,11 +168,25 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="both",
 			target_doctype="",
-			field_maps=[],
-			action_binding=SimpleNamespace(
-				custom_handler="fake.module.handler",
-				handler_override_wins=1,
-			),
+			field_map_key="warehouse-map",
+			binding_key="custom-receive",
+		)
+		flow_definition = SimpleNamespace(
+			field_maps=[
+				SimpleNamespace(
+					map_key="warehouse-map",
+					mapping_type="constant",
+					target_field_path="set_warehouse",
+					constant_value="WH-001",
+				)
+			],
+			action_bindings=[
+				SimpleNamespace(
+					binding_key="custom-receive",
+					custom_handler="fake.module.handler",
+					handler_override_wins=1,
+				)
+			],
 		)
 
 		with (
@@ -182,6 +196,7 @@ class TestBarcodeFlowRuntime(TestCase):
 			result = execute_transition_binding(
 				transition=transition,
 				source_doc={"doctype": "ASN", "name": "ASN-0001"},
+				flow_definition=flow_definition,
 			)
 
 		build_target_doc.assert_not_called()
@@ -230,18 +245,36 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="both",
 			target_doctype="Purchase Receipt",
-			field_maps=[],
-			action_binding=SimpleNamespace(
-				custom_handler="fake.module.handler",
-				handler_override_wins=0,
-			),
+			field_map_key="warehouse-map",
+			binding_key="custom-receive",
+		)
+		flow_definition = SimpleNamespace(
+			field_maps=[
+				SimpleNamespace(
+					map_key="warehouse-map",
+					mapping_type="constant",
+					target_field_path="set_warehouse",
+					constant_value="WH-001",
+				)
+			],
+			action_bindings=[
+				SimpleNamespace(
+					binding_key="custom-receive",
+					custom_handler="fake.module.handler",
+					handler_override_wins=0,
+				)
+			],
 		)
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
 			patch("asn_module.barcode_flow.runtime.frappe.get_attr") as get_attr,
 		):
-			result = execute_transition_binding(transition=transition, source_doc={"name": "ASN-0001"})
+			result = execute_transition_binding(
+				transition=transition,
+				source_doc={"name": "ASN-0001"},
+				flow_definition=flow_definition,
+			)
 
 		get_attr.assert_not_called()
 		self.assertEqual(target_doc.insert_calls, [True])

@@ -15,7 +15,7 @@ def execute_transition_binding(transition: Any, source_doc: Any, flow_definition
 		flow_definition=flow_definition,
 		required=binding_mode in {"custom_handler", "both"},
 	)
-	target_doctype = _resolve_target_doctype(transition, action_binding)
+	target_doctype = _resolve_target_doctype(transition)
 
 	if binding_mode == "custom_handler":
 		return _run_custom_handler(
@@ -199,11 +199,8 @@ def _extract_doc_url(doc: Any) -> str:
 	return _get_value(doc, "url") or ""
 
 
-def _resolve_target_doctype(transition: Any, action_binding: Any) -> str:
-	return (
-		(_get_value(transition, "target_doctype") or "").strip()
-		or (_get_value(action_binding, "target_doctype") or "").strip()
-	)
+def _resolve_target_doctype(transition: Any) -> str:
+	return (_get_value(transition, "target_doctype") or "").strip()
 
 
 def _as_bool(value: Any) -> bool:

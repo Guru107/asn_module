@@ -55,6 +55,7 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 			"source_node_key": source_node_key,
 			"target_node_key": target_node_key,
 			"action_key": "create_purchase_receipt",
+			"target_doctype": "Purchase Receipt",
 			"binding_mode": "mapping",
 		}
 		payload.update(overrides)
@@ -409,6 +410,86 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			flow.insert(ignore_permissions=True)
+
+	def test_mapping_transition_requires_target_doctype(self):
+		flow = self._new_flow(
+			nodes=[
+				self._valid_node("scan", "Scan"),
+				self._valid_node("received", "Received"),
+			],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-to-received",
+					source_node_key="scan",
+					target_node_key="received",
+					binding_mode="mapping",
+					target_doctype="",
+				)
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_both_transition_requires_target_doctype(self):
+		flow = self._new_flow(
+			nodes=[
+				self._valid_node("scan", "Scan"),
+				self._valid_node("received", "Received"),
+			],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "some-binding",
+					"trigger_event": "custom_handler",
+					"action_key": "create_purchase_receipt",
+					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
+				}
+			],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-to-received",
+					source_node_key="scan",
+					target_node_key="received",
+					binding_mode="both",
+					binding_key="some-binding",
+					target_doctype="",
+				)
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_custom_handler_transition_allows_missing_target_doctype(self):
+		flow = self._new_flow(
+			nodes=[
+				self._valid_node("scan", "Scan"),
+				self._valid_node("received", "Received"),
+			],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "custom-binding",
+					"trigger_event": "custom_handler",
+					"action_key": "create_purchase_receipt",
+					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
+				}
+			],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-to-received",
+					source_node_key="scan",
+					target_node_key="received",
+					binding_mode="custom_handler",
+					binding_key="custom-binding",
+					target_doctype="",
+				)
+			],
+		)
+
+		flow.insert(ignore_permissions=True)
+		self.assertTrue(flow.name)
 
 	def test_legacy_direct_binding_mode_is_normalized_to_mapping(self):
 		flow = self._new_flow(

@@ -8,6 +8,7 @@
 		"source_node_key",
 		"target_node_key",
 		"action_key",
+		"target_doctype",
 		"binding_mode",
 		"condition_key",
 		"field_map_key",
@@ -50,6 +51,11 @@
 			"in_list_view": 1,
 			"label": "Action Key",
 			"reqd": 1
+		},
+		{
+			"fieldname": "target_doctype",
+			"fieldtype": "Data",
+			"label": "Target DocType"
 		},
 		{
 			"fieldname": "binding_mode",

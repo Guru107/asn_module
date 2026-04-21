@@ -264,6 +264,7 @@ class BarcodeFlowDefinition(Document):
 			binding_mode = (row.binding_mode or "").strip()
 			transition_key = self._get_row_key(row=row, key_fieldname="transition_key")
 			binding_key = (getattr(row, "binding_key", None) or "").strip()
+			target_doctype = (getattr(row, "target_doctype", None) or "").strip()
 
 			# Backward-compatible normalization for older drafts using legacy "direct".
 			if binding_mode == "direct":
@@ -274,6 +275,12 @@ class BarcodeFlowDefinition(Document):
 				frappe.throw(
 					_("Binding Mode for {0} must be one of: mapping, custom_handler, both.").format(
 						transition_key
+					)
+				)
+			if binding_mode in {"mapping", "both"} and not target_doctype:
+				frappe.throw(
+					_("Target DocType is required for {0} when binding mode is {1}.").format(
+						transition_key, binding_mode
 					)
 				)
 
