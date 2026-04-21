@@ -91,7 +91,7 @@ def _evaluate_exists_aggregate(items: list[Any], rule: Any) -> bool:
 	operator = _normalize_operator(_get_value(rule, "operator"))
 	field_path = _normalize_field_path(_get_value(rule, "field_path"), scope="items_aggregate")
 	if operator == "exists":
-		return any(_is_set(_resolve_field_path(item, field_path, default=_MISSING)) for item in items)
+		return any(_resolve_field_path(item, field_path, default=_MISSING) is not _MISSING for item in items)
 
 	if operator == "is_set":
 		return any(_is_set(_resolve_field_path(item, field_path, default=_MISSING)) for item in items)
@@ -118,15 +118,15 @@ def _collect_values(items: list[Any], field_path: str) -> list[Any]:
 
 
 def _compute_aggregate_value(aggregate_fn: str, values: list[Any]) -> Any:
+	if aggregate_fn == "count":
+		return len(values)
+
 	numeric_values: list[float] = []
 	for value in values:
 		numeric_value = _to_number(value)
 		if numeric_value is None:
 			return _NON_NUMERIC
 		numeric_values.append(numeric_value)
-
-	if aggregate_fn == "count":
-		return len(numeric_values)
 
 	if aggregate_fn == "sum":
 		return sum(numeric_values)

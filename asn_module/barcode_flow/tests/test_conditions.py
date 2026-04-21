@@ -167,6 +167,50 @@ class TestBarcodeFlowConditions(TestCase):
 
 		self.assertFalse(ok)
 
+	def test_count_aggregate_allows_string_values(self):
+		ok = evaluate_conditions(
+			self._doc(),
+			[
+				{
+					"scope": "items_aggregate",
+					"aggregate_fn": "count",
+					"field_path": "item_code",
+					"operator": ">=",
+					"value": 2,
+				}
+			],
+		)
+
+		self.assertTrue(ok)
+
+	def test_items_aggregate_exists_vs_is_set_for_empty_string(self):
+		doc = SimpleNamespace(items=[{"gate_pass_ref": ""}])
+		exists_ok = evaluate_conditions(
+			doc,
+			[
+				{
+					"scope": "items_aggregate",
+					"aggregate_fn": "exists",
+					"field_path": "gate_pass_ref",
+					"operator": "exists",
+				}
+			],
+		)
+		is_set_ok = evaluate_conditions(
+			doc,
+			[
+				{
+					"scope": "items_aggregate",
+					"aggregate_fn": "exists",
+					"field_path": "gate_pass_ref",
+					"operator": "is_set",
+				}
+			],
+		)
+
+		self.assertTrue(exists_ok)
+		self.assertFalse(is_set_ok)
+
 	def test_unsupported_operator_raises(self):
 		with self.assertRaises(ValueError):
 			evaluate_conditions(
