@@ -1,3 +1,4 @@
+import time
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -278,9 +279,19 @@ def create_purchase_order(**kwargs):
 	po.set_missing_values()
 
 	if not kwargs.get("do_not_save"):
-		po.insert(ignore_permissions=True)
-		if not kwargs.get("do_not_submit"):
-			po.submit()
+		last_error = None
+		for _attempt in range(3):
+			try:
+				po.insert(ignore_permissions=True)
+				if not kwargs.get("do_not_submit"):
+					po.submit()
+				break
+			except frappe.QueryDeadlockError as err:
+				last_error = err
+				frappe.db.rollback()
+				time.sleep(0.05)
+		else:
+			raise last_error
 
 	return po
 

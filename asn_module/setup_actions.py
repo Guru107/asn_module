@@ -1,3 +1,5 @@
+import time
+
 import frappe
 
 
@@ -52,20 +54,38 @@ def get_canonical_actions() -> list[dict]:
 def register_actions():
 	"""Register all QR actions in the QR Action Registry."""
 	actions = get_canonical_actions()
+	lock_name = "asn_module:qr_action_registry:register_actions"
+	lock_acquired = frappe.db.sql("SELECT GET_LOCK(%s, %s)", (lock_name, 30))[0][0]
+	if not lock_acquired:
+		raise frappe.ValidationError("Failed to acquire lock for QR action registry update")
 
-	registry = frappe.get_single("QR Action Registry")
-	# Reset to the module's managed defaults for deterministic fresh installs.
-	registry.actions = []
+	last_error = None
+	try:
+		for attempt in range(3):
+			registry = frappe.get_single("QR Action Registry")
+			# Reset to the module's managed defaults for deterministic fresh installs.
+			registry.actions = []
 
-	for row in actions:
-		registry.append(
-			"actions",
-			{
-				"action_key": row["action_key"],
-				"handler_method": row["handler_method"],
-				"source_doctype": row["source_doctype"],
-				"allowed_roles": ",".join(row["roles"]),
-			},
-		)
+			for row in actions:
+				registry.append(
+					"actions",
+					{
+						"action_key": row["action_key"],
+						"handler_method": row["handler_method"],
+						"source_doctype": row["source_doctype"],
+						"allowed_roles": ",".join(row["roles"]),
+					},
+				)
 
-	registry.save(ignore_permissions=True)
+			try:
+				registry.save(ignore_permissions=True)
+				return
+			except (frappe.TimestampMismatchError, frappe.QueryDeadlockError) as err:
+				last_error = err
+				frappe.db.rollback()
+				time.sleep(0.02 * (attempt + 1))
+				continue
+		if last_error:
+			raise last_error
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (lock_name,))
