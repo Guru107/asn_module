@@ -9,7 +9,6 @@
 		"flow_name",
 		"is_active",
 		"description",
-		"default_scope",
 		"scopes",
 		"nodes",
 		"transitions",
@@ -36,11 +35,6 @@
 			"fieldname": "description",
 			"fieldtype": "Small Text",
 			"label": "Description"
-		},
-		{
-			"fieldname": "default_scope",
-			"fieldtype": "Data",
-			"label": "Default Scope"
 		},
 		{
 			"fieldname": "scopes",

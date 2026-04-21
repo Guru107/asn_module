@@ -4,10 +4,13 @@
 	"engine": "InnoDB",
 	"field_order": [
 		"binding_key",
+		"enabled",
 		"trigger_event",
 		"target_node_key",
 		"target_transition_key",
-		"action_key"
+		"action_key",
+		"custom_handler",
+		"handler_override_wins"
 	],
 	"fields": [
 		{
@@ -16,6 +19,13 @@
 			"in_list_view": 1,
 			"label": "Binding Key",
 			"reqd": 1
+		},
+		{
+			"default": "1",
+			"fieldname": "enabled",
+			"fieldtype": "Check",
+			"in_list_view": 1,
+			"label": "Enabled"
 		},
 		{
 			"fieldname": "trigger_event",
@@ -41,6 +51,17 @@
 			"in_list_view": 1,
 			"label": "Action Key",
 			"reqd": 1
+		},
+		{
+			"fieldname": "custom_handler",
+			"fieldtype": "Data",
+			"label": "Custom Handler"
+		},
+		{
+			"default": "0",
+			"fieldname": "handler_override_wins",
+			"fieldtype": "Check",
+			"label": "Handler Override Wins"
 		}
 	],
 	"index_web_pages_for_search": 0,

@@ -4,6 +4,11 @@
 	"engine": "InnoDB",
 	"field_order": [
 		"scope_key",
+		"priority",
+		"is_default",
+		"company",
+		"warehouse",
+		"supplier_type",
 		"source_doctype",
 		"source_name_field",
 		"description"
@@ -15,6 +20,39 @@
 			"in_list_view": 1,
 			"label": "Scope Key",
 			"reqd": 1
+		},
+		{
+			"default": "0",
+			"fieldname": "priority",
+			"fieldtype": "Int",
+			"in_list_view": 1,
+			"label": "Priority",
+			"reqd": 1
+		},
+		{
+			"default": "0",
+			"fieldname": "is_default",
+			"fieldtype": "Check",
+			"in_list_view": 1,
+			"label": "Is Default"
+		},
+		{
+			"fieldname": "company",
+			"fieldtype": "Link",
+			"label": "Company",
+			"options": "Company"
+		},
+		{
+			"fieldname": "warehouse",
+			"fieldtype": "Link",
+			"label": "Warehouse",
+			"options": "Warehouse"
+		},
+		{
+			"fieldname": "supplier_type",
+			"fieldtype": "Link",
+			"label": "Supplier Type",
+			"options": "Supplier Type"
 		},
 		{
 			"fieldname": "source_doctype",

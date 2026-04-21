@@ -4,10 +4,12 @@
 	"engine": "InnoDB",
 	"field_order": [
 		"transition_key",
-		"from_node_key",
-		"to_node_key",
-		"condition_key",
+		"generation_mode",
+		"source_node_key",
+		"target_node_key",
 		"action_key",
+		"binding_mode",
+		"condition_key",
 		"priority"
 	],
 	"fields": [
@@ -19,28 +21,46 @@
 			"reqd": 1
 		},
 		{
-			"fieldname": "from_node_key",
-			"fieldtype": "Data",
+			"fieldname": "generation_mode",
+			"fieldtype": "Select",
 			"in_list_view": 1,
-			"label": "From Node Key",
+			"label": "Generation Mode",
+			"options": "immediate\nruntime\nhybrid",
 			"reqd": 1
 		},
 		{
-			"fieldname": "to_node_key",
+			"fieldname": "source_node_key",
 			"fieldtype": "Data",
 			"in_list_view": 1,
-			"label": "To Node Key",
+			"label": "Source Node Key",
+			"reqd": 1
+		},
+		{
+			"fieldname": "target_node_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Target Node Key",
+			"reqd": 1
+		},
+		{
+			"fieldname": "action_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Action Key",
+			"reqd": 1
+		},
+		{
+			"fieldname": "binding_mode",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Binding Mode",
+			"options": "direct\nbinding\nhybrid",
 			"reqd": 1
 		},
 		{
 			"fieldname": "condition_key",
 			"fieldtype": "Data",
 			"label": "Condition Key"
-		},
-		{
-			"fieldname": "action_key",
-			"fieldtype": "Data",
-			"label": "Action Key"
 		},
 		{
 			"default": "0",

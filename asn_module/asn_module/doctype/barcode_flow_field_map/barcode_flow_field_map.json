@@ -4,9 +4,11 @@
 	"engine": "InnoDB",
 	"field_order": [
 		"map_key",
-		"source_fieldname",
-		"target_fieldname",
-		"transform_method"
+		"mapping_type",
+		"source_field_path",
+		"target_field_path",
+		"constant_value",
+		"transform_key"
 	],
 	"fields": [
 		{
@@ -17,23 +19,35 @@
 			"reqd": 1
 		},
 		{
-			"fieldname": "source_fieldname",
-			"fieldtype": "Data",
+			"fieldname": "mapping_type",
+			"fieldtype": "Select",
 			"in_list_view": 1,
-			"label": "Source Fieldname",
+			"label": "Mapping Type",
+			"options": "source\nconstant",
 			"reqd": 1
 		},
 		{
-			"fieldname": "target_fieldname",
+			"fieldname": "source_field_path",
 			"fieldtype": "Data",
 			"in_list_view": 1,
-			"label": "Target Fieldname",
+			"label": "Source Field Path"
+		},
+		{
+			"fieldname": "target_field_path",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Target Field Path",
 			"reqd": 1
 		},
 		{
-			"fieldname": "transform_method",
+			"fieldname": "constant_value",
+			"fieldtype": "Small Text",
+			"label": "Constant Value"
+		},
+		{
+			"fieldname": "transform_key",
 			"fieldtype": "Data",
-			"label": "Transform Method"
+			"label": "Transform Key"
 		}
 	],
 	"index_web_pages_for_search": 0,
