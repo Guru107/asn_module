@@ -2,14 +2,18 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from frappe.tests import UnitTestCase
-from hypothesis import given
+from frappe.utils import cint
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from asn_module.barcode_flow.conditions import evaluate_conditions
 from asn_module.barcode_flow.errors import AmbiguousFlowScopeError, NoMatchingFlowError
 from asn_module.barcode_flow.resolver import resolve_flow_with_scope
+from asn_module.property_tests import settings as _property_settings
 
 _OUTCOME_STATUSES = {"resolved", "no_match", "ambiguous_error"}
+_SCOPE_MATCH_FIELDS = ("source_doctype", "company", "warehouse", "supplier_type")
+_SCOPE_SPECIFICITY_FIELDS = ("company", "warehouse", "supplier_type")
 
 _SOURCE_DOCTYPES = st.sampled_from([None, "", "  ", "ASN", " ASN ", "Purchase Receipt"])
 _COMPANIES = st.sampled_from([None, "", "  ", "COMP-1", " COMP-1 ", "COMP-2"])
@@ -121,6 +125,104 @@ def _build_flows(flow_specs: list[dict]) -> list[SimpleNamespace]:
 	return flows
 
 
+def _get_value(source: object, fieldname: str, default: object = None) -> object:
+	if isinstance(source, dict):
+		return source.get(fieldname, default)
+	return getattr(source, fieldname, default)
+
+
+def _normalize_value(value: object) -> object:
+	if isinstance(value, str):
+		return value.strip()
+	return value
+
+
+def _is_enabled(row: object) -> bool:
+	for fieldname in ("is_active", "enabled"):
+		value = _get_value(row, fieldname, default=None)
+		if value is not None:
+			return bool(cint(value))
+	return True
+
+
+def _scope_matches(scope: object, normalized_context: dict[str, object]) -> bool:
+	for fieldname in _SCOPE_MATCH_FIELDS:
+		expected = _normalize_value(_get_value(scope, fieldname, ""))
+		if expected in (None, ""):
+			continue
+		if normalized_context.get(fieldname) != expected:
+			return False
+	return True
+
+
+def _scope_specificity(scope: object) -> int:
+	return sum(
+		1
+		for fieldname in _SCOPE_SPECIFICITY_FIELDS
+		if _normalize_value(_get_value(scope, fieldname, "")) not in (None, "")
+	)
+
+
+def _expected_resolver_outcome(
+	context: dict,
+	flows: list[SimpleNamespace],
+) -> tuple[str, str | None, str | None]:
+	normalized_context = {fieldname: _normalize_value(context.get(fieldname)) for fieldname in _SCOPE_MATCH_FIELDS}
+	candidates: list[dict[str, object]] = []
+	for flow in flows:
+		if not _is_enabled(flow):
+			continue
+		for scope in _get_value(flow, "scopes", []) or []:
+			if not _is_enabled(scope):
+				continue
+			if not _scope_matches(scope, normalized_context):
+				continue
+			candidates.append(
+				{
+					"flow_name": _get_value(flow, "name"),
+					"scope_key": _get_value(scope, "scope_key"),
+					"specificity": _scope_specificity(scope),
+					"priority": cint(_get_value(scope, "priority", 0) or 0),
+					"is_default": bool(cint(_get_value(scope, "is_default", 0) or 0)),
+				}
+			)
+
+	if not candidates:
+		return "no_match", None, None
+
+	max_specificity = max(candidate["specificity"] for candidate in candidates)
+	specificity_winners = [c for c in candidates if c["specificity"] == max_specificity]
+
+	max_priority = max(candidate["priority"] for candidate in specificity_winners)
+	priority_winners = [c for c in specificity_winners if c["priority"] == max_priority]
+	if len(priority_winners) == 1:
+		winner = priority_winners[0]
+		return "resolved", winner["flow_name"], winner["scope_key"]
+
+	default_winners = [c for c in priority_winners if c["is_default"]]
+	if len(default_winners) == 1:
+		winner = default_winners[0]
+		return "resolved", winner["flow_name"], winner["scope_key"]
+
+	return "ambiguous_error", None, None
+
+
+def _rotate_scopes_within_flows(flows: list[SimpleNamespace]) -> list[SimpleNamespace]:
+	rotated_flows: list[SimpleNamespace] = []
+	for flow in flows:
+		scopes = list(_get_value(flow, "scopes", []) or [])
+		if len(scopes) > 1:
+			scopes = scopes[1:] + scopes[:1]
+		rotated_flows.append(
+			SimpleNamespace(
+				name=_get_value(flow, "name"),
+				is_active=_get_value(flow, "is_active"),
+				scopes=scopes,
+			)
+		)
+	return rotated_flows
+
+
 def _resolve_outcome(context: dict, flows: list[SimpleNamespace]) -> tuple[str, str | None, str | None]:
 	with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
 		try:
@@ -149,20 +251,26 @@ class TestBarcodeFlowProperties(UnitTestCase):
 	@given(context=_contexts(), flow_specs=_flow_specs())
 	def test_resolver_outcomes_are_bounded_and_deterministic(self, context, flow_specs):
 		flows = _build_flows(flow_specs)
+		rotated_scope_flows = _rotate_scopes_within_flows(flows)
+		expected = _expected_resolver_outcome(context, flows)
 
 		once = _resolve_outcome(context, flows)
 		twice = _resolve_outcome(context, flows)
 		reversed_once = _resolve_outcome(context, list(reversed(flows)))
+		rotated_scope_once = _resolve_outcome(context, rotated_scope_flows)
+		reversed_rotated_once = _resolve_outcome(context, list(reversed(rotated_scope_flows)))
 
-		self.assertIn(once[0], _OUTCOME_STATUSES)
-		self.assertEqual(once, twice)
-		self.assertEqual(once, reversed_once)
+		for outcome in (once, twice, reversed_once, rotated_scope_once, reversed_rotated_once):
+			self.assertIn(outcome[0], _OUTCOME_STATUSES)
+			self.assertEqual(outcome, expected)
 
 		if once[0] == "resolved":
 			self.assertIn(once[1], {flow.name for flow in flows})
 			self.assertTrue(once[2])
 
 	@given(items=_ITEMS, framing=_rule_framing())
+	@example(items=[{"probe": [1, 2, 3]}], framing=("probe", "=", [1, 2, 3]))
+	@example(items=[{"probe": {"a": 1}}], framing=("items.probe", "!=", {"a": 2}))
 	def test_items_any_and_exists_aggregate_equivalence(self, items, framing):
 		field_path, operator, value = framing
 		doc = {"items": items}
