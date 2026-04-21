@@ -157,6 +157,9 @@ class BarcodeFlowDefinition(Document):
 				)
 
 	def _validate_mode_specific_invariants(self):
+		node_keys = self._collect_key_set(self.nodes, "node_key")
+		transition_keys = self._collect_key_set(self.transitions, "transition_key")
+
 		for row in self.field_maps or []:
 			mapping_type = (row.mapping_type or "").strip()
 			if mapping_type == "source" and not (row.source_field_path or "").strip():
@@ -174,6 +177,39 @@ class BarcodeFlowDefinition(Document):
 
 		for row in self.action_bindings or []:
 			trigger_event = (row.trigger_event or "").strip()
+			target_node_key = (row.target_node_key or "").strip()
+			target_transition_key = (row.target_transition_key or "").strip()
+
+			if trigger_event == "On Enter Node":
+				if not target_node_key:
+					frappe.throw(
+						_("Target Node Key is required for {0} when trigger event is On Enter Node.").format(
+							self._get_row_key(row=row, key_fieldname="binding_key")
+						)
+					)
+				if target_node_key not in node_keys:
+					frappe.throw(
+						_("Action Binding {0} references unknown target node key: {1}").format(
+							self._get_row_key(row=row, key_fieldname="binding_key"),
+							target_node_key,
+						)
+					)
+
+			if trigger_event == "On Transition":
+				if not target_transition_key:
+					frappe.throw(
+						_(
+							"Target Transition Key is required for {0} when trigger event is On Transition."
+						).format(self._get_row_key(row=row, key_fieldname="binding_key"))
+					)
+				if target_transition_key not in transition_keys:
+					frappe.throw(
+						_("Action Binding {0} references unknown target transition key: {1}").format(
+							self._get_row_key(row=row, key_fieldname="binding_key"),
+							target_transition_key,
+						)
+					)
+
 			if trigger_event == "custom_handler" and not (row.custom_handler or "").strip():
 				frappe.throw(
 					_("Custom Handler is required for {0} when trigger event is custom_handler.").format(
@@ -196,6 +232,23 @@ class BarcodeFlowDefinition(Document):
 		for row in self.conditions or []:
 			operator = (row.operator or "").strip()
 			value = (row.value or "").strip()
+			scope = (row.scope or "").strip()
+			aggregate_fn = (row.aggregate_fn or "").strip()
+
+			if scope == "items_aggregate" and not aggregate_fn:
+				frappe.throw(
+					_("Aggregate Function is required for {0} when scope is items_aggregate.").format(
+						self._get_row_key(row=row, key_fieldname="condition_key")
+					)
+				)
+
+			if scope != "items_aggregate" and aggregate_fn:
+				frappe.throw(
+					_(
+						"Aggregate Function must be empty for {0} when scope is not items_aggregate."
+					).format(self._get_row_key(row=row, key_fieldname="condition_key"))
+				)
+
 			if operator != "exists" and not value:
 				frappe.throw(
 					_("Value is required for {0} when operator is not exists.").format(

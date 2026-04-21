@@ -71,9 +71,11 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 				{
 					"doctype": "Barcode Flow Condition",
 					"condition_key": "has_warehouse",
-					"scope": "header",
-					"field_path": "header.set_warehouse",
-					"operator": "exists",
+					"scope": "items_aggregate",
+					"field_path": "items.qty",
+					"operator": "gt",
+					"value": "0",
+					"aggregate_fn": "sum",
 				}
 			],
 			field_maps=[
@@ -228,6 +230,82 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 					"map_key": "constant-warehouse",
 					"mapping_type": "constant",
 					"target_field_path": "target.set_warehouse",
+				}
+			]
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_action_binding_on_enter_node_requires_target_node_key(self):
+		flow = self._new_flow(
+			nodes=[self._valid_node("scan", "Scan")],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "enter-scan",
+					"trigger_event": "On Enter Node",
+					"action_key": "create_purchase_receipt",
+				}
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_action_binding_on_transition_requires_known_target_transition_key(self):
+		flow = self._new_flow(
+			nodes=[self._valid_node("scan", "Scan")],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-loop",
+					source_node_key="scan",
+					target_node_key="scan",
+				)
+			],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "on-transition",
+					"trigger_event": "On Transition",
+					"target_transition_key": "missing-transition",
+					"action_key": "create_purchase_receipt",
+				}
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_items_aggregate_condition_requires_aggregate_function(self):
+		flow = self._new_flow(
+			conditions=[
+				{
+					"doctype": "Barcode Flow Condition",
+					"condition_key": "qty-total",
+					"scope": "items_aggregate",
+					"field_path": "items.qty",
+					"operator": "gt",
+					"value": "0",
+					"aggregate_fn": " ",
+				}
+			]
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_non_aggregate_condition_rejects_aggregate_function(self):
+		flow = self._new_flow(
+			conditions=[
+				{
+					"doctype": "Barcode Flow Condition",
+					"condition_key": "supplier-check",
+					"scope": "header",
+					"field_path": "header.supplier",
+					"operator": "eq",
+					"value": "SUP-0001",
+					"aggregate_fn": "sum",
 				}
 			]
 		)
