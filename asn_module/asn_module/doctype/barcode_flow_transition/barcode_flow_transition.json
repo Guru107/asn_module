@@ -1,0 +1,63 @@
+{
+	"creation": "2026-04-21 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"transition_key",
+		"from_node_key",
+		"to_node_key",
+		"condition_key",
+		"action_key",
+		"priority"
+	],
+	"fields": [
+		{
+			"fieldname": "transition_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Transition Key",
+			"reqd": 1
+		},
+		{
+			"fieldname": "from_node_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "From Node Key",
+			"reqd": 1
+		},
+		{
+			"fieldname": "to_node_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "To Node Key",
+			"reqd": 1
+		},
+		{
+			"fieldname": "condition_key",
+			"fieldtype": "Data",
+			"label": "Condition Key"
+		},
+		{
+			"fieldname": "action_key",
+			"fieldtype": "Data",
+			"label": "Action Key"
+		},
+		{
+			"default": "0",
+			"fieldname": "priority",
+			"fieldtype": "Int",
+			"label": "Priority"
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"istable": 1,
+	"modified": "2026-04-21 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "Barcode Flow Transition",
+	"owner": "Administrator",
+	"permissions": [],
+	"sort_field": "creation",
+	"sort_order": "DESC",
+	"states": []
+}

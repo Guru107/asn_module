@@ -1,0 +1,57 @@
+{
+	"creation": "2026-04-21 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"binding_key",
+		"trigger_event",
+		"target_node_key",
+		"target_transition_key",
+		"action_key"
+	],
+	"fields": [
+		{
+			"fieldname": "binding_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Binding Key",
+			"reqd": 1
+		},
+		{
+			"fieldname": "trigger_event",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Trigger Event",
+			"options": "On Enter Node\nOn Exit Node\nOn Transition",
+			"reqd": 1
+		},
+		{
+			"fieldname": "target_node_key",
+			"fieldtype": "Data",
+			"label": "Target Node Key"
+		},
+		{
+			"fieldname": "target_transition_key",
+			"fieldtype": "Data",
+			"label": "Target Transition Key"
+		},
+		{
+			"fieldname": "action_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Action Key",
+			"reqd": 1
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"istable": 1,
+	"modified": "2026-04-21 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "Barcode Flow Action Binding",
+	"owner": "Administrator",
+	"permissions": [],
+	"sort_field": "creation",
+	"sort_order": "DESC",
+	"states": []
+}
