@@ -62,6 +62,8 @@ def register_actions():
 	last_error = None
 	try:
 		for attempt in range(3):
+			save_point = f"register_actions_retry_{attempt}"
+			frappe.db.savepoint(save_point)
 			registry = frappe.get_single("QR Action Registry")
 			# Reset to the module's managed defaults for deterministic fresh installs.
 			registry.actions = []
@@ -82,7 +84,7 @@ def register_actions():
 				return
 			except (frappe.TimestampMismatchError, frappe.QueryDeadlockError) as err:
 				last_error = err
-				frappe.db.rollback()
+				frappe.db.rollback(save_point=save_point)
 				time.sleep(0.02 * (attempt + 1))
 				continue
 		if last_error:

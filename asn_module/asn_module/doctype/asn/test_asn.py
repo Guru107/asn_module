@@ -1,7 +1,7 @@
 import time
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -254,33 +254,39 @@ def create_purchase_order(**kwargs):
 		item_schedule_date=item_schedule_date,
 	)
 
-	po = frappe.new_doc("Purchase Order")
-	po.transaction_date = transaction_date
-	po.schedule_date = schedule_date
-	po.company = company
-	po.supplier = supplier
-	po.is_subcontracted = kwargs.get("is_subcontracted", 0)
-	po.currency = currency
-	po.conversion_factor = kwargs.get("conversion_factor", 1)
-	po.supplier_warehouse = kwargs.get("supplier_warehouse")
-	item_count = max(int(kwargs.get("item_count", 1) or 1), 1)
-	for _ in range(item_count):
-		po.append(
-			"items",
-			{
-				"item_code": item_code,
-				"warehouse": warehouse,
-				"qty": kwargs.get("qty", 10),
-				"rate": kwargs.get("rate", 500),
-				"schedule_date": item_schedule_date,
-				"include_exploded_items": kwargs.get("include_exploded_items", 1),
-			},
-		)
-	po.set_missing_values()
+	def _build_po_doc():
+		po = frappe.new_doc("Purchase Order")
+		po.transaction_date = transaction_date
+		po.schedule_date = schedule_date
+		po.company = company
+		po.supplier = supplier
+		po.is_subcontracted = kwargs.get("is_subcontracted", 0)
+		po.currency = currency
+		po.conversion_factor = kwargs.get("conversion_factor", 1)
+		po.supplier_warehouse = kwargs.get("supplier_warehouse")
+		item_count = max(int(kwargs.get("item_count", 1) or 1), 1)
+		for _ in range(item_count):
+			po.append(
+				"items",
+				{
+					"item_code": item_code,
+					"warehouse": warehouse,
+					"qty": kwargs.get("qty", 10),
+					"rate": kwargs.get("rate", 500),
+					"schedule_date": item_schedule_date,
+					"include_exploded_items": kwargs.get("include_exploded_items", 1),
+				},
+			)
+		po.set_missing_values()
+		return po
+
+	po = _build_po_doc()
 
 	if not kwargs.get("do_not_save"):
 		last_error = None
-		for _attempt in range(3):
+		for attempt in range(3):
+			save_point = f"create_purchase_order_retry_{attempt}"
+			frappe.db.savepoint(save_point)
 			try:
 				po.insert(ignore_permissions=True)
 				if not kwargs.get("do_not_submit"):
@@ -288,12 +294,45 @@ def create_purchase_order(**kwargs):
 				break
 			except frappe.QueryDeadlockError as err:
 				last_error = err
-				frappe.db.rollback()
+				frappe.db.rollback(save_point=save_point)
 				time.sleep(0.05)
+				po = _build_po_doc()
 		else:
 			raise last_error
 
 	return po
+
+
+class TestCreatePurchaseOrderRetry(FrappeTestCase):
+	def test_deadlock_retry_uses_fresh_doc_and_succeeds(self):
+		first_po = MagicMock()
+		second_po = MagicMock()
+		first_po.insert.side_effect = frappe.QueryDeadlockError("deadlock")
+		second_po.insert.return_value = None
+
+		with (
+			patch(
+				"asn_module.asn_module.doctype.asn.test_asn.frappe.new_doc",
+				side_effect=[first_po, second_po],
+			),
+			patch("asn_module.asn_module.doctype.asn.test_asn.frappe.db.savepoint") as savepoint,
+			patch("asn_module.asn_module.doctype.asn.test_asn.frappe.db.rollback") as rollback,
+			patch("asn_module.asn_module.doctype.asn.test_asn.time.sleep"),
+		):
+			result = create_purchase_order(
+				company="Test Company",
+				supplier="Test Supplier",
+				item_code="Test Item",
+				currency="USD",
+				warehouse="Test Warehouse",
+				do_not_submit=True,
+			)
+
+		self.assertIs(result, second_po)
+		self.assertEqual(first_po.insert.call_count, 1)
+		self.assertEqual(second_po.insert.call_count, 1)
+		self.assertEqual(savepoint.call_count, 2)
+		rollback.assert_called_once_with(save_point="create_purchase_order_retry_0")
 
 
 def create_purchase_order_with_fiscal_dates(**kwargs):
