@@ -2,6 +2,11 @@
 
 This is a **Frappe framework** custom app called `asn_module`. It follows standard Frappe app conventions and is managed via the `bench` CLI. The app targets Python 3.14 and Frappe v16.
 
+## Barcode Flow Configuration
+
+- Operator/System Manager runbook: `docs/BarcodeFlowConfiguration.md`
+- Covers scoped flow selection, transition binding modes, required child-table keys, and troubleshooting for resolution/configuration errors.
+
 ## Bench server setups
 
 ### Frappe Version 16 and ERPNext Version 16
@@ -97,9 +102,22 @@ ruff format asn_module/
 
 # JavaScript linting
 npx eslint asn_module/
+npx eslint asn_module/ --quiet
 
 # Run all pre-commit hooks
 pre-commit run --all-files
+```
+
+### Barcode Flow Verification Commands
+```bash
+# Run barcode flow unit tests
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_schema --lightmode
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_resolver --lightmode
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_conditions --lightmode
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_runtime --lightmode
+
+# Run integration route coverage for scoped flow behavior
+bench --site <site_name> run-tests --app asn_module --module asn_module.tests.integration.test_barcode_flow_integration --lightmode
 ```
 
 ### Pre-commit Setup
