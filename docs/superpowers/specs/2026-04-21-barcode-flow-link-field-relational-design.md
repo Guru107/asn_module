@@ -200,7 +200,7 @@ Trade-off: more indexes increase write overhead modestly, but configuration writ
 ### Unit
 - Doctype validation for same-flow links.
 - Mode requirement enforcement.
-- Delete hard-block checks with dependent transition keys.
+- Delete hard-block checks with dependent transition/binding identifiers.
 - Uniqueness constraints per flow.
 
 ### Integration
