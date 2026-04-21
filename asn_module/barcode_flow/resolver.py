@@ -6,7 +6,8 @@ from frappe.utils import cint
 
 from asn_module.barcode_flow.errors import AmbiguousFlowScopeError, NoMatchingFlowError
 
-SCOPE_FIELDS = ("company", "warehouse", "supplier_type")
+SCOPE_MATCH_FIELDS = ("source_doctype", "company", "warehouse", "supplier_type")
+SCOPE_SPECIFICITY_FIELDS = ("company", "warehouse", "supplier_type")
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,7 @@ class _ScopeCandidate:
 
 def resolve_flow(context: dict) -> Any:
 	"""Resolve one active Barcode Flow Definition for the provided context."""
-	normalized_context = {fieldname: _normalize_value(context.get(fieldname)) for fieldname in SCOPE_FIELDS}
+	normalized_context = {fieldname: _normalize_value(context.get(fieldname)) for fieldname in SCOPE_MATCH_FIELDS}
 	matching_candidates: list[_ScopeCandidate] = []
 	global_default_candidates: list[_ScopeCandidate] = []
 
@@ -64,7 +65,7 @@ def _get_active_flow_definitions() -> list[Any]:
 
 
 def _scope_matches(scope: Any, normalized_context: dict[str, Any]) -> bool:
-	for fieldname in SCOPE_FIELDS:
+	for fieldname in SCOPE_MATCH_FIELDS:
 		expected = _normalize_value(_get_row_value(scope, fieldname))
 		if expected in (None, ""):
 			continue
@@ -77,7 +78,9 @@ def _scope_matches(scope: Any, normalized_context: dict[str, Any]) -> bool:
 
 def _scope_specificity(scope: Any) -> int:
 	return sum(
-		1 for fieldname in SCOPE_FIELDS if _normalize_value(_get_row_value(scope, fieldname)) not in (None, "")
+		1
+		for fieldname in SCOPE_SPECIFICITY_FIELDS
+		if _normalize_value(_get_row_value(scope, fieldname)) not in (None, "")
 	)
 
 

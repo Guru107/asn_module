@@ -13,6 +13,7 @@ class TestBarcodeFlowResolver(TestCase):
 		scope_key: str,
 		priority: int = 0,
 		is_default: int = 0,
+		source_doctype: str | None = "ASN",
 		company: str | None = None,
 		warehouse: str | None = None,
 		supplier_type: str | None = None,
@@ -21,6 +22,7 @@ class TestBarcodeFlowResolver(TestCase):
 			scope_key=scope_key,
 			priority=priority,
 			is_default=is_default,
+			source_doctype=source_doctype,
 			company=company,
 			warehouse=warehouse,
 			supplier_type=supplier_type,
@@ -35,7 +37,7 @@ class TestBarcodeFlowResolver(TestCase):
 		)
 
 	def test_prefers_more_specific_scope_match(self):
-		context = {"company": "COMP-1", "warehouse": "WH-1"}
+		context = {"source_doctype": "ASN", "company": "COMP-1", "warehouse": "WH-1"}
 		flows = [
 			self._new_flow(
 				name="FLOW-COMPANY",
@@ -71,7 +73,7 @@ class TestBarcodeFlowResolver(TestCase):
 		]
 
 		with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
-			resolved = resolve_flow({"company": "COMP-2"})
+			resolved = resolve_flow({"source_doctype": "ASN", "company": "COMP-2"})
 
 		self.assertEqual(resolved.name, "FLOW-HIGH-PRIORITY")
 
@@ -89,7 +91,7 @@ class TestBarcodeFlowResolver(TestCase):
 
 		with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
 			with self.assertRaises(AmbiguousFlowScopeError):
-				resolve_flow({"company": "COMP-3"})
+				resolve_flow({"source_doctype": "ASN", "company": "COMP-3"})
 
 	def test_raises_no_match_error_when_no_scope_matches(self):
 		flows = [
@@ -101,4 +103,22 @@ class TestBarcodeFlowResolver(TestCase):
 
 		with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
 			with self.assertRaises(NoMatchingFlowError):
-				resolve_flow({"company": "COMP-Y"})
+				resolve_flow({"source_doctype": "ASN", "company": "COMP-Y"})
+
+	def test_mismatched_source_doctype_does_not_match_scope(self):
+		flows = [
+			self._new_flow(
+				name="FLOW-ASN",
+				scopes=[
+					self._new_scope(
+						scope_key="asn-flow",
+						source_doctype="ASN",
+						company="COMP-4",
+					)
+				],
+			)
+		]
+
+		with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
+			with self.assertRaises(NoMatchingFlowError):
+				resolve_flow({"source_doctype": "Purchase Receipt", "company": "COMP-4"})
