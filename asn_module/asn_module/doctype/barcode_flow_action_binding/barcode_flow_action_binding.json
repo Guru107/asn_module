@@ -32,7 +32,7 @@
 			"fieldtype": "Select",
 			"in_list_view": 1,
 			"label": "Trigger Event",
-			"options": "On Enter Node\nOn Exit Node\nOn Transition",
+			"options": "On Enter Node\nOn Exit Node\nOn Transition\ncustom_handler",
 			"reqd": 1
 		},
 		{

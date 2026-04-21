@@ -10,6 +10,8 @@
 		"action_key",
 		"binding_mode",
 		"condition_key",
+		"field_map_key",
+		"binding_key",
 		"priority"
 	],
 	"fields": [
@@ -54,13 +56,23 @@
 			"fieldtype": "Select",
 			"in_list_view": 1,
 			"label": "Binding Mode",
-			"options": "direct\nbinding\nhybrid",
+			"options": "direct\ncustom_handler\nboth",
 			"reqd": 1
 		},
 		{
 			"fieldname": "condition_key",
 			"fieldtype": "Data",
 			"label": "Condition Key"
+		},
+		{
+			"fieldname": "field_map_key",
+			"fieldtype": "Data",
+			"label": "Field Map Key"
+		},
+		{
+			"fieldname": "binding_key",
+			"fieldtype": "Data",
+			"label": "Binding Key"
 		},
 		{
 			"default": "0",

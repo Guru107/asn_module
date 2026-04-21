@@ -44,8 +44,7 @@
 		{
 			"fieldname": "value",
 			"fieldtype": "Small Text",
-			"label": "Value",
-			"reqd": 1
+			"label": "Value"
 		},
 		{
 			"fieldname": "aggregate_fn",

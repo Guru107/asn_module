@@ -60,6 +60,56 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		payload.update(overrides)
 		return payload
 
+	def test_valid_definition_with_linked_rows_inserts_successfully(self):
+		flow = self._new_flow(
+			scopes=[self._valid_scope("default")],
+			nodes=[
+				self._valid_node("scan", "Scan"),
+				self._valid_node("received", "Received"),
+			],
+			conditions=[
+				{
+					"doctype": "Barcode Flow Condition",
+					"condition_key": "has_warehouse",
+					"scope": "header",
+					"field_path": "header.set_warehouse",
+					"operator": "exists",
+				}
+			],
+			field_maps=[
+				{
+					"doctype": "Barcode Flow Field Map",
+					"map_key": "warehouse-map",
+					"mapping_type": "source",
+					"source_field_path": "header.set_warehouse",
+					"target_field_path": "target.set_warehouse",
+				}
+			],
+			action_bindings=[
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"binding_key": "custom-receive",
+					"trigger_event": "custom_handler",
+					"action_key": "create_purchase_receipt",
+					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
+				}
+			],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-to-received",
+					source_node_key="scan",
+					target_node_key="received",
+					condition_key="has_warehouse",
+					field_map_key="warehouse-map",
+					binding_mode="custom_handler",
+					binding_key="custom-receive",
+				)
+			],
+		)
+
+		flow.insert(ignore_permissions=True)
+		self.assertTrue(flow.name)
+
 	def test_missing_flow_name_raises_validation_error(self):
 		flow = self._new_flow(flow_name=None)
 
@@ -153,4 +203,34 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		)
 
 		with self.assertRaises(UniqueValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_transition_with_unknown_node_reference_raises_validation_error(self):
+		flow = self._new_flow(
+			nodes=[self._valid_node("scan", "Scan")],
+			transitions=[
+				self._valid_transition(
+					transition_key="scan-to-received",
+					source_node_key="scan",
+					target_node_key="missing-node",
+				)
+			]
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			flow.insert(ignore_permissions=True)
+
+	def test_field_map_constant_mapping_requires_constant_value(self):
+		flow = self._new_flow(
+			field_maps=[
+				{
+					"doctype": "Barcode Flow Field Map",
+					"map_key": "constant-warehouse",
+					"mapping_type": "constant",
+					"target_field_path": "target.set_warehouse",
+				}
+			]
+		)
+
+		with self.assertRaises(frappe.ValidationError):
 			flow.insert(ignore_permissions=True)
