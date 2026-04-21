@@ -122,3 +122,63 @@ class TestBarcodeFlowResolver(TestCase):
 		with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
 			with self.assertRaises(NoMatchingFlowError):
 				resolve_flow({"source_doctype": "Purchase Receipt", "company": "COMP-4"})
+
+	def test_resolves_when_only_source_doctype_scope_matches(self):
+		flows = [
+			self._new_flow(
+				name="FLOW-SOURCE-ONLY",
+				scopes=[self._new_scope(scope_key="source-only", source_doctype="ASN")],
+			)
+		]
+
+		with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
+			resolved = resolve_flow({"source_doctype": "ASN"})
+
+		self.assertEqual(resolved.name, "FLOW-SOURCE-ONLY")
+
+	def test_zero_specificity_defaults_use_priority_tiebreak(self):
+		flows = [
+			self._new_flow(
+				name="FLOW-LOW-PRIORITY-DEFAULT",
+				scopes=[
+					self._new_scope(
+						scope_key="default-low",
+						source_doctype="ASN",
+						is_default=1,
+						priority=5,
+					)
+				],
+			),
+			self._new_flow(
+				name="FLOW-HIGH-PRIORITY-DEFAULT",
+				scopes=[
+					self._new_scope(
+						scope_key="default-high",
+						source_doctype="ASN",
+						is_default=1,
+						priority=10,
+					)
+				],
+			),
+		]
+
+		with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
+			resolved = resolve_flow({"source_doctype": "ASN"})
+
+		self.assertEqual(resolved.name, "FLOW-HIGH-PRIORITY-DEFAULT")
+
+	def test_zero_specificity_ambiguity_when_tied_without_unique_default(self):
+		flows = [
+			self._new_flow(
+				name="FLOW-SOURCE-ONLY-A",
+				scopes=[self._new_scope(scope_key="source-a", source_doctype="ASN", priority=10)],
+			),
+			self._new_flow(
+				name="FLOW-SOURCE-ONLY-B",
+				scopes=[self._new_scope(scope_key="source-b", source_doctype="ASN", priority=10)],
+			),
+		]
+
+		with patch("asn_module.barcode_flow.resolver._get_active_flow_definitions", return_value=flows):
+			with self.assertRaises(AmbiguousFlowScopeError):
+				resolve_flow({"source_doctype": "ASN"})

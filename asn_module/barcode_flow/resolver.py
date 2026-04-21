@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import frappe
+from frappe.model.document import Document
 from frappe.utils import cint
 
 from asn_module.barcode_flow.errors import AmbiguousFlowScopeError, NoMatchingFlowError
@@ -12,7 +13,7 @@ SCOPE_SPECIFICITY_FIELDS = ("company", "warehouse", "supplier_type")
 
 @dataclass(frozen=True)
 class _ScopeCandidate:
-	flow: Any
+	flow: Document
 	flow_name: str
 	scope_key: str
 	specificity: int
@@ -20,11 +21,10 @@ class _ScopeCandidate:
 	is_default: bool
 
 
-def resolve_flow(context: dict) -> Any:
+def resolve_flow(context: dict) -> Document:
 	"""Resolve one active Barcode Flow Definition for the provided context."""
 	normalized_context = {fieldname: _normalize_value(context.get(fieldname)) for fieldname in SCOPE_MATCH_FIELDS}
 	matching_candidates: list[_ScopeCandidate] = []
-	global_default_candidates: list[_ScopeCandidate] = []
 
 	for flow in _get_active_flow_definitions():
 		if not _is_enabled(flow):
@@ -36,25 +36,14 @@ def resolve_flow(context: dict) -> Any:
 			if not _scope_matches(scope, normalized_context):
 				continue
 
-			candidate = _build_candidate(flow=flow, scope=scope)
-			if candidate.specificity > 0:
-				matching_candidates.append(candidate)
-			elif candidate.is_default:
-				global_default_candidates.append(candidate)
+			matching_candidates.append(_build_candidate(flow=flow, scope=scope))
 
-	if matching_candidates:
-		return _pick_winner(matching_candidates, context)
+	if not matching_candidates:
+		raise NoMatchingFlowError(f"No active barcode flow matches context: {context}")
 
-	if len(global_default_candidates) == 1:
-		return global_default_candidates[0].flow
+	return _pick_winner(matching_candidates, context)
 
-	if len(global_default_candidates) > 1:
-		raise AmbiguousFlowScopeError(_format_ambiguity_message(context, global_default_candidates))
-
-	raise NoMatchingFlowError(f"No active barcode flow matches context: {context}")
-
-
-def _get_active_flow_definitions() -> list[Any]:
+def _get_active_flow_definitions() -> list[Document]:
 	flow_names = frappe.get_all(
 		"Barcode Flow Definition",
 		filters={"is_active": 1},
@@ -84,7 +73,7 @@ def _scope_specificity(scope: Any) -> int:
 	)
 
 
-def _build_candidate(*, flow: Any, scope: Any) -> _ScopeCandidate:
+def _build_candidate(*, flow: Document, scope: Any) -> _ScopeCandidate:
 	flow_name = (_get_row_value(flow, "name") or _get_row_value(flow, "flow_name") or "<unknown-flow>").strip()
 	scope_key = (_get_row_value(scope, "scope_key") or "<unknown-scope>").strip()
 
@@ -98,7 +87,7 @@ def _build_candidate(*, flow: Any, scope: Any) -> _ScopeCandidate:
 	)
 
 
-def _pick_winner(candidates: list[_ScopeCandidate], context: dict) -> Any:
+def _pick_winner(candidates: list[_ScopeCandidate], context: dict) -> Document:
 	max_specificity = max(candidate.specificity for candidate in candidates)
 	specificity_winners = [
 		candidate for candidate in candidates if candidate.specificity == max_specificity
