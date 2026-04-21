@@ -9,7 +9,12 @@ from asn_module.commands import verify_qr_action_registry, verify_scan_code_regi
 from asn_module.qr_engine.scan_codes import SCAN_CODE_ALPHABET, SCAN_CODE_LENGTH
 from asn_module.setup_actions import register_actions
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
-from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
+from asn_module.tests.integration.fixtures import (
+	cleanup_dispatch_flow_fixtures,
+	ensure_dispatch_flow_fixtures,
+	ensure_integration_user,
+	integration_user_context,
+)
 from asn_module.utils.test_setup import before_tests
 
 
@@ -34,9 +39,13 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 		cls._registry_snapshot = cls._snapshot_registry_actions()
 		register_actions()
 		ensure_integration_user()
+		cls._flow_fixture_prefix = "IT-Dispatch-Flow-RegistryCommandIntegration"
+		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
+		ensure_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 
 	@classmethod
 	def tearDownClass(cls):
+		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 		reg = frappe.get_doc("QR Action Registry")
 		reg.set("actions", [])
 		for row in cls._registry_snapshot:
@@ -103,6 +112,7 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 		self.assertEqual(result["missing"], [])
 		self.assertEqual(result["unexpected"], [])
 		self.assertEqual(result["mismatched"], [])
+		self.assertEqual(result["missing_flow_actions"], [])
 
 	def test_verify_qr_action_registry_reports_mismatched_handler(self):
 		reg = frappe.get_doc("QR Action Registry")

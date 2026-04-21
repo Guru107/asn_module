@@ -16,6 +16,7 @@ from asn_module.tests.integration.dispatch_flow import (
 	run_asn_pr_submitted_via_dispatch,
 )
 from asn_module.tests.integration.fixtures import (
+	cleanup_dispatch_flow_fixtures,
 	ensure_dispatch_flow_fixtures,
 	ensure_integration_user,
 	integration_user_context,
@@ -44,10 +45,13 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		cls._registry_snapshot = cls._snapshot_registry_actions()
 		register_actions()
 		ensure_integration_user()
-		cls._flow_fixture_map = ensure_dispatch_flow_fixtures()
+		cls._flow_fixture_prefix = "IT-Dispatch-Flow-DispatchActionsIntegration"
+		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
+		cls._flow_fixture_map = ensure_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 
 	@classmethod
 	def tearDownClass(cls):
+		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 		reg = frappe.get_doc("QR Action Registry")
 		reg.set("actions", [])
 		for row in cls._registry_snapshot:

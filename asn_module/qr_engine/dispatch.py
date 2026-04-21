@@ -30,6 +30,13 @@ class TransitionResolutionError(frappe.ValidationError):
 	pass
 
 
+GENERATION_MODE_PRECEDENCE = {
+	"runtime": 3,
+	"hybrid": 2,
+	"immediate": 1,
+}
+
+
 def _resolve_action(action_key: str) -> dict:
 	registry = frappe.get_single("QR Action Registry")
 	action = registry.get_action(action_key)
@@ -179,6 +186,17 @@ def _resolve_matching_transition(
 	top_priority = max(_transition_priority(transition) for transition in matching)
 	winners = [transition for transition in matching if _transition_priority(transition) == top_priority]
 	if len(winners) > 1:
+		# Deterministic tie-break for same-priority transitions:
+		# dispatch-time execution should prefer runtime-capable transitions over hybrid/immediate.
+		top_mode_rank = max(_generation_mode_rank(transition) for transition in winners)
+		winners = [
+			transition for transition in winners if _generation_mode_rank(transition) == top_mode_rank
+		]
+
+	if len(winners) == 1:
+		return winners[0]
+
+	if len(winners) > 1:
 		transition_keys = ", ".join(
 			sorted(
 				_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
@@ -190,11 +208,13 @@ def _resolve_matching_transition(
 			f"Matching transitions: {transition_keys}"
 		)
 
-	return winners[0]
-
-
 def _transition_priority(transition: frappe.model.document.Document) -> int:
 	return cint(_get_value(transition, "priority") or 0)
+
+
+def _generation_mode_rank(transition: frappe.model.document.Document) -> int:
+	generation_mode = (_normalize_value(_get_value(transition, "generation_mode")) or "").lower()
+	return GENERATION_MODE_PRECEDENCE.get(generation_mode, 0)
 
 
 def _get_value(row: object, fieldname: str, default: object = None) -> object:

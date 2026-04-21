@@ -9,7 +9,9 @@ from asn_module.barcode_flow.errors import AmbiguousFlowScopeError, NoMatchingFl
 from asn_module.qr_engine.dispatch import (
 	ActionNotFoundError,
 	PermissionDeniedError,
+	TransitionResolutionError,
 	_resolve_action,
+	_resolve_matching_transition,
 	dispatch,
 )
 from asn_module.qr_engine.scan_codes import (
@@ -419,3 +421,58 @@ class TestDispatch(FrappeTestCase):
 		self.assertEqual(log["barcode_flow_definition"], "FLOW-RECEIVE")
 		self.assertEqual(log["barcode_flow_transition"], "scan-to-received")
 		self.assertEqual(log["scope_resolution_key"], "scope-default")
+
+	def test_resolve_matching_transition_prefers_runtime_generation_mode_on_priority_tie(self):
+		flow_definition = SimpleNamespace(
+			name="FLOW-MODE-TIE",
+			transitions=[
+				SimpleNamespace(
+					transition_key="scan-immediate",
+					action_key="create_purchase_receipt",
+					priority=100,
+					generation_mode="immediate",
+				),
+				SimpleNamespace(
+					transition_key="scan-runtime",
+					action_key="create_purchase_receipt",
+					priority=100,
+					generation_mode="runtime",
+				),
+			],
+		)
+
+		winner = _resolve_matching_transition(
+			flow_definition=flow_definition,
+			action_key="create_purchase_receipt",
+			source_doc=SimpleNamespace(),
+		)
+
+		self.assertEqual(winner.transition_key, "scan-runtime")
+
+	def test_resolve_matching_transition_raises_ambiguity_when_tie_remains_after_mode_tiebreak(self):
+		flow_definition = SimpleNamespace(
+			name="FLOW-MODE-TIE-AMBIG",
+			transitions=[
+				SimpleNamespace(
+					transition_key="scan-runtime-a",
+					action_key="create_purchase_receipt",
+					priority=100,
+					generation_mode="runtime",
+				),
+				SimpleNamespace(
+					transition_key="scan-runtime-b",
+					action_key="create_purchase_receipt",
+					priority=100,
+					generation_mode="runtime",
+				),
+			],
+		)
+
+		with self.assertRaises(TransitionResolutionError) as ctx:
+			_resolve_matching_transition(
+				flow_definition=flow_definition,
+				action_key="create_purchase_receipt",
+				source_doc=SimpleNamespace(),
+			)
+
+		self.assertIn("Ambiguous barcode transition resolution", str(ctx.exception))

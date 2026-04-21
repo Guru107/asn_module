@@ -2,7 +2,9 @@
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
+from asn_module.barcode_flow.cache import get_enabled_transitions
 from asn_module.qr_engine.scan_codes import verify_registry_row_points_to_existing_source
 from asn_module.setup_actions import get_canonical_actions
 
@@ -60,6 +62,8 @@ def verify_qr_action_registry():
 
 	missing = sorted(set(canonical_rows) - set(current_rows))
 	unexpected = sorted(set(current_rows) - set(canonical_rows))
+	enabled_flow_actions = _get_enabled_flow_action_keys()
+	missing_flow_actions = sorted(set(canonical_rows) - enabled_flow_actions)
 	mismatched = []
 	for action_key in sorted(set(canonical_rows).intersection(current_rows)):
 		expected = canonical_rows[action_key]
@@ -72,7 +76,7 @@ def verify_qr_action_registry():
 		if diffs:
 			mismatched.append({"action_key": action_key, "diffs": diffs})
 
-	ok = not missing and not unexpected and not mismatched
+	ok = not missing and not unexpected and not mismatched and not missing_flow_actions
 	if ok:
 		frappe.msgprint(_("QR Action Registry matches canonical actions."))
 		return {
@@ -80,11 +84,14 @@ def verify_qr_action_registry():
 			"missing": [],
 			"unexpected": [],
 			"mismatched": [],
+			"missing_flow_actions": [],
 		}
 
 	frappe.msgprint(
-		_("QR Action Registry drift detected. missing={0}, unexpected={1}, mismatched={2}").format(
-			len(missing), len(unexpected), len(mismatched)
+		_(
+			"QR Action Registry drift detected. missing={0}, unexpected={1}, mismatched={2}, missing_flow_actions={3}"
+		).format(
+			len(missing), len(unexpected), len(mismatched), len(missing_flow_actions)
 		),
 		title=_("QR Action Registry check"),
 		indicator="orange",
@@ -94,4 +101,23 @@ def verify_qr_action_registry():
 		"missing": missing,
 		"unexpected": unexpected,
 		"mismatched": mismatched,
+		"missing_flow_actions": missing_flow_actions,
 	}
+
+
+def _get_enabled_flow_action_keys() -> set[str]:
+	keys: set[str] = set()
+	flow_names = frappe.get_all(
+		"Barcode Flow Definition",
+		filters={"is_active": 1},
+		pluck="name",
+	)
+	for flow_name in flow_names:
+		flow = frappe.get_doc("Barcode Flow Definition", flow_name)
+		if not bool(cint(getattr(flow, "is_active", 1))):
+			continue
+		for transition in get_enabled_transitions(flow):
+			action_key = (getattr(transition, "action_key", "") or "").strip()
+			if action_key:
+				keys.add(action_key)
+	return keys

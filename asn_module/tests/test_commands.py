@@ -73,10 +73,23 @@ class TestVerifyQrActionRegistry(FrappeTestCase):
 		register_actions()
 
 	def test_all_canonical_actions_present_returns_ok(self):
-		result = verify_qr_action_registry()
+		with patch(
+			"asn_module.commands._get_enabled_flow_action_keys",
+			return_value={
+				"create_purchase_receipt",
+				"create_stock_transfer",
+				"create_purchase_return",
+				"create_purchase_invoice",
+				"confirm_putaway",
+				"create_subcontracting_dispatch",
+				"create_subcontracting_receipt",
+			},
+		):
+			result = verify_qr_action_registry()
 		self.assertTrue(result["ok"])
 		self.assertEqual(result["missing"], [])
 		self.assertEqual(result["mismatched"], [])
+		self.assertEqual(result["missing_flow_actions"], [])
 
 	def test_missing_action_detected(self):
 		reg = frappe.get_doc("QR Action Registry")
@@ -84,7 +97,19 @@ class TestVerifyQrActionRegistry(FrappeTestCase):
 		reg.actions = [row for row in saved_actions if row.action_key != "confirm_putaway"]
 		reg.save(ignore_permissions=True)
 		try:
-			result = verify_qr_action_registry()
+			with patch(
+				"asn_module.commands._get_enabled_flow_action_keys",
+				return_value={
+					"create_purchase_receipt",
+					"create_stock_transfer",
+					"create_purchase_return",
+					"create_purchase_invoice",
+					"confirm_putaway",
+					"create_subcontracting_dispatch",
+					"create_subcontracting_receipt",
+				},
+			):
+				result = verify_qr_action_registry()
 			self.assertFalse(result["ok"])
 			self.assertIn("confirm_putaway", result["missing"])
 		finally:
@@ -100,9 +125,30 @@ class TestVerifyQrActionRegistry(FrappeTestCase):
 				break
 		reg.save(ignore_permissions=True)
 		try:
-			result = verify_qr_action_registry()
+			with patch(
+				"asn_module.commands._get_enabled_flow_action_keys",
+				return_value={
+					"create_purchase_receipt",
+					"create_stock_transfer",
+					"create_purchase_return",
+					"create_purchase_invoice",
+					"confirm_putaway",
+					"create_subcontracting_dispatch",
+					"create_subcontracting_receipt",
+				},
+			):
+				result = verify_qr_action_registry()
 			self.assertFalse(result["ok"])
 			self.assertTrue(any(m["action_key"] == "confirm_putaway" for m in result["mismatched"]))
 		finally:
 			reg.actions = saved_actions
 			reg.save(ignore_permissions=True)
+
+	def test_missing_flow_actions_detected(self):
+		with patch(
+			"asn_module.commands._get_enabled_flow_action_keys",
+			return_value={"create_purchase_receipt", "create_purchase_invoice"},
+		):
+			result = verify_qr_action_registry()
+		self.assertFalse(result["ok"])
+		self.assertIn("confirm_putaway", result["missing_flow_actions"])

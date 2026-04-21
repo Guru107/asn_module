@@ -84,6 +84,16 @@ def ensure_dispatch_flow_fixtures(
 	return mapping
 
 
+def cleanup_dispatch_flow_fixtures(*, flow_name_prefix: str = "IT-Dispatch-Flow") -> None:
+	"""Remove fixture flow definitions created by ``ensure_dispatch_flow_fixtures``."""
+	for flow_name in frappe.get_all(
+		"Barcode Flow Definition",
+		filters={"flow_name": ["like", f"{flow_name_prefix}::%"]},
+		pluck="name",
+	):
+		frappe.delete_doc("Barcode Flow Definition", flow_name, force=True, ignore_permissions=True)
+
+
 def _upsert_flow_definition(*, flow_name: str, source_doctype: str, action_rows: list[dict]):
 	if frappe.db.exists("Barcode Flow Definition", flow_name):
 		flow = frappe.get_doc("Barcode Flow Definition", flow_name)
