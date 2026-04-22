@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.exceptions import UniqueValidationError
 from frappe.model.document import Document
 from frappe.utils import cint
 
@@ -34,8 +35,23 @@ class BarcodeFlowTransition(Document):
 		if self.binding_mode == "direct":
 			self.binding_mode = "mapping"
 
+		self._validate_unique_transition_key()
 		self._validate_same_flow_links()
 		self._validate_binding_mode_contract()
+
+	def _validate_unique_transition_key(self):
+		existing_name = frappe.db.get_value(
+			"Barcode Flow Transition",
+			{"flow": self.flow, "transition_key": self.transition_key},
+			"name",
+		)
+		if existing_name and (self.is_new() or existing_name != self.name):
+			frappe.throw(
+				_("Transition Key must be unique within flow {0}. Duplicate key: {1}").format(
+					self.flow, self.transition_key
+				),
+				exc=UniqueValidationError,
+			)
 
 	def _validate_same_flow_links(self):
 		self._validate_link_flow("Barcode Flow Node", self.source_node, "Source Node")

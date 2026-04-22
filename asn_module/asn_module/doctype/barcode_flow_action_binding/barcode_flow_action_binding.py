@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.exceptions import UniqueValidationError
 from frappe.model.document import Document
 
 from asn_module.asn_module.doctype.barcode_flow_definition.barcode_flow_definition import (
@@ -26,8 +27,23 @@ class BarcodeFlowActionBinding(Document):
 		self.action = normalize_key(self.action)
 		self.custom_handler = normalize_key(self.custom_handler)
 
+		self._validate_unique_binding_key()
 		self._validate_same_flow_links()
 		self._validate_trigger_contract()
+
+	def _validate_unique_binding_key(self):
+		existing_name = frappe.db.get_value(
+			"Barcode Flow Action Binding",
+			{"flow": self.flow, "binding_key": self.binding_key},
+			"name",
+		)
+		if existing_name and (self.is_new() or existing_name != self.name):
+			frappe.throw(
+				_("Binding Key must be unique within flow {0}. Duplicate key: {1}").format(
+					self.flow, self.binding_key
+				),
+				exc=UniqueValidationError,
+			)
 
 	def _validate_same_flow_links(self):
 		self._validate_link_flow("Barcode Flow Node", self.target_node, "Target Node")

@@ -1,4 +1,5 @@
 import frappe
+from frappe.exceptions import UniqueValidationError
 from frappe.tests.utils import FrappeTestCase
 
 
@@ -155,6 +156,69 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 					"value": "Main Warehouse",
 				}
 			).insert(ignore_permissions=True)
+
+	def test_node_key_must_be_unique_within_flow(self):
+		flow = self.make_flow()
+		self.make_node(flow=flow.name, node_key="scan")
+
+		with self.assertRaises(UniqueValidationError):
+			self.make_node(flow=flow.name, node_key="scan", label="Scan Again")
+
+	def test_node_key_can_repeat_across_flows(self):
+		first_flow = self.make_flow()
+		second_flow = self.make_flow()
+
+		first_node = self.make_node(flow=first_flow.name, node_key="scan")
+		second_node = self.make_node(flow=second_flow.name, node_key="scan")
+
+		assert first_node.name != second_node.name
+
+	def test_condition_key_must_be_unique_within_flow(self):
+		flow = self.make_flow()
+		self.make_condition(flow=flow.name, condition_key="has-warehouse")
+
+		with self.assertRaises(UniqueValidationError):
+			self.make_condition(flow=flow.name, condition_key="has-warehouse", value="Main Warehouse")
+
+	def test_field_map_key_must_be_unique_within_flow(self):
+		flow = self.make_flow()
+		self.make_field_map(flow=flow.name, map_key="warehouse-map")
+
+		with self.assertRaises(UniqueValidationError):
+			self.make_field_map(flow=flow.name, map_key="warehouse-map", target_field_path="target.other_field")
+
+	def test_action_binding_key_must_be_unique_within_flow(self):
+		flow = self.make_flow()
+		self.make_action_binding(flow=flow.name, binding_key="custom-receive")
+
+		with self.assertRaises(UniqueValidationError):
+			self.make_action_binding(flow=flow.name, binding_key="custom-receive")
+
+	def test_transition_key_must_be_unique_within_flow(self):
+		flow = self.make_flow()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name, map_key="warehouse-map")
+		transition_key = "scan-to-received"
+
+		self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			transition_key=transition_key,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		with self.assertRaises(UniqueValidationError):
+			self.make_transition(
+				flow=flow.name,
+				source_node=source_node.name,
+				target_node=target_node.name,
+				transition_key=transition_key,
+				field_map=field_map.name,
+				target_doctype="Purchase Receipt",
+			)
 
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc(

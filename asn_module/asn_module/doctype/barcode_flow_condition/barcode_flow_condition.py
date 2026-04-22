@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.exceptions import UniqueValidationError
 from frappe.model.document import Document
 
 from asn_module.asn_module.doctype.barcode_flow_definition.barcode_flow_definition import (
@@ -25,3 +26,18 @@ class BarcodeFlowCondition(Document):
 		self.operator = normalize_key(self.operator)
 		self.value = (self.value or "").strip()
 		self.aggregate_fn = normalize_key(self.aggregate_fn)
+		self._validate_unique_condition_key()
+
+	def _validate_unique_condition_key(self):
+		existing_name = frappe.db.get_value(
+			"Barcode Flow Condition",
+			{"flow": self.flow, "condition_key": self.condition_key},
+			"name",
+		)
+		if existing_name and (self.is_new() or existing_name != self.name):
+			frappe.throw(
+				_("Condition Key must be unique within flow {0}. Duplicate key: {1}").format(
+					self.flow, self.condition_key
+				),
+				exc=UniqueValidationError,
+			)
