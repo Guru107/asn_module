@@ -29,3 +29,10 @@ class TestQRActionDefinition(FrappeTestCase):
 
 		with self.assertRaises(frappe.DuplicateEntryError):
 			self.make_action_definition(action_key=action_key)
+
+	def test_save_rejects_invalid_allowed_role_names(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.make_action_definition(
+				action_key=f"test_invalid_roles_{frappe.generate_hash(length=8)}",
+				allowed_roles="Stock User, Not A Role",
+			)

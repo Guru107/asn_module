@@ -71,7 +71,7 @@ def sync_qr_action_definitions():
 			frappe.get_all(
 				"QR Action Definition",
 				filters={"action_key": ["in", [row["action_key"] for row in DEFAULT_QR_ACTION_DEFINITIONS]]},
-				pluck="name",
+				pluck="action_key",
 			)
 		)
 		for row in DEFAULT_QR_ACTION_DEFINITIONS:
