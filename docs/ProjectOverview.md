@@ -5,6 +5,7 @@ This is a **Frappe framework** custom app called `asn_module`. It follows standa
 ## Barcode Flow Configuration
 
 - Operator/System Manager runbook: [BarcodeFlowConfiguration.md](BarcodeFlowConfiguration.md)
+- User walkthrough wiki: [BarcodeFlowUserWiki.md](BarcodeFlowUserWiki.md)
 - Current model is relational and link-native.
 - Author in this order:
   1. `Barcode Flow Definition` plus `scopes`
