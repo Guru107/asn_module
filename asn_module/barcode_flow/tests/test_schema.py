@@ -144,6 +144,43 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 				}
 			).insert(ignore_permissions=True)
 
+	def test_transition_does_not_enforce_binding_mode_contracts_in_task_2(self):
+		flow = self.make_flow()
+		action = self.make_action_definition()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+
+		transition = frappe.get_doc(
+			{
+				"doctype": "Barcode Flow Transition",
+				"flow": flow.name,
+				"transition_key": f"transition-{frappe.generate_hash(length=6)}",
+				"generation_mode": "runtime",
+				"source_node": source_node.name,
+				"target_node": target_node.name,
+				"action": action.name,
+				"binding_mode": "mapping",
+			}
+		).insert(ignore_permissions=True)
+
+		assert transition.name
+
+	def test_action_binding_does_not_enforce_trigger_contracts_in_task_2(self):
+		flow = self.make_flow()
+		action = self.make_action_definition()
+
+		binding = frappe.get_doc(
+			{
+				"doctype": "Barcode Flow Action Binding",
+				"flow": flow.name,
+				"binding_key": f"binding-{frappe.generate_hash(length=6)}",
+				"trigger_event": "On Transition",
+				"action": action.name,
+			}
+		).insert(ignore_permissions=True)
+
+		assert binding.name
+
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc(
 				{

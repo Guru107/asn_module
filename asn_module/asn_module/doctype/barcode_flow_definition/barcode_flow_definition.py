@@ -19,36 +19,6 @@ def build_flow_entity_name(*, flow: str | None, entity_code: str, key: str | Non
 	return f"FLOW-{flow_name}-{entity_code}-{key_value}"
 
 
-def ensure_unique_flow_key(doc: Document, *, key_fieldname: str, key_label: str) -> None:
-	flow_name = normalize_key(getattr(doc, "flow", None))
-	key_value = normalize_key(getattr(doc, key_fieldname, None))
-	if not flow_name or not key_value:
-		return
-
-	filters = {"flow": flow_name, key_fieldname: key_value, "name": ["!=", doc.name or ""]}
-	if frappe.db.exists(doc.doctype, filters):
-		frappe.throw(
-			_("{0} must be unique within flow {1}.").format(key_label, flow_name),
-			exc=UniqueValidationError,
-		)
-
-
-def validate_link_belongs_to_flow(doc: Document, fieldname: str) -> None:
-	linked_name = normalize_key(getattr(doc, fieldname, None))
-	if not linked_name:
-		return
-
-	field = doc.meta.get_field(fieldname)
-	if not field or field.fieldtype != "Link":
-		return
-
-	linked_flow = normalize_key(frappe.db.get_value(field.options, linked_name, "flow"))
-	if linked_flow and linked_flow != normalize_key(getattr(doc, "flow", None)):
-		frappe.throw(
-			_("{0} must belong to flow {1}.").format(field.label, normalize_key(doc.flow))
-		)
-
-
 class BarcodeFlowDefinition(Document):
 	def validate(self):
 		self.flow_name = normalize_key(self.flow_name)
