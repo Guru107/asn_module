@@ -695,6 +695,33 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, binding.name):
 			action.delete()
 
+	def test_delete_qr_action_definition_succeeds_after_references_are_removed(self):
+		flow = self.make_flow()
+		action = self.make_action_definition(action_key=f"action-{frappe.generate_hash(length=6)}")
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name, map_key=f"map-{frappe.generate_hash(length=6)}")
+		binding = self.make_action_binding(
+			flow=flow.name,
+			binding_key=f"binding-{frappe.generate_hash(length=6)}",
+			action=action.name,
+		)
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			action=action.name,
+			action_binding=binding.name,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		transition.delete()
+		binding.delete()
+		action.delete()
+
+		assert not frappe.db.exists("QR Action Definition", action.name)
+
 	def test_delete_unused_field_map_succeeds(self):
 		flow = self.make_flow()
 		field_map = self.make_field_map(flow=flow.name, map_key=f"unused-map-{frappe.generate_hash(length=6)}")

@@ -2,11 +2,21 @@ from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import frappe
 from frappe.tests import UnitTestCase
 from frappe.utils import cint
 from hypothesis import example, given
 from hypothesis import strategies as st
 
+from asn_module.asn_module.doctype.barcode_flow_action_binding.barcode_flow_action_binding import (
+	BarcodeFlowActionBinding,
+)
+from asn_module.asn_module.doctype.barcode_flow_transition.barcode_flow_transition import (
+	BarcodeFlowTransition,
+)
+from asn_module.asn_module.doctype.qr_action_definition.qr_action_definition import (
+	QRActionDefinition,
+)
 from asn_module.barcode_flow.conditions import evaluate_conditions
 from asn_module.barcode_flow.errors import AmbiguousFlowScopeError, NoMatchingFlowError
 from asn_module.barcode_flow.resolver import resolve_flow_with_scope
@@ -46,6 +56,7 @@ _TRANSITION_LINK_FIELDS = st.sampled_from(
 	["source_node", "target_node", "condition", "field_map", "action_binding"]
 )
 _BINDING_LINK_FIELDS = st.sampled_from(["target_node", "target_transition"])
+_FLOW_ID = st.integers(min_value=1, max_value=24)
 
 
 @st.composite
@@ -553,3 +564,70 @@ class TestBarcodeFlowProperties(UnitTestCase):
 		self.assertEqual(detached_blockers["field_maps"].get(owned["field_map"], []), [])
 		self.assertEqual(detached_blockers["bindings"].get(owned["bindings"]["handler"], []), [])
 		self.assertEqual(detached_blockers["transitions"].get(owned["transition"], []), [])
+
+	@given(flow_id=_FLOW_ID, is_same_flow=st.booleans())
+	def test_transition_link_validator_enforces_same_flow(self, flow_id, is_same_flow):
+		transition = object.__new__(BarcodeFlowTransition)
+		transition.flow = f"FLOW-{flow_id}"
+		link_flow = transition.flow if is_same_flow else f"FLOW-{flow_id + 100}"
+
+		with patch(
+			"asn_module.asn_module.doctype.barcode_flow_transition.barcode_flow_transition.frappe.db.get_value",
+			return_value=link_flow,
+		):
+			if is_same_flow:
+				BarcodeFlowTransition._validate_link_flow(
+					transition, "Barcode Flow Node", "FLOW-TEST-NODE", "Source Node"
+				)
+				return
+
+			with self.assertRaises(frappe.ValidationError):
+				BarcodeFlowTransition._validate_link_flow(
+					transition, "Barcode Flow Node", "FLOW-TEST-NODE", "Source Node"
+				)
+
+	@given(flow_id=_FLOW_ID, is_same_flow=st.booleans())
+	def test_action_binding_link_validator_enforces_same_flow(self, flow_id, is_same_flow):
+		binding = object.__new__(BarcodeFlowActionBinding)
+		binding.flow = f"FLOW-{flow_id}"
+		link_flow = binding.flow if is_same_flow else f"FLOW-{flow_id + 100}"
+
+		with patch(
+			"asn_module.asn_module.doctype.barcode_flow_action_binding.barcode_flow_action_binding.frappe.db.get_value",
+			return_value=link_flow,
+		):
+			if is_same_flow:
+				BarcodeFlowActionBinding._validate_link_flow(
+					binding, "Barcode Flow Transition", "FLOW-TEST-TRANS", "Target Transition"
+				)
+				return
+
+			with self.assertRaises(frappe.ValidationError):
+				BarcodeFlowActionBinding._validate_link_flow(
+					binding, "Barcode Flow Transition", "FLOW-TEST-TRANS", "Target Transition"
+				)
+
+	@given(has_transition_refs=st.booleans(), has_binding_refs=st.booleans())
+	def test_qr_action_delete_guard_blocks_until_references_are_removed(
+		self, has_transition_refs, has_binding_refs
+	):
+		action = object.__new__(QRActionDefinition)
+		action.name = "ACT-test"
+
+		def _get_all(doctype, **_kwargs):
+			if doctype == "Barcode Flow Transition":
+				return ["FLOW-1-TRANS"] if has_transition_refs else []
+			if doctype == "Barcode Flow Action Binding":
+				return ["FLOW-1-BIND"] if has_binding_refs else []
+			return []
+
+		with patch(
+			"asn_module.asn_module.doctype.qr_action_definition.qr_action_definition.frappe.get_all",
+			side_effect=_get_all,
+		):
+			if has_transition_refs or has_binding_refs:
+				with self.assertRaises(frappe.ValidationError):
+					QRActionDefinition.on_trash(action)
+				return
+
+			QRActionDefinition.on_trash(action)
