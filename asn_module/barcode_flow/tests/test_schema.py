@@ -144,61 +144,117 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 				}
 			).insert(ignore_permissions=True)
 
-	def test_transition_does_not_enforce_binding_mode_contracts_in_task_2(self):
+	def test_transition_mapping_mode_requires_field_map_and_target_doctype(self):
 		flow = self.make_flow()
 		action = self.make_action_definition()
 		source_node = self.make_node(flow=flow.name, node_key="scan")
 		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
 
-		transition = frappe.get_doc(
-			{
-				"doctype": "Barcode Flow Transition",
-				"flow": flow.name,
-				"transition_key": f"transition-{frappe.generate_hash(length=6)}",
-				"generation_mode": "runtime",
-				"source_node": source_node.name,
-				"target_node": target_node.name,
-				"action": action.name,
-				"binding_mode": "mapping",
-			}
-		).insert(ignore_permissions=True)
-
-		assert transition.name
-
-	def test_action_binding_does_not_enforce_trigger_contracts_in_task_2(self):
-		flow = self.make_flow()
-		action = self.make_action_definition()
-
-		binding = frappe.get_doc(
-			{
-				"doctype": "Barcode Flow Action Binding",
-				"flow": flow.name,
-				"binding_key": f"binding-{frappe.generate_hash(length=6)}",
-				"trigger_event": "On Transition",
-				"action": action.name,
-			}
-		).insert(ignore_permissions=True)
-
-		assert binding.name
-
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc(
 				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "handler-binding",
-					"trigger_event": "custom_handler",
-					"action": self.make_action_definition().name,
-					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
+					"doctype": "Barcode Flow Transition",
+					"flow": flow.name,
+					"transition_key": f"transition-{frappe.generate_hash(length=6)}",
+					"generation_mode": "runtime",
+					"source_node": source_node.name,
+					"target_node": target_node.name,
+					"action": action.name,
+					"binding_mode": "mapping",
 				}
 			).insert(ignore_permissions=True)
+
+	def test_transition_custom_handler_mode_requires_custom_handler_binding(self):
+		flow = self.make_flow()
+		action = self.make_action_definition()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		binding = self.make_action_binding(
+			flow=flow.name,
+			binding_key=f"binding-{frappe.generate_hash(length=6)}",
+			trigger_event="On Enter Node",
+			target_node=source_node.name,
+		)
 
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc(
 				{
 					"doctype": "Barcode Flow Transition",
-					"transition_key": "scan-to-received",
+					"flow": flow.name,
+					"transition_key": f"transition-{frappe.generate_hash(length=6)}",
 					"generation_mode": "runtime",
-					"binding_mode": "mapping",
+					"source_node": source_node.name,
+					"target_node": target_node.name,
+					"action": action.name,
+					"binding_mode": "custom_handler",
+					"action_binding": binding.name,
+				}
+			).insert(ignore_permissions=True)
+
+	def test_transition_both_mode_requires_mapping_and_custom_handler_contracts(self):
+		flow = self.make_flow()
+		action = self.make_action_definition()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name)
+
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
+				{
+					"doctype": "Barcode Flow Transition",
+					"flow": flow.name,
+					"transition_key": f"transition-{frappe.generate_hash(length=6)}",
+					"generation_mode": "runtime",
+					"source_node": source_node.name,
+					"target_node": target_node.name,
+					"action": action.name,
+					"binding_mode": "both",
+					"field_map": field_map.name,
+					"target_doctype": "Purchase Receipt",
+				}
+			).insert(ignore_permissions=True)
+
+	def test_action_binding_custom_handler_trigger_requires_handler_and_no_targets(self):
+		flow = self.make_flow()
+		node = self.make_node(flow=flow.name)
+
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"flow": flow.name,
+					"binding_key": f"binding-{frappe.generate_hash(length=6)}",
+					"trigger_event": "custom_handler",
+					"target_node": node.name,
+					"action": self.make_action_definition().name,
+				}
+			).insert(ignore_permissions=True)
+
+	def test_action_binding_node_triggers_require_target_node(self):
+		flow = self.make_flow()
+
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"flow": flow.name,
+					"binding_key": f"binding-{frappe.generate_hash(length=6)}",
+					"trigger_event": "On Enter Node",
+					"action": self.make_action_definition().name,
+				}
+			).insert(ignore_permissions=True)
+
+	def test_action_binding_transition_trigger_requires_target_transition(self):
+		flow = self.make_flow()
+
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
+				{
+					"doctype": "Barcode Flow Action Binding",
+					"flow": flow.name,
+					"binding_key": f"binding-{frappe.generate_hash(length=6)}",
+					"trigger_event": "On Transition",
+					"action": self.make_action_definition().name,
 				}
 			).insert(ignore_permissions=True)
 

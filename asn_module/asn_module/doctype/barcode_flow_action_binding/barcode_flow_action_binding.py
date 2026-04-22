@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 from asn_module.asn_module.doctype.barcode_flow_definition.barcode_flow_definition import (
@@ -24,3 +25,19 @@ class BarcodeFlowActionBinding(Document):
 		self.target_transition = normalize_key(self.target_transition)
 		self.action = normalize_key(self.action)
 		self.custom_handler = normalize_key(self.custom_handler)
+
+		self._validate_trigger_contract()
+
+	def _validate_trigger_contract(self):
+		if self.trigger_event == "custom_handler":
+			if not self.custom_handler:
+				frappe.throw(_("Custom Handler is required when Trigger Event is custom_handler."))
+			if self.target_node or self.target_transition:
+				frappe.throw(_("Target Node and Target Transition must be empty when Trigger Event is custom_handler."))
+			return
+
+		if self.trigger_event in {"On Enter Node", "On Exit Node"} and not self.target_node:
+			frappe.throw(_("Target Node is required when Trigger Event is {0}.").format(self.trigger_event))
+
+		if self.trigger_event == "On Transition" and not self.target_transition:
+			frappe.throw(_("Target Transition is required when Trigger Event is On Transition."))
