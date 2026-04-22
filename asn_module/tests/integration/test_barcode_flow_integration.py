@@ -19,35 +19,53 @@ from asn_module.tests.integration.fixtures import (
 	ensure_integration_user,
 	ensure_scoped_flow_route_fixtures,
 	integration_user_context,
+	relational_source_node_resolution,
 )
 from asn_module.utils.test_setup import before_tests
 
 
 class TestBarcodeFlowIntegration(FrappeTestCase):
 	def test_execute_transition_binding_returns_child_scan_codes_for_hybrid_and_immediate(self):
+		register_actions()
+		pi_action = frappe.db.get_value(
+			"QR Action Definition",
+			{"action_key": "create_purchase_invoice", "is_active": 1},
+			"name",
+		)
+		putaway_action = frappe.db.get_value(
+			"QR Action Definition",
+			{"action_key": "confirm_putaway", "is_active": 1},
+			"name",
+		)
+		stock_transfer_action = frappe.db.get_value(
+			"QR Action Definition",
+			{"action_key": "create_stock_transfer", "is_active": 1},
+			"name",
+		)
 		transition = SimpleNamespace(
 			binding_mode="custom_handler",
 			action_binding=SimpleNamespace(custom_handler="asn_module.tests.integration.fake_handler"),
-			target_node_key="received",
+			target_node="FLOW-it-runtime-flow-NODE-received",
 		)
 		flow_definition = SimpleNamespace(
+			name="it-runtime-flow",
 			transitions=[
 				SimpleNamespace(
 					transition_key="child-hybrid",
-					source_node_key="received",
-					action_key="create_purchase_invoice",
+					source_node="FLOW-it-runtime-flow-NODE-received",
+					action=pi_action,
 					generation_mode="hybrid",
 				),
 				SimpleNamespace(
 					transition_key="child-immediate",
-					source_node_key="received",
-					action_key="confirm_putaway",
+					source_node="FLOW-it-runtime-flow-NODE-received",
+					action=putaway_action,
 					generation_mode="immediate",
 				),
 				SimpleNamespace(
 					transition_key="child-runtime",
-					source_node_key="received",
-					action_key="create_stock_transfer",
+					source_node="FLOW-it-runtime-flow-NODE-received",
+					action=stock_transfer_action,
 					generation_mode="runtime",
 				),
 			]
@@ -190,9 +208,21 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 			return asn
 
 	def _dispatch_asn(self, *, asn_name: str, device_info: str) -> dict:
-		with integration_user_context():
+		with integration_user_context(), relational_source_node_resolution():
 			scan_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn_name)
 			return dispatch(code=scan_code, device_info=device_info)
+
+	def test_scoped_route_fixtures_create_relational_edges(self):
+		route = self._scoped_routes["gate_like"]
+		transition = frappe.get_doc("Barcode Flow Transition", route["transition_name"])
+		binding = frappe.get_doc("Barcode Flow Action Binding", route["binding_name"])
+		self.assertEqual(transition.flow, route["flow_name"])
+		self.assertEqual(transition.source_node, route["source_node_name"])
+		self.assertEqual(transition.target_node, route["target_node_name"])
+		self.assertEqual(transition.action_binding, binding.name)
+		self.assertEqual(binding.flow, route["flow_name"])
+		self.assertEqual(binding.trigger_event, "custom_handler")
+		self.assertEqual(binding.action, transition.action)
 
 	def _latest_scan_log(self, *, asn_name: str, device_info: str) -> dict:
 		return frappe.get_all(

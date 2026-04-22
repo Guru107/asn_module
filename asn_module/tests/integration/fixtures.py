@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import frappe
 
+from asn_module.barcode_flow.resolver import resolve_flow_with_scope
 from asn_module.setup_actions import get_canonical_actions
 
 # Roles required together for create_purchase_receipt + create_purchase_invoice dispatch.
@@ -76,9 +78,16 @@ def ensure_dispatch_flow_fixtures(*, flow_name_prefix: str = "IT-Dispatch-Flow")
 		)
 		for row in rows:
 			action_key = row["action_key"]
+			transition = flow["transitions"][action_key]
+			binding = flow["bindings"][action_key]
 			mapping[action_key] = {
-				"flow_name": flow.name,
+				"flow_name": flow["definition"].name,
 				"transition_key": _transition_key_for_action(action_key),
+				"transition_name": transition.name,
+				"binding_name": binding.name,
+				"action_name": transition.action,
+				"source_node_name": flow["nodes"]["scan"].name,
+				"target_node_name": flow["nodes"]["handled"].name,
 			}
 
 	return mapping
@@ -147,6 +156,10 @@ def ensure_scoped_flow_route_fixtures(
 		"gate_like": {
 			"flow_name": gate_flow_name,
 			"transition_key": gate_transition_key,
+			"transition_name": f"FLOW-{gate_flow_name}-TRANS-{gate_transition_key}",
+			"binding_name": f"FLOW-{gate_flow_name}-BIND-{_binding_key_for_action(action_key)}",
+			"source_node_name": f"FLOW-{gate_flow_name}-NODE-scan",
+			"target_node_name": f"FLOW-{gate_flow_name}-NODE-handled",
 			"scope_key": "gate-like-scope",
 			"context": {
 				"source_doctype": source_doctype,
@@ -158,6 +171,10 @@ def ensure_scoped_flow_route_fixtures(
 		"direct_pr": {
 			"flow_name": direct_flow_name,
 			"transition_key": direct_transition_key,
+			"transition_name": f"FLOW-{direct_flow_name}-TRANS-{direct_transition_key}",
+			"binding_name": f"FLOW-{direct_flow_name}-BIND-{_binding_key_for_action(action_key)}",
+			"source_node_name": f"FLOW-{direct_flow_name}-NODE-scan",
+			"target_node_name": f"FLOW-{direct_flow_name}-NODE-handled",
 			"scope_key": "direct-pr-scope",
 			"context": {
 				"source_doctype": source_doctype,
@@ -179,11 +196,25 @@ def ensure_scoped_test_warehouses(*, company: str) -> dict[str, str]:
 
 def cleanup_dispatch_flow_fixtures(*, flow_name_prefix: str = "IT-Dispatch-Flow") -> None:
 	"""Remove fixture flow definitions created by ``ensure_dispatch_flow_fixtures``."""
-	for flow_name in frappe.get_all(
+	flow_names = frappe.get_all(
 		"Barcode Flow Definition",
 		filters={"flow_name": ["like", f"{flow_name_prefix}::%"]},
 		pluck="name",
+	)
+	if not flow_names:
+		return
+
+	for doctype in (
+		"Barcode Flow Transition",
+		"Barcode Flow Action Binding",
+		"Barcode Flow Field Map",
+		"Barcode Flow Condition",
+		"Barcode Flow Node",
 	):
+		for docname in frappe.get_all(doctype, filters={"flow": ["in", flow_names]}, pluck="name"):
+			frappe.delete_doc(doctype, docname, force=True, ignore_permissions=True)
+
+	for flow_name in flow_names:
 		frappe.delete_doc("Barcode Flow Definition", flow_name, force=True, ignore_permissions=True)
 
 
@@ -219,57 +250,11 @@ def _upsert_flow_definition(*, flow_name: str, source_doctype: str, action_rows:
 			}
 		],
 	)
-	flow.set(
-		"nodes",
-		[
-			{
-				"doctype": "Barcode Flow Node",
-				"node_key": "scan",
-				"label": "Scan",
-				"node_type": "Start",
-			},
-			{
-				"doctype": "Barcode Flow Node",
-				"node_key": "handled",
-				"label": "Handled",
-				"node_type": "End",
-			},
-		],
-	)
+	flow.set("nodes", [])
 	flow.set("conditions", [])
 	flow.set("field_maps", [])
-	flow.set(
-		"action_bindings",
-		[
-			{
-				"doctype": "Barcode Flow Action Binding",
-				"binding_key": _binding_key_for_action(row["action_key"]),
-				"enabled": 1,
-				"trigger_event": "custom_handler",
-				"action_key": row["action_key"],
-				"custom_handler": row["handler_method"],
-				"handler_override_wins": 0,
-			}
-			for row in action_rows
-		],
-	)
-	flow.set(
-		"transitions",
-		[
-			{
-				"doctype": "Barcode Flow Transition",
-				"transition_key": _transition_key_for_action(row["action_key"]),
-				"generation_mode": "runtime",
-				"source_node_key": "scan",
-				"target_node_key": "handled",
-				"action_key": row["action_key"],
-				"binding_mode": "custom_handler",
-				"binding_key": _binding_key_for_action(row["action_key"]),
-				"priority": 100,
-			}
-			for row in action_rows
-		],
-	)
+	flow.set("action_bindings", [])
+	flow.set("transitions", [])
 
 	if flow.is_new():
 		flow.insert(ignore_permissions=True)
@@ -291,7 +276,38 @@ def _upsert_flow_definition(*, flow_name: str, source_doctype: str, action_rows:
 			update_modified=False,
 		)
 
-	return flow
+	nodes = {
+		"scan": _upsert_node(flow=flow.name, node_key="scan", label="Scan", node_type="Start"),
+		"handled": _upsert_node(flow=flow.name, node_key="handled", label="Handled", node_type="End"),
+	}
+	bindings = {}
+	transitions = {}
+	for row in action_rows:
+		action_definition = _get_action_definition(row["action_key"])
+		binding = _upsert_action_binding(
+			flow=flow.name,
+			binding_key=_binding_key_for_action(row["action_key"]),
+			action=action_definition["name"],
+			custom_handler=row["handler_method"],
+		)
+		transition = _upsert_transition(
+			flow=flow.name,
+			transition_key=_transition_key_for_action(row["action_key"]),
+			source_node=nodes["scan"].name,
+			target_node=nodes["handled"].name,
+			action=action_definition["name"],
+			action_binding=binding.name,
+			priority=100,
+		)
+		bindings[row["action_key"]] = binding
+		transitions[row["action_key"]] = transition
+
+	return {
+		"definition": flow,
+		"nodes": nodes,
+		"bindings": bindings,
+		"transitions": transitions,
+	}
 
 
 def _binding_key_for_action(action_key: str) -> str:
@@ -360,62 +376,154 @@ def _upsert_scoped_single_action_flow_definition(
 			}
 		],
 	)
-	flow.set(
-		"nodes",
-		[
-			{
-				"doctype": "Barcode Flow Node",
-				"node_key": "scan",
-				"label": "Scan",
-				"node_type": "Start",
-			},
-			{
-				"doctype": "Barcode Flow Node",
-				"node_key": "handled",
-				"label": "Handled",
-				"node_type": "End",
-			},
-		],
-	)
+	flow.set("nodes", [])
 	flow.set("conditions", [])
 	flow.set("field_maps", [])
-	flow.set(
-		"action_bindings",
-		[
-			{
-				"doctype": "Barcode Flow Action Binding",
-				"binding_key": _binding_key_for_action(action_key),
-				"enabled": 1,
-				"trigger_event": "custom_handler",
-				"action_key": action_key,
-				"custom_handler": handler_method,
-				"handler_override_wins": 0,
-			}
-		],
-	)
-	flow.set(
-		"transitions",
-		[
-			{
-				"doctype": "Barcode Flow Transition",
-				"transition_key": transition_key,
-				"generation_mode": "runtime",
-				"source_node_key": "scan",
-				"target_node_key": "handled",
-				"action_key": action_key,
-				"binding_mode": "custom_handler",
-				"binding_key": _binding_key_for_action(action_key),
-				"priority": 200,
-			}
-		],
-	)
+	flow.set("action_bindings", [])
+	flow.set("transitions", [])
 
 	if flow.is_new():
 		flow.insert(ignore_permissions=True)
 	else:
 		flow.save(ignore_permissions=True)
 
+	nodes = {
+		"scan": _upsert_node(flow=flow.name, node_key="scan", label="Scan", node_type="Start"),
+		"handled": _upsert_node(flow=flow.name, node_key="handled", label="Handled", node_type="End"),
+	}
+	action_definition = _get_action_definition(action_key)
+	binding = _upsert_action_binding(
+		flow=flow.name,
+		binding_key=_binding_key_for_action(action_key),
+		action=action_definition["name"],
+		custom_handler=handler_method,
+	)
+	_upsert_transition(
+		flow=flow.name,
+		transition_key=transition_key,
+		source_node=nodes["scan"].name,
+		target_node=nodes["handled"].name,
+		action=action_definition["name"],
+		action_binding=binding.name,
+		priority=200,
+	)
+
 	return flow
+
+
+def _get_action_definition(action_key: str) -> dict:
+	row = frappe.db.get_value(
+		"QR Action Definition",
+		{"action_key": action_key, "is_active": 1},
+		["name", "action_key", "handler_method", "source_doctype"],
+		as_dict=True,
+	)
+	if not row:
+		raise frappe.ValidationError(f"Missing active QR Action Definition for {action_key}")
+	return row
+
+
+def _upsert_node(*, flow: str, node_key: str, label: str, node_type: str):
+	name = f"FLOW-{flow}-NODE-{node_key}"
+	if frappe.db.exists("Barcode Flow Node", name):
+		doc = frappe.get_doc("Barcode Flow Node", name)
+	else:
+		doc = frappe.get_doc({"doctype": "Barcode Flow Node", "flow": flow, "node_key": node_key})
+
+	doc.flow = flow
+	doc.node_key = node_key
+	doc.label = label
+	doc.node_type = node_type
+	_save_doc(doc)
+	return doc
+
+
+def _upsert_action_binding(*, flow: str, binding_key: str, action: str, custom_handler: str):
+	name = f"FLOW-{flow}-BIND-{binding_key}"
+	if frappe.db.exists("Barcode Flow Action Binding", name):
+		doc = frappe.get_doc("Barcode Flow Action Binding", name)
+	else:
+		doc = frappe.get_doc(
+			{"doctype": "Barcode Flow Action Binding", "flow": flow, "binding_key": binding_key}
+		)
+
+	doc.flow = flow
+	doc.binding_key = binding_key
+	doc.enabled = 1
+	doc.trigger_event = "custom_handler"
+	doc.action = action
+	doc.custom_handler = custom_handler
+	doc.handler_override_wins = 0
+	doc.target_node = ""
+	doc.target_transition = ""
+	_save_doc(doc)
+	return doc
+
+
+def _upsert_transition(
+	*,
+	flow: str,
+	transition_key: str,
+	source_node: str,
+	target_node: str,
+	action: str,
+	action_binding: str,
+	priority: int,
+):
+	name = f"FLOW-{flow}-TRANS-{transition_key}"
+	if frappe.db.exists("Barcode Flow Transition", name):
+		doc = frappe.get_doc("Barcode Flow Transition", name)
+	else:
+		doc = frappe.get_doc(
+			{"doctype": "Barcode Flow Transition", "flow": flow, "transition_key": transition_key}
+		)
+
+	doc.flow = flow
+	doc.transition_key = transition_key
+	doc.enabled = 1
+	doc.generation_mode = "runtime"
+	doc.source_node = source_node
+	doc.target_node = target_node
+	doc.action = action
+	doc.binding_mode = "custom_handler"
+	doc.action_binding = action_binding
+	doc.priority = priority
+	doc.condition = ""
+	doc.field_map = ""
+	doc.target_doctype = ""
+	_save_doc(doc)
+	return doc
+
+
+def _save_doc(doc):
+	if doc.is_new():
+		doc.insert(ignore_permissions=True)
+	else:
+		doc.save(ignore_permissions=True)
+
+
+@contextmanager
+def relational_source_node_resolution() -> Generator[None, None, None]:
+	"""Resolve the deterministic start node for integration docs from the active relational flow."""
+	from asn_module.qr_engine import dispatch as dispatch_module
+
+	original = dispatch_module._resolve_source_node
+
+	def _resolve(source_doc):
+		resolved = original(source_doc)
+		if resolved:
+			return resolved
+
+		context = dispatch_module._build_flow_resolution_context(source_doc)
+		resolved_flow = resolve_flow_with_scope(context)
+		flow_definition = resolved_flow[0] if resolved_flow else None
+		if not flow_definition:
+			return None
+
+		return f"FLOW-{flow_definition.name}-NODE-scan"
+
+	with patch("asn_module.qr_engine.dispatch._resolve_source_node", side_effect=_resolve):
+		yield
 
 
 @contextmanager

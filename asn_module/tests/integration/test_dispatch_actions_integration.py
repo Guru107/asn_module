@@ -20,11 +20,14 @@ from asn_module.tests.integration.fixtures import (
 	ensure_dispatch_flow_fixtures,
 	ensure_integration_user,
 	integration_user_context,
+	relational_source_node_resolution,
 )
 from asn_module.utils.test_setup import before_tests
 
 
 class TestDispatchActionsIntegration(FrappeTestCase):
+	_legacy_flow_fixture_prefix = "IT-Dispatch-Flow-DispatchActionsIntegration"
+
 	@classmethod
 	def _snapshot_registry_actions(cls) -> list[dict]:
 		reg = frappe.get_doc("QR Action Registry")
@@ -45,12 +48,14 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		cls._registry_snapshot = cls._snapshot_registry_actions()
 		register_actions()
 		ensure_integration_user()
-		cls._flow_fixture_prefix = "IT-Dispatch-Flow-DispatchActionsIntegration"
+		cls._flow_fixture_prefix = "IT-Dispatch-Flow"
+		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._legacy_flow_fixture_prefix)
 		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 		cls._flow_fixture_map = ensure_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 
 	@classmethod
 	def tearDownClass(cls):
+		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._legacy_flow_fixture_prefix)
 		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 		reg = frappe.get_doc("QR Action Registry")
 		reg.set("actions", [])
@@ -86,12 +91,24 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		self.assertEqual(log["barcode_flow_transition"], expected["transition_key"])
 		self.assertEqual(log["scope_resolution_key"], "default")
 
+	def test_dispatch_flow_fixtures_use_relational_edges(self):
+		fixture = self._flow_fixture_map["create_purchase_receipt"]
+		transition = frappe.get_doc("Barcode Flow Transition", fixture["transition_name"])
+		binding = frappe.get_doc("Barcode Flow Action Binding", fixture["binding_name"])
+		self.assertEqual(transition.flow, fixture["flow_name"])
+		self.assertEqual(transition.source_node, fixture["source_node_name"])
+		self.assertEqual(transition.target_node, fixture["target_node_name"])
+		self.assertEqual(transition.action_binding, binding.name)
+		self.assertEqual(binding.flow, fixture["flow_name"])
+		self.assertEqual(binding.action, fixture["action_name"])
+		self.assertEqual(binding.action, transition.action)
+
 	def test_confirm_putaway_via_dispatch(self):
 		out = run_asn_pr_submitted_via_dispatch(
 			supplier_invoice_no=f"PUT-{frappe.generate_hash(length=8)}",
 			qty=2,
 		)
-		with integration_user_context():
+		with integration_user_context(), relational_source_node_resolution():
 			code = get_or_create_scan_code("confirm_putaway", "Purchase Receipt", out.pr.name)
 			result = dispatch(code=code, device_info="integration-putaway")
 		self.assertTrue(result.get("success"))
@@ -107,7 +124,7 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 	def test_create_stock_transfer_via_dispatch(self):
 		fixture = TestCreateStockTransfer()
 		_pr, qi = fixture._make_purchase_receipt_with_qi("Accepted")
-		with integration_user_context():
+		with integration_user_context(), relational_source_node_resolution():
 			code = get_or_create_scan_code("create_stock_transfer", "Quality Inspection", qi.name)
 			result = dispatch(code=code, device_info="integration-st")
 		self.assertTrue(result.get("success"))
@@ -119,7 +136,7 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 	def test_create_purchase_return_via_dispatch(self):
 		fixture = TestCreatePurchaseReturn()
 		pr, qi = fixture._make_rejected_purchase_receipt_with_qi()
-		with integration_user_context():
+		with integration_user_context(), relational_source_node_resolution():
 			code = get_or_create_scan_code("create_purchase_return", "Quality Inspection", qi.name)
 			result = dispatch(code=code, device_info="integration-prret")
 		self.assertTrue(result.get("success"))
@@ -132,7 +149,7 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 	def test_subcontracting_dispatches_via_scan_code(self):
 		helper = TestSubcontractingHandlers()
 		sco = helper._make_integration_subcontracting_order()
-		with integration_user_context():
+		with integration_user_context(), relational_source_node_resolution():
 			code_dispatch = get_or_create_scan_code(
 				"create_subcontracting_dispatch", "Subcontracting Order", sco.name
 			)
@@ -143,7 +160,7 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		self.assertEqual(ste.stock_entry_type, "Send to Subcontractor")
 		self.assertEqual(ste.docstatus, 0)
 
-		with integration_user_context():
+		with integration_user_context(), relational_source_node_resolution():
 			with patch("erpnext.controllers.subcontracting_controller.get_incoming_rate", return_value=5):
 				code_receipt = get_or_create_scan_code(
 					"create_subcontracting_receipt", "Subcontracting Order", sco.name
