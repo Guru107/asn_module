@@ -1,307 +1,275 @@
 # Barcode Flow Configuration Guide
 
-This runbook is for System Managers/operators configuring `Barcode Flow Definition` so barcode scans route to the correct document actions without code changes.
+This runbook is for System Managers and operators configuring barcode flows in the current relational model. The primary authoring surface is now flow-scoped linked records, not legacy `*_key` transition wiring.
 
 ## Scope and Trade-offs
 
-- This guide favors explicit, strict configuration over permissive fallback behavior.
-- Trade-off: stricter validation blocks bad config early, but setup requires careful key management (`scope_key`, `transition_key`, `map_key`, `binding_key`).
-- Runtime matching is deterministic and fails on ambiguity.
-- Trade-off: no best-effort routing means safer operations, but misconfigured overlaps stop scans until fixed.
+- Configuration is strict and link-native. Invalid cross-flow references are rejected at save time instead of being tolerated until runtime.
+- Trade-off: setup is more explicit, but failures move earlier and are easier to diagnose.
+- Runtime transition matching is deterministic and flow-scoped. Ambiguous or underspecified routing fails fast.
+- Trade-off: there is no broad fallback match when source node state is missing.
+- Referenced records are delete-protected.
+- Trade-off: cleanup requires detaching references first, but accidental graph corruption is blocked.
 
-## Prerequisites
+## Primary Records
 
-1. `QR Action Registry` includes every `action_key` used in transitions.
-2. Operators have required roles for each action in `QR Action Registry`.
-3. Source documents include context used by scope matching (`source_doctype`, `company`, `warehouse`, `supplier_type`).
+### Barcode Flow Definition
 
-## Key DocTypes and Required Fields
-
-### Barcode Flow Definition (parent)
-
-Required:
+Owns:
 - `flow_name`
-
-Operational fields:
 - `is_active`
-- Child tables: `scopes`, `nodes`, `transitions`, `conditions`, `field_maps`, `action_bindings`
+- child table `scopes`
 
-### Barcode Flow Scope (child table: `scopes`)
+It does not own nodes, conditions, field maps, bindings, or transitions as child tables anymore. Those are standalone records linked back to the flow definition through their `flow` link field.
+
+### Barcode Flow Scope
+
+Still authored inside `Barcode Flow Definition.scopes`.
 
 Required:
 - `scope_key`
 - `priority`
 - `source_doctype`
 
-Routing fields:
+Optional match fields:
 - `company`
 - `warehouse`
 - `supplier_type`
-- `is_default` (only one default scope per flow)
+- `is_default`
 
-### Barcode Flow Node (child table: `nodes`)
+Runtime picks the winning scope by:
+1. highest specificity
+2. highest priority
+3. single default scope
 
-Required:
-- `node_key`
-- `label`
-- `node_type` (`Start`, `State`, `End`)
+If that still leaves more than one candidate, resolution fails as ambiguous.
 
-### Barcode Flow Transition (child table: `transitions`)
+### Standalone Relational Records
 
-Required:
-- `transition_key`
-- `generation_mode` (`immediate`, `runtime`, `hybrid`)
-- `source_node_key`
-- `target_node_key`
-- `action_key`
-- `binding_mode` (`mapping`, `custom_handler`, `both`)
+These are created as separate documents and must all point to the same `flow`:
+- `Barcode Flow Node`
+- `Barcode Flow Condition`
+- `Barcode Flow Field Map`
+- `Barcode Flow Action Binding`
+- `Barcode Flow Transition`
 
-Conditionally required:
-- `target_doctype` when `binding_mode` is `mapping` or `both`
-- `binding_key` when `binding_mode` is `custom_handler` or `both`
+`QR Action Definition` is also part of the operational graph, but it is global and not flow-owned.
 
-Optional references:
-- `condition_key`
-- `field_map_key`
-- `priority`
+## Authoring Order
 
-### Barcode Flow Condition (child table: `conditions`)
+Use this order. It matches current validation, Desk link pickers, and runtime expectations.
 
-Required:
-- `condition_key`
-- `scope` (`header`, `items_any`, `items_all`, `items_aggregate`)
-- `field_path`
-- `operator`
+### 1. Create `Barcode Flow Definition` and scopes
 
-Conditionally required:
-- `aggregate_fn` when `scope=items_aggregate`
-- `value` unless operator is `exists` or `is_set`
+Create the flow record first, then add the `scopes` rows that decide when the flow is eligible.
 
-### Barcode Flow Field Map (child table: `field_maps`)
+Minimum:
+- `flow_name`
+- one active scope with `source_doctype`
 
-Required:
-- `map_key`
-- `mapping_type` (`source`, `constant`)
-- `target_field_path`
+### 2. Create Nodes, Conditions, Field Maps, and QR Action Definitions
 
-Conditionally required:
-- `source_field_path` when `mapping_type=source`
-- `constant_value` when `mapping_type=constant`
+Create standalone docs next:
 
-### Barcode Flow Action Binding (child table: `action_bindings`)
-
-Required:
-- `binding_key`
-- `trigger_event` (`On Enter Node`, `On Exit Node`, `On Transition`, `custom_handler`)
-- `action_key`
-
-Conditionally required:
-- `custom_handler` when `trigger_event=custom_handler`
-- `target_node_key` when trigger is `On Enter Node` or `On Exit Node`
-- `target_transition_key` when trigger is `On Transition`
-
-## Example A: ASN -> Gate-like Step (Gate In simulation) -> Purchase Receipt
-
-Use this when one warehouse requires a gate step before receipt creation.
-
-### Flow A1: ASN to Gate In simulation
-
-This first transition can use a custom action key that is not part of canonical defaults, but it must exist in `QR Action Registry` with `source_doctype=ASN`.
-
-`Barcode Flow Definition`:
-- `flow_name`: `Inbound::GateIn::ASN`
-- `is_active`: checked
-
-`scopes` row:
-- `scope_key`: `gate-like-scope`
-- `source_doctype`: `ASN`
-- `company`: `Wind Power LLC`
-- `warehouse`: `_Test ASN Scoped Gate Warehouse - WPL`
-- `priority`: `300`
-- `is_default`: checked
-
-`nodes` rows:
-- `asn_scan` (`Start`)
-- `gate_in_simulated` (`State`)
-
-`action_bindings` row:
-- `binding_key`: `binding-asn-gate-in`
-- `trigger_event`: `custom_handler`
-- `action_key`: `asn_gate_in_simulation`
-- `custom_handler`: `custom_app.handlers.gate_flow.create_gate_in_step`
-
-`transitions` row:
-- `transition_key`: `asn-to-gate-in`
-- `source_node_key`: `asn_scan`
-- `target_node_key`: `gate_in_simulated`
-- `action_key`: `asn_gate_in_simulation`
-- `generation_mode`: `runtime`
-- `binding_mode`: `custom_handler`
-- `binding_key`: `binding-asn-gate-in`
-- `priority`: `200`
-
-### Flow A2: Gate In simulation to Purchase Receipt
-
-Use a second flow with `source_doctype` equal to the gate-step document doctype returned by your handler (for example `Gate Pass`).
+- `Barcode Flow Node`
+  - unique within flow by `(flow, node_key)`
+- `Barcode Flow Condition`
+  - unique within flow by `(flow, condition_key)`
+- `Barcode Flow Field Map`
+  - unique within flow by `(flow, map_key)`
+- `QR Action Definition`
+  - global source of truth for action resolution at dispatch/runtime
 
 Important:
-- Do not reuse canonical `create_purchase_receipt` for a non-`ASN` source.
-- Create a dedicated `QR Action Registry` row (example action key below) with `source_doctype=Gate Pass`.
+- `QR Action Definition` is the primary action source. Do not author flows assuming a registry-only fallback.
+- Every node, condition, and field map used by a transition must belong to the same flow as that transition.
 
-`Barcode Flow Definition`:
-- `flow_name`: `Inbound::GateInToPR`
+### 3. Create custom-handler bindings
 
-`scopes` row:
-- `scope_key`: `gate-step-source`
-- `source_doctype`: `Gate Pass`
-- `priority`: `300`
+Create `Barcode Flow Action Binding` records for any custom-handler execution path before transitions that reference them.
 
-`nodes` rows:
-- `gate_in_done` (`Start`)
-- `pr_draft` (`End`)
+For `trigger_event=custom_handler`:
+- `custom_handler` is required
+- `target_node` must be empty
+- `target_transition` must be empty
 
-`field_maps` row (example):
-- `map_key`: `gate_to_pr_wh`, `mapping_type`: `constant`, `constant_value`: `_Test ASN Scoped Gate Warehouse - WPL`, `target_field_path`: `set_warehouse`
+For event bindings:
+- `On Enter Node` and `On Exit Node` require `target_node`
+- `On Transition` requires `target_transition`
 
-`transitions` row:
-- `transition_key`: `gate-in-to-pr`
-- `source_node_key`: `gate_in_done`
-- `target_node_key`: `pr_draft`
-- `action_key`: `create_purchase_receipt_from_gate_pass`
-- `generation_mode`: `hybrid`
-- `binding_mode`: `mapping`
-- `field_map_key`: `gate_to_pr_wh`
-- `target_doctype`: `Purchase Receipt`
+All node and transition targets must belong to the same flow as the binding.
 
-Mapping behavior note:
-- Runtime resolves `field_map_key` to one `field_maps` row per transition.
-- If multiple fields are needed, use `binding_mode=both`/`custom_handler` to populate additional fields in handler logic.
-- For `binding_mode=both`, handler result is returned only when the linked action binding has `handler_override_wins=1`; otherwise the mapped document is inserted and returned.
+### 4. Create transitions using flow-scoped link pickers
 
-## Example B: ASN -> Purchase Receipt (Direct, no gate)
+Create `Barcode Flow Transition` records only after the linked relational records already exist.
 
-Use this where gate handling is not applicable.
+Desk link pickers are flow-scoped:
+- `source_node`, `target_node` -> `Barcode Flow Node` in current `flow`
+- `condition` -> `Barcode Flow Condition` in current `flow`
+- `field_map` -> `Barcode Flow Field Map` in current `flow`
+- `action_binding` -> `Barcode Flow Action Binding` in current `flow`
+- `action` -> active `QR Action Definition`
 
-`Barcode Flow Definition`:
-- `flow_name`: `Inbound::DirectPR::ASN`
+Transition mode contracts:
 
-`scopes` row:
-- `scope_key`: `direct-pr-scope`
-- `source_doctype`: `ASN`
-- `company`: `Wind Power LLC`
-- `warehouse`: `_Test ASN Scoped Direct Warehouse - WPL`
-- `priority`: `200`
-- `is_default`: checked
+- `binding_mode=mapping`
+  - requires `field_map`
+  - requires `target_doctype`
+- `binding_mode=custom_handler`
+  - requires `action_binding`
+  - linked binding must use `trigger_event=custom_handler`
+  - linked binding must define `custom_handler`
+- `binding_mode=both`
+  - requires `field_map`
+  - requires `action_binding`
+  - linked binding must use `trigger_event=custom_handler`
+  - `target_doctype` is required unless the linked binding has `handler_override_wins=1`
 
-`nodes` rows:
-- `asn_scan` (`Start`)
-- `pr_draft` (`End`)
+Strict behavior:
+- cross-flow links are rejected
+- runtime uses the link fields directly
+- legacy `source_node_key`, `target_node_key`, `condition_key`, `field_map_key`, `binding_key`, and `action_key` are not the primary configuration path
 
-`transitions` row:
-- `transition_key`: `asn-to-pr-direct`
-- `source_node_key`: `asn_scan`
-- `target_node_key`: `pr_draft`
-- `action_key`: `create_purchase_receipt`
-- `generation_mode`: `hybrid`
-- `binding_mode`: `mapping`
-- `target_doctype`: `Purchase Receipt`
+### 5. Add optional node/transition event bindings
 
-Recommended condition example (`conditions` + `condition_key`):
-- `condition_key`: `asn-submitted`
-- `scope`: `header`
-- `field_path`: `docstatus`
-- `operator`: `=`
-- `value`: `1`
+After the core transitions exist, you can add secondary bindings for:
+- `On Enter Node`
+- `On Exit Node`
+- `On Transition`
 
-## Example C: Dispatch/Outbound -> Gate Out-like path -> Mark dispatched
+These are optional orchestration hooks. They must still remain flow-consistent:
+- event binding `flow` must match the linked node or transition `flow`
 
-Use this when outbound requires gate-out verification before final dispatch marking.
+### 6. Understand hard-delete blocks before cleanup
 
-### Option 1 (recommended): two explicit transitions with separate actions
+Delete guards are enforced on referenced records.
 
-1. Outbound source document scan creates/opens gate-out step using `custom_handler`.
-2. Gate-out document scan triggers a dedicated dispatch-complete action to set final dispatched state.
+Blocked edges:
+- deleting a node is blocked by:
+  - `Transition.source_node`
+  - `Transition.target_node`
+  - `ActionBinding.target_node`
+- deleting a condition is blocked by:
+  - `Transition.condition`
+- deleting a field map is blocked by:
+  - `Transition.field_map`
+- deleting an action binding is blocked by:
+  - `Transition.action_binding`
+- deleting a transition is blocked by:
+  - `ActionBinding.target_transition`
+- deleting a QR action definition is blocked by:
+  - `Transition.action`
+  - `ActionBinding.action`
 
-`Flow C1` scope example:
-- `source_doctype`: `Subcontracting Order`
-- `scope_key`: `outbound-gate-out`
-- `action_key` on transition: `create_subcontracting_dispatch`
-- `binding_mode`: `custom_handler`
-- `custom_handler`: `custom_app.handlers.gate_flow.create_gate_out_step`
+Operational cleanup rule:
+- detach or delete dependent records first
+- then delete the now-unreferenced upstream record
 
-`Flow C2` scope example:
-- `source_doctype`: `Gate Pass`
-- `scope_key`: `outbound-mark-dispatched`
-- `action_key` on transition: `mark_subcontracting_dispatch_complete`
-- `binding_mode`: `custom_handler`
-- `custom_handler`: `custom_app.handlers.dispatch.mark_dispatch_complete`
+## Configuration Example
 
-Important:
-- Do not reuse canonical `create_subcontracting_receipt` for non-`Subcontracting Order` sources.
-- Create a dedicated `QR Action Registry` row for `mark_subcontracting_dispatch_complete` with `source_doctype=Gate Pass`.
+### Direct ASN to Purchase Receipt
 
-Trade-off:
-- Clear operational checkpoints and auditability, but one extra scan step.
+1. `Barcode Flow Definition`
+   - `flow_name`: `Inbound::DirectPR::ASN`
+   - one default scope:
+     - `scope_key`: `direct-pr-default`
+     - `source_doctype`: `ASN`
+     - optional `company` / `warehouse` filters
 
-### Option 2: single custom handler transition
+2. `Barcode Flow Node`
+   - `node_key=scan`
+   - `node_key=pr_draft`
 
-Single transition from outbound source executes gate-out logic and dispatched marking in one handler.
+3. `Barcode Flow Field Map`
+   - `map_key=asn-to-pr`
+   - map source header/item values into `Purchase Receipt`
 
-Trade-off:
-- Faster for operators, but less granular audit trail and less flexible exception handling.
+4. `QR Action Definition`
+   - active row for `create_purchase_receipt`
+   - `source_doctype=ASN`
+
+5. `Barcode Flow Transition`
+   - `source_node` -> `scan`
+   - `target_node` -> `pr_draft`
+   - `action` -> active `QR Action Definition` for `create_purchase_receipt`
+   - `binding_mode=mapping`
+   - `field_map` -> `asn-to-pr`
+   - `target_doctype=Purchase Receipt`
+   - `generation_mode=hybrid` or `runtime`
+
+## Validation Semantics
+
+### Same-flow integrity
+
+The following must share the same flow as the transition:
+- `source_node`
+- `target_node`
+- `condition`
+- `field_map`
+- `action_binding`
+
+The following must share the same flow as the action binding:
+- `target_node`
+- `target_transition`
+
+### Per-flow uniqueness
+
+Business keys are unique per flow:
+- `(flow, node_key)`
+- `(flow, condition_key)`
+- `(flow, map_key)`
+- `(flow, binding_key)`
+- `(flow, transition_key)`
+
+Cross-flow reuse is allowed. Same-flow duplicates are rejected.
+
+### Link-native runtime behavior
+
+Current runtime/dispatch behavior assumes:
+- source node state is available for dispatch matching
+- transitions are queried by `flow + source_node + action`
+- conditions are resolved by linked condition document
+- field maps are resolved by linked field map document
+- child scan-code generation derives action metadata from linked `QR Action Definition`
+
+There is no broad `flow + action` fallback match when source node is missing.
+
+## Desk Authoring Notes
+
+- Always set `flow` first on standalone docs. The link pickers depend on it.
+- If a transition link picker is empty, verify the linked record:
+  - exists
+  - belongs to the same flow
+  - is the correct doctype
+- For action links, only active `QR Action Definition` rows should be selected.
 
 ## Troubleshooting
 
-### 1) No matching flow
+### No matching flow
 
-Typical message:
-- `No active barcode flow matches context: {...}`
+Typical cause:
+- no active flow scope matched `source_doctype`, `company`, `warehouse`, or `supplier_type`
 
-Causes:
-- No active `Barcode Flow Definition` with matching `scopes`
-- `source_doctype` mismatch
-- Scope filters (`company`, `warehouse`, `supplier_type`) too restrictive
+Check:
+- scope filters are not overly narrow
+- exactly one default scope exists when priorities tie
 
-Fix:
-1. Verify the scanned source document fields used by routing context.
-2. Check scope filters and `is_active/enabled` flags.
-3. Add a default scope (`is_default=1`) where appropriate.
+### Transition save rejected
 
-### 2) Ambiguous flow or transition
+Typical causes:
+- missing `field_map` or `target_doctype` for `mapping`
+- wrong binding trigger for handler modes
+- cross-flow link selected manually
 
-Typical messages:
-- `Ambiguous barcode flow resolution for context {...}. Matching scopes: ...`
-- `Ambiguous barcode transition resolution in flow '...'. Matching transitions: ...`
+Check:
+- `binding_mode`
+- linked binding trigger
+- linked record `flow`
 
-Causes:
-- Multiple scopes tie on specificity/priority/default
-- Multiple transitions match same `action_key` at same effective priority/mode
+### Dispatch says source node is required
 
-Fix:
-1. Make scopes mutually exclusive by context filters.
-2. Adjust scope `priority` and ensure only one default candidate.
-3. Make transition matching unique per action path (or adjust transition `priority`).
+Current matching is strict. The source document must expose current node state or the caller must provide it through the supported runtime path. There is no flow-wide fallback matcher anymore.
 
-### 3) Missing binding key or field map key
+### Record cannot be deleted
 
-Typical messages:
-- `Transition <key> references unknown binding key: <binding_key>`
-- `Transition <key> references unknown field map key: <map_key>`
-- `Unknown binding key on transition: <binding_key>`
-- `Unknown field map key on transition: <map_key>`
-
-Causes:
-- `binding_key` or `field_map_key` points to nonexistent child rows
-- Flow definition context not supplied for key resolution in runtime
-
-Fix:
-1. Ensure referenced `binding_key` exists in `action_bindings`.
-2. Ensure referenced `field_map_key` exists in `field_maps`.
-3. Re-save flow after edits to trigger definition-level validation.
-
-## Operator Verification Checklist
-
-1. Scan a known code for each configured transition and confirm `Scan Log` is `Success`.
-2. Confirm `Scan Log` fields are populated: `barcode_flow_definition`, `barcode_flow_transition`, `scope_resolution_key`.
-3. Confirm generated/opened target document is expected doctype and state.
-4. For `hybrid`/`immediate`, verify child scan codes are generated for the resulting target document.
+The message names the blocking references. Remove or detach those references first, then retry the delete.

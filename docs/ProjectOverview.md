@@ -5,7 +5,15 @@ This is a **Frappe framework** custom app called `asn_module`. It follows standa
 ## Barcode Flow Configuration
 
 - Operator/System Manager runbook: [BarcodeFlowConfiguration.md](BarcodeFlowConfiguration.md)
-- Covers scoped flow selection, transition binding modes, required child-table keys, and troubleshooting for resolution/configuration errors.
+- Current model is relational and link-native.
+- Author in this order:
+  1. `Barcode Flow Definition` plus `scopes`
+  2. standalone `Barcode Flow Node`, `Barcode Flow Condition`, `Barcode Flow Field Map`, and active `QR Action Definition`
+  3. custom-handler `Barcode Flow Action Binding` records
+  4. `Barcode Flow Transition` records using flow-scoped link pickers
+  5. optional node/transition event bindings
+- Save-time validation enforces same-flow link integrity and mode/trigger contracts.
+- Delete guards block removal of referenced nodes, conditions, field maps, bindings, transitions, and QR action definitions until references are detached.
 
 ## Bench server setups
 
@@ -115,11 +123,17 @@ pre-commit run --all-files
 bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_schema --lightmode
 bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_resolver --lightmode
 bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_conditions --lightmode
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_mapping --lightmode
 bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_runtime --lightmode
+HYPOTHESIS_PROFILE=ci bench --site <site_name> run-tests --module asn_module.property_tests.test_barcode_flow_properties --lightmode
 
 # Run integration route coverage for scoped flow behavior
 bench --site <site_name> run-tests --app asn_module --module asn_module.tests.integration.test_barcode_flow_integration --lightmode
 ```
+
+Operational note:
+- Barcode flow runtime now executes against link fields, not legacy transition key wiring.
+- If dispatch cannot resolve a source node, transition matching fails explicitly instead of falling back to a wider flow/action search.
 
 ### Pre-commit Setup
 ```bash
