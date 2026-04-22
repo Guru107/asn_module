@@ -1,18 +1,29 @@
 {
+	"actions": [],
+	"allow_rename": 1,
 	"creation": "2026-04-21 00:00:00.000000",
 	"doctype": "DocType",
 	"engine": "InnoDB",
 	"field_order": [
+		"flow",
 		"binding_key",
 		"enabled",
 		"trigger_event",
-		"target_node_key",
-		"target_transition_key",
-		"action_key",
+		"target_node",
+		"target_transition",
+		"action",
 		"custom_handler",
 		"handler_override_wins"
 	],
 	"fields": [
+		{
+			"fieldname": "flow",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "Flow",
+			"options": "Barcode Flow Definition",
+			"reqd": 1
+		},
 		{
 			"fieldname": "binding_key",
 			"fieldtype": "Data",
@@ -36,20 +47,23 @@
 			"reqd": 1
 		},
 		{
-			"fieldname": "target_node_key",
-			"fieldtype": "Data",
-			"label": "Target Node Key"
+			"fieldname": "target_node",
+			"fieldtype": "Link",
+			"label": "Target Node",
+			"options": "Barcode Flow Node"
 		},
 		{
-			"fieldname": "target_transition_key",
-			"fieldtype": "Data",
-			"label": "Target Transition Key"
+			"fieldname": "target_transition",
+			"fieldtype": "Link",
+			"label": "Target Transition",
+			"options": "Barcode Flow Transition"
 		},
 		{
-			"fieldname": "action_key",
-			"fieldtype": "Data",
+			"fieldname": "action",
+			"fieldtype": "Link",
 			"in_list_view": 1,
-			"label": "Action Key",
+			"label": "Action",
+			"options": "QR Action Definition",
 			"reqd": 1
 		},
 		{
@@ -65,14 +79,28 @@
 		}
 	],
 	"index_web_pages_for_search": 0,
-	"istable": 1,
-	"modified": "2026-04-21 00:00:00.000000",
+	"links": [],
+	"modified": "2026-04-22 00:00:00.000000",
 	"modified_by": "Administrator",
 	"module": "ASN Module",
 	"name": "Barcode Flow Action Binding",
 	"owner": "Administrator",
-	"permissions": [],
-	"sort_field": "creation",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "System Manager",
+			"share": 1,
+			"write": 1
+		}
+	],
+	"sort_field": "modified",
 	"sort_order": "DESC",
-	"states": []
+	"states": [],
+	"track_changes": 1
 }

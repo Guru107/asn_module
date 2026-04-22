@@ -8,6 +8,12 @@ def _parse_allowed_roles(allowed_roles: str | None) -> list[str]:
 
 
 class QRActionDefinition(Document):
+	def autoname(self):
+		action_key = (self.action_key or "").strip()
+		if not action_key:
+			frappe.throw(_("Action Key is required"))
+		self.name = f"ACT-{action_key}"
+
 	def validate(self):
 		self.action_key = (self.action_key or "").strip()
 		if not self.action_key:

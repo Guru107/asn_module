@@ -1,21 +1,32 @@
 {
+	"actions": [],
+	"allow_rename": 1,
 	"creation": "2026-04-21 00:00:00.000000",
 	"doctype": "DocType",
 	"engine": "InnoDB",
 	"field_order": [
+		"flow",
 		"transition_key",
 		"generation_mode",
-		"source_node_key",
-		"target_node_key",
-		"action_key",
+		"source_node",
+		"target_node",
+		"action",
 		"target_doctype",
 		"binding_mode",
-		"condition_key",
-		"field_map_key",
-		"binding_key",
+		"condition",
+		"field_map",
+		"action_binding",
 		"priority"
 	],
 	"fields": [
+		{
+			"fieldname": "flow",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "Flow",
+			"options": "Barcode Flow Definition",
+			"reqd": 1
+		},
 		{
 			"fieldname": "transition_key",
 			"fieldtype": "Data",
@@ -32,30 +43,34 @@
 			"reqd": 1
 		},
 		{
-			"fieldname": "source_node_key",
-			"fieldtype": "Data",
+			"fieldname": "source_node",
+			"fieldtype": "Link",
 			"in_list_view": 1,
-			"label": "Source Node Key",
+			"label": "Source Node",
+			"options": "Barcode Flow Node",
 			"reqd": 1
 		},
 		{
-			"fieldname": "target_node_key",
-			"fieldtype": "Data",
+			"fieldname": "target_node",
+			"fieldtype": "Link",
 			"in_list_view": 1,
-			"label": "Target Node Key",
+			"label": "Target Node",
+			"options": "Barcode Flow Node",
 			"reqd": 1
 		},
 		{
-			"fieldname": "action_key",
-			"fieldtype": "Data",
+			"fieldname": "action",
+			"fieldtype": "Link",
 			"in_list_view": 1,
-			"label": "Action Key",
+			"label": "Action",
+			"options": "QR Action Definition",
 			"reqd": 1
 		},
 		{
 			"fieldname": "target_doctype",
-			"fieldtype": "Data",
-			"label": "Target DocType"
+			"fieldtype": "Link",
+			"label": "Target DocType",
+			"options": "DocType"
 		},
 		{
 			"fieldname": "binding_mode",
@@ -66,19 +81,22 @@
 			"reqd": 1
 		},
 		{
-			"fieldname": "condition_key",
-			"fieldtype": "Data",
-			"label": "Condition Key"
+			"fieldname": "condition",
+			"fieldtype": "Link",
+			"label": "Condition",
+			"options": "Barcode Flow Condition"
 		},
 		{
-			"fieldname": "field_map_key",
-			"fieldtype": "Data",
-			"label": "Field Map Key"
+			"fieldname": "field_map",
+			"fieldtype": "Link",
+			"label": "Field Map",
+			"options": "Barcode Flow Field Map"
 		},
 		{
-			"fieldname": "binding_key",
-			"fieldtype": "Data",
-			"label": "Binding Key"
+			"fieldname": "action_binding",
+			"fieldtype": "Link",
+			"label": "Action Binding",
+			"options": "Barcode Flow Action Binding"
 		},
 		{
 			"default": "0",
@@ -88,14 +106,28 @@
 		}
 	],
 	"index_web_pages_for_search": 0,
-	"istable": 1,
-	"modified": "2026-04-21 00:00:00.000000",
+	"links": [],
+	"modified": "2026-04-22 00:00:00.000000",
 	"modified_by": "Administrator",
 	"module": "ASN Module",
 	"name": "Barcode Flow Transition",
 	"owner": "Administrator",
-	"permissions": [],
-	"sort_field": "creation",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "System Manager",
+			"share": 1,
+			"write": 1
+		}
+	],
+	"sort_field": "modified",
 	"sort_order": "DESC",
-	"states": []
+	"states": [],
+	"track_changes": 1
 }

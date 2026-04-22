@@ -1,5 +1,4 @@
 import frappe
-from frappe.exceptions import UniqueValidationError
 from frappe.tests.utils import FrappeTestCase
 
 
@@ -15,71 +14,127 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 			"barcode_flow_field_map",
 			"barcode_flow_action_binding",
 			"barcode_flow_definition",
+			"qr_action_definition",
 		]:
 			frappe.reload_doc("asn_module", "doctype", doctype)
 
-	def _new_flow(self, **overrides):
+	def make_flow(self, flow_name: str | None = None, **overrides):
 		payload = {
 			"doctype": "Barcode Flow Definition",
-			"flow_name": f"Flow-{frappe.generate_hash(length=8)}",
+			"flow_name": flow_name or f"Flow-{frappe.generate_hash(length=8)}",
 		}
 		payload.update(overrides)
-		return frappe.get_doc(payload)
+		return frappe.get_doc(payload).insert(ignore_permissions=True)
 
-	def _valid_scope(self, scope_key: str, **overrides):
-		payload = {
-			"doctype": "Barcode Flow Scope",
-			"scope_key": scope_key,
-			"priority": 0,
-			"is_default": 0,
-			"source_doctype": "ASN",
-		}
-		payload.update(overrides)
-		return payload
-
-	def _valid_node(self, node_key: str, label: str, **overrides):
+	def make_node(self, *, flow: str, node_key: str = "scan", **overrides):
 		payload = {
 			"doctype": "Barcode Flow Node",
+			"flow": flow,
 			"node_key": node_key,
-			"label": label,
+			"label": "Scan",
 			"node_type": "State",
 		}
 		payload.update(overrides)
-		return payload
+		return frappe.get_doc(payload).insert(ignore_permissions=True)
 
-	def _valid_transition(self, transition_key: str, source_node_key: str, target_node_key: str, **overrides):
+	def make_condition(self, *, flow: str, condition_key: str = "has-warehouse", **overrides):
 		payload = {
-			"doctype": "Barcode Flow Transition",
-			"transition_key": transition_key,
-			"generation_mode": "runtime",
-			"source_node_key": source_node_key,
-			"target_node_key": target_node_key,
-			"action_key": "create_purchase_receipt",
-			"target_doctype": "Purchase Receipt",
-			"binding_mode": "mapping",
+			"doctype": "Barcode Flow Condition",
+			"flow": flow,
+			"condition_key": condition_key,
+			"scope": "header",
+			"field_path": "header.set_warehouse",
+			"operator": "eq",
+			"value": "Stores - _TC",
+			"aggregate_fn": "",
 		}
 		payload.update(overrides)
-		return payload
+		return frappe.get_doc(payload).insert(ignore_permissions=True)
 
-	def test_valid_definition_with_linked_rows_inserts_successfully(self):
-		flow = self._new_flow(
-			scopes=[self._valid_scope("default")],
-			nodes=[
-				self._valid_node("scan", "Scan"),
-				self._valid_node("received", "Received"),
-			],
-			conditions=[
+	def make_field_map(self, *, flow: str, map_key: str = "warehouse-map", **overrides):
+		payload = {
+			"doctype": "Barcode Flow Field Map",
+			"flow": flow,
+			"map_key": map_key,
+			"mapping_type": "source",
+			"source_field_path": "header.set_warehouse",
+			"target_field_path": "target.set_warehouse",
+		}
+		payload.update(overrides)
+		return frappe.get_doc(payload).insert(ignore_permissions=True)
+
+	def make_action_binding(self, *, flow: str, binding_key: str = "handler-binding", **overrides):
+		payload = {
+			"doctype": "Barcode Flow Action Binding",
+			"flow": flow,
+			"binding_key": binding_key,
+			"trigger_event": "custom_handler",
+			"action": self.make_action_definition().name,
+			"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
+		}
+		payload.update(overrides)
+		return frappe.get_doc(payload).insert(ignore_permissions=True)
+
+	def make_action_definition(self, action_key: str | None = None, **overrides):
+		payload = {
+			"doctype": "QR Action Definition",
+			"action_key": action_key or f"action-{frappe.generate_hash(length=8)}",
+			"handler_method": "asn_module.handlers.purchase_receipt.create_from_asn",
+			"source_doctype": "ASN",
+			"allowed_roles": "Stock User",
+		}
+		payload.update(overrides)
+		return frappe.get_doc(payload).insert(ignore_permissions=True)
+
+	def test_definition_retains_only_scopes_table(self):
+		meta = frappe.get_meta("Barcode Flow Definition")
+		table_fields = {field.fieldname for field in meta.fields if field.fieldtype == "Table"}
+
+		assert table_fields == {"scopes"}
+
+	def test_transition_references_links_not_key_data_fields(self):
+		meta = frappe.get_meta("Barcode Flow Transition")
+
+		assert meta.get_field("source_node").fieldtype == "Link"
+		assert meta.get_field("source_node").options == "Barcode Flow Node"
+		assert meta.get_field("target_node").fieldtype == "Link"
+		assert meta.get_field("condition").options == "Barcode Flow Condition"
+		assert meta.get_field("field_map").options == "Barcode Flow Field Map"
+		assert meta.get_field("action_binding").options == "Barcode Flow Action Binding"
+		assert meta.get_field("action").options == "QR Action Definition"
+		assert meta.get_field("target_doctype").fieldtype == "Link"
+		assert meta.get_field("target_doctype").options == "DocType"
+
+		assert meta.get_field("source_node_key") is None
+		assert meta.get_field("target_node_key") is None
+		assert meta.get_field("condition_key") is None
+		assert meta.get_field("field_map_key") is None
+		assert meta.get_field("binding_key") is None
+		assert meta.get_field("action_key") is None
+
+	def test_node_requires_flow_link(self):
+		node = frappe.get_doc(
+			{"doctype": "Barcode Flow Node", "node_key": "scan", "label": "Scan", "node_type": "State"}
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			node.insert(ignore_permissions=True)
+
+	def test_standalone_entities_require_flow_link(self):
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
 				{
 					"doctype": "Barcode Flow Condition",
-					"condition_key": "has_warehouse",
-					"scope": "items_aggregate",
-					"field_path": "items.qty",
-					"operator": "gt",
-					"value": "0",
-					"aggregate_fn": "sum",
+					"condition_key": "has-warehouse",
+					"scope": "header",
+					"field_path": "header.set_warehouse",
+					"operator": "eq",
+					"value": "Main Warehouse",
 				}
-			],
-			field_maps=[
+			).insert(ignore_permissions=True)
+
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
 				{
 					"doctype": "Barcode Flow Field Map",
 					"map_key": "warehouse-map",
@@ -87,530 +142,67 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 					"source_field_path": "header.set_warehouse",
 					"target_field_path": "target.set_warehouse",
 				}
-			],
-			action_bindings=[
+			).insert(ignore_permissions=True)
+
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
 				{
 					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "custom-receive",
+					"binding_key": "handler-binding",
 					"trigger_event": "custom_handler",
-					"action_key": "create_purchase_receipt",
+					"action": self.make_action_definition().name,
 					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
 				}
-			],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-to-received",
-					source_node_key="scan",
-					target_node_key="received",
-					condition_key="has_warehouse",
-					field_map_key="warehouse-map",
-					binding_mode="custom_handler",
-					binding_key="custom-receive",
-				)
-			],
-		)
-
-		flow.insert(ignore_permissions=True)
-		self.assertTrue(flow.name)
-
-	def test_missing_flow_name_raises_validation_error(self):
-		flow = self._new_flow(flow_name=None)
+			).insert(ignore_permissions=True)
 
 		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_missing_required_transition_generation_mode_raises_validation_error(self):
-		flow = self._new_flow(
-			transitions=[
-				self._valid_transition(
-					transition_key="to-receiving",
-					source_node_key="scan",
-					target_node_key="receiving",
-					generation_mode="",
-				)
-			]
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_missing_required_condition_scope_raises_validation_error(self):
-		flow = self._new_flow(
-			conditions=[
+			frappe.get_doc(
 				{
-					"doctype": "Barcode Flow Condition",
-					"condition_key": "header-company-match",
-					"field_path": "header.company",
-					"operator": "eq",
-					"value": "TCPL",
-					"scope": "",
+					"doctype": "Barcode Flow Transition",
+					"transition_key": "scan-to-received",
+					"generation_mode": "runtime",
+					"binding_mode": "mapping",
 				}
-			]
-		)
+			).insert(ignore_permissions=True)
 
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
+	def test_deterministic_semantic_autoname_for_node(self):
+		flow = self.make_flow(flow_name=f"Inbound-ACME-Node-{frappe.generate_hash(length=6)}")
+		node = self.make_node(flow=flow.name, node_key="scan")
 
-	def test_missing_required_field_map_mapping_type_raises_validation_error(self):
-		flow = self._new_flow(
-			field_maps=[
-				{
-					"doctype": "Barcode Flow Field Map",
-					"map_key": "asn-name",
-					"source_field_path": "header.name",
-					"target_field_path": "target.asn_name",
-					"mapping_type": "",
-				}
-			]
-		)
+		assert node.name == f"FLOW-{flow.name}-NODE-scan"
 
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
+	def test_deterministic_semantic_autoname_for_flow_entities(self):
+		flow = self.make_flow(flow_name=f"Inbound-ACME-Graph-{frappe.generate_hash(length=6)}")
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		condition = self.make_condition(flow=flow.name, condition_key="has-warehouse")
+		field_map = self.make_field_map(flow=flow.name, map_key="warehouse-map")
+		action = self.make_action_definition(action_key=f"create_purchase_receipt_{frappe.generate_hash(length=6)}")
+		binding = self.make_action_binding(flow=flow.name, binding_key="custom-receive", action=action.name)
+		transition = frappe.get_doc(
+			{
+				"doctype": "Barcode Flow Transition",
+				"flow": flow.name,
+				"transition_key": "scan-to-received",
+				"generation_mode": "runtime",
+				"source_node": source_node.name,
+				"target_node": target_node.name,
+				"condition": condition.name,
+				"field_map": field_map.name,
+				"action_binding": binding.name,
+				"action": action.name,
+				"binding_mode": "both",
+				"target_doctype": "Purchase Receipt",
+			}
+		).insert(ignore_permissions=True)
 
-	def test_duplicate_scope_key_within_flow_raises_unique_validation_error(self):
-		flow = self._new_flow(
-			scopes=[
-				self._valid_scope("default"),
-				self._valid_scope("default", source_doctype="Purchase Receipt"),
-			]
-		)
+		assert condition.name == f"FLOW-{flow.name}-COND-has-warehouse"
+		assert field_map.name == f"FLOW-{flow.name}-MAP-warehouse-map"
+		assert binding.name == f"FLOW-{flow.name}-BIND-custom-receive"
+		assert transition.name == f"FLOW-{flow.name}-TRANS-scan-to-received"
 
-		with self.assertRaises(UniqueValidationError):
-			flow.insert(ignore_permissions=True)
+	def test_deterministic_semantic_autoname_for_qr_action_definition(self):
+		action_key = f"create_purchase_receipt_{frappe.generate_hash(length=6)}"
+		action = self.make_action_definition(action_key=action_key)
 
-	def test_duplicate_node_key_within_flow_raises_unique_validation_error(self):
-		flow = self._new_flow(
-			nodes=[
-				self._valid_node("scan", "Scan"),
-				self._valid_node("scan", "Scan Duplicate"),
-			]
-		)
-
-		with self.assertRaises(UniqueValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_duplicate_transition_key_within_flow_raises_unique_validation_error(self):
-		flow = self._new_flow(
-			transitions=[
-				self._valid_transition(
-					transition_key="receive",
-					source_node_key="scan",
-					target_node_key="receiving",
-				),
-				self._valid_transition(
-					transition_key="receive",
-					source_node_key="receiving",
-					target_node_key="done",
-				),
-			]
-		)
-
-		with self.assertRaises(UniqueValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_transition_with_unknown_node_reference_raises_validation_error(self):
-		flow = self._new_flow(
-			nodes=[self._valid_node("scan", "Scan")],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-to-received",
-					source_node_key="scan",
-					target_node_key="missing-node",
-				)
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_field_map_constant_mapping_requires_constant_value(self):
-		flow = self._new_flow(
-			field_maps=[
-				{
-					"doctype": "Barcode Flow Field Map",
-					"map_key": "constant-warehouse",
-					"mapping_type": "constant",
-					"target_field_path": "target.set_warehouse",
-				}
-			]
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_field_map_constant_mapping_rejects_source_field_path(self):
-		flow = self._new_flow(
-			field_maps=[
-				{
-					"doctype": "Barcode Flow Field Map",
-					"map_key": "constant-warehouse",
-					"mapping_type": "constant",
-					"source_field_path": "header.set_warehouse",
-					"target_field_path": "target.set_warehouse",
-					"constant_value": "WH-001",
-				}
-			]
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_field_map_source_mapping_rejects_constant_value(self):
-		flow = self._new_flow(
-			field_maps=[
-				{
-					"doctype": "Barcode Flow Field Map",
-					"map_key": "source-warehouse",
-					"mapping_type": "source",
-					"source_field_path": "header.set_warehouse",
-					"target_field_path": "target.set_warehouse",
-					"constant_value": "WH-001",
-				}
-			]
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_action_binding_on_enter_node_requires_target_node_key(self):
-		flow = self._new_flow(
-			nodes=[self._valid_node("scan", "Scan")],
-			action_bindings=[
-				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "enter-scan",
-					"trigger_event": "On Enter Node",
-					"action_key": "create_purchase_receipt",
-				}
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_action_binding_on_transition_requires_known_target_transition_key(self):
-		flow = self._new_flow(
-			nodes=[self._valid_node("scan", "Scan")],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-loop",
-					source_node_key="scan",
-					target_node_key="scan",
-				)
-			],
-			action_bindings=[
-				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "on-transition",
-					"trigger_event": "On Transition",
-					"target_transition_key": "missing-transition",
-					"action_key": "create_purchase_receipt",
-				}
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_action_binding_on_exit_node_requires_target_node_key(self):
-		flow = self._new_flow(
-			nodes=[self._valid_node("scan", "Scan")],
-			action_bindings=[
-				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "exit-scan",
-					"trigger_event": "On Exit Node",
-					"action_key": "create_purchase_receipt",
-				}
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_node_trigger_rejects_transition_target_field(self):
-		flow = self._new_flow(
-			nodes=[self._valid_node("scan", "Scan")],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-loop",
-					source_node_key="scan",
-					target_node_key="scan",
-				)
-			],
-			action_bindings=[
-				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "enter-with-transition-target",
-					"trigger_event": "On Enter Node",
-					"target_node_key": "scan",
-					"target_transition_key": "scan-loop",
-					"action_key": "create_purchase_receipt",
-				}
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_custom_handler_transition_requires_custom_handler_binding_trigger(self):
-		flow = self._new_flow(
-			nodes=[
-				self._valid_node("scan", "Scan"),
-				self._valid_node("received", "Received"),
-			],
-			action_bindings=[
-				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "enter-scan",
-					"trigger_event": "On Enter Node",
-					"target_node_key": "scan",
-					"action_key": "create_purchase_receipt",
-				}
-			],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-to-received",
-					source_node_key="scan",
-					target_node_key="received",
-					binding_mode="custom_handler",
-					binding_key="enter-scan",
-				)
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_mapping_transition_rejects_binding_key(self):
-		flow = self._new_flow(
-			nodes=[
-				self._valid_node("scan", "Scan"),
-				self._valid_node("received", "Received"),
-			],
-			action_bindings=[
-				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "some-binding",
-					"trigger_event": "custom_handler",
-					"action_key": "create_purchase_receipt",
-					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
-				}
-			],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-to-received",
-					source_node_key="scan",
-					target_node_key="received",
-					binding_mode="mapping",
-					binding_key="some-binding",
-				)
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_mapping_transition_requires_target_doctype(self):
-		flow = self._new_flow(
-			nodes=[
-				self._valid_node("scan", "Scan"),
-				self._valid_node("received", "Received"),
-			],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-to-received",
-					source_node_key="scan",
-					target_node_key="received",
-					binding_mode="mapping",
-					target_doctype="",
-				)
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_both_transition_requires_target_doctype(self):
-		flow = self._new_flow(
-			nodes=[
-				self._valid_node("scan", "Scan"),
-				self._valid_node("received", "Received"),
-			],
-			action_bindings=[
-				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "some-binding",
-					"trigger_event": "custom_handler",
-					"action_key": "create_purchase_receipt",
-					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
-				}
-			],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-to-received",
-					source_node_key="scan",
-					target_node_key="received",
-					binding_mode="both",
-					binding_key="some-binding",
-					target_doctype="",
-				)
-			],
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_custom_handler_transition_allows_missing_target_doctype(self):
-		flow = self._new_flow(
-			nodes=[
-				self._valid_node("scan", "Scan"),
-				self._valid_node("received", "Received"),
-			],
-			action_bindings=[
-				{
-					"doctype": "Barcode Flow Action Binding",
-					"binding_key": "custom-binding",
-					"trigger_event": "custom_handler",
-					"action_key": "create_purchase_receipt",
-					"custom_handler": "asn_module.handlers.purchase_receipt.create_from_asn",
-				}
-			],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-to-received",
-					source_node_key="scan",
-					target_node_key="received",
-					binding_mode="custom_handler",
-					binding_key="custom-binding",
-					target_doctype="",
-				)
-			],
-		)
-
-		flow.insert(ignore_permissions=True)
-		self.assertTrue(flow.name)
-
-	def test_legacy_direct_binding_mode_is_normalized_to_mapping(self):
-		flow = self._new_flow(
-			nodes=[
-				self._valid_node("scan", "Scan"),
-				self._valid_node("received", "Received"),
-			],
-			transitions=[
-				self._valid_transition(
-					transition_key="scan-to-received",
-					source_node_key="scan",
-					target_node_key="received",
-					binding_mode="direct",
-				)
-			],
-		)
-
-		flow.insert(ignore_permissions=True)
-		self.assertEqual(flow.transitions[0].binding_mode, "mapping")
-
-	def test_items_aggregate_condition_requires_aggregate_function(self):
-		flow = self._new_flow(
-			conditions=[
-				{
-					"doctype": "Barcode Flow Condition",
-					"condition_key": "qty-total",
-					"scope": "items_aggregate",
-					"field_path": "items.qty",
-					"operator": "gt",
-					"value": "0",
-					"aggregate_fn": " ",
-				}
-			]
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_items_aggregate_condition_accepts_exists_aggregate_function(self):
-		flow = self._new_flow(
-			conditions=[
-				{
-					"doctype": "Barcode Flow Condition",
-					"condition_key": "exists-aggregate",
-					"scope": "items_aggregate",
-					"field_path": "items.qty",
-					"operator": "exists",
-					"aggregate_fn": "exists",
-				}
-			]
-		)
-
-		flow.insert(ignore_permissions=True)
-		self.assertTrue(flow.name)
-
-	def test_items_aggregate_exists_aggregate_rejects_incompatible_operator(self):
-		flow = self._new_flow(
-			conditions=[
-				{
-					"doctype": "Barcode Flow Condition",
-					"condition_key": "exists-aggregate",
-					"scope": "items_aggregate",
-					"field_path": "items.qty",
-					"operator": "gt",
-					"value": "0",
-					"aggregate_fn": "exists",
-				}
-			]
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_items_aggregate_non_exists_aggregate_rejects_operator_exists(self):
-		flow = self._new_flow(
-			conditions=[
-				{
-					"doctype": "Barcode Flow Condition",
-					"condition_key": "sum-aggregate",
-					"scope": "items_aggregate",
-					"field_path": "items.qty",
-					"operator": "exists",
-					"aggregate_fn": "sum",
-				}
-			]
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_non_aggregate_condition_rejects_aggregate_function(self):
-		flow = self._new_flow(
-			conditions=[
-				{
-					"doctype": "Barcode Flow Condition",
-					"condition_key": "supplier-check",
-					"scope": "header",
-					"field_path": "header.supplier",
-					"operator": "eq",
-					"value": "SUP-0001",
-					"aggregate_fn": "sum",
-				}
-			]
-		)
-
-		with self.assertRaises(frappe.ValidationError):
-			flow.insert(ignore_permissions=True)
-
-	def test_is_set_operator_does_not_require_value(self):
-		flow = self._new_flow(
-			conditions=[
-				{
-					"doctype": "Barcode Flow Condition",
-					"condition_key": "supplier-set",
-					"scope": "items_aggregate",
-					"field_path": "items.supplier",
-					"operator": "is_set",
-					"aggregate_fn": "exists",
-				}
-			]
-		)
-
-		flow.insert(ignore_permissions=True)
-		self.assertTrue(flow.name)
+		assert action.name == f"ACT-{action_key}"

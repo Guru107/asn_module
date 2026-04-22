@@ -9,12 +9,7 @@
 		"flow_name",
 		"is_active",
 		"description",
-		"scopes",
-		"nodes",
-		"transitions",
-		"conditions",
-		"field_maps",
-		"action_bindings"
+		"scopes"
 	],
 	"fields": [
 		{
@@ -41,41 +36,11 @@
 			"fieldtype": "Table",
 			"label": "Scopes",
 			"options": "Barcode Flow Scope"
-		},
-		{
-			"fieldname": "nodes",
-			"fieldtype": "Table",
-			"label": "Nodes",
-			"options": "Barcode Flow Node"
-		},
-		{
-			"fieldname": "transitions",
-			"fieldtype": "Table",
-			"label": "Transitions",
-			"options": "Barcode Flow Transition"
-		},
-		{
-			"fieldname": "conditions",
-			"fieldtype": "Table",
-			"label": "Conditions",
-			"options": "Barcode Flow Condition"
-		},
-		{
-			"fieldname": "field_maps",
-			"fieldtype": "Table",
-			"label": "Field Maps",
-			"options": "Barcode Flow Field Map"
-		},
-		{
-			"fieldname": "action_bindings",
-			"fieldtype": "Table",
-			"label": "Action Bindings",
-			"options": "Barcode Flow Action Binding"
 		}
 	],
 	"index_web_pages_for_search": 0,
 	"links": [],
-	"modified": "2026-04-21 00:00:00.000000",
+	"modified": "2026-04-22 00:00:00.000000",
 	"modified_by": "Administrator",
 	"module": "ASN Module",
 	"name": "Barcode Flow Definition",
