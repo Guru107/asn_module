@@ -196,7 +196,9 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		self.make_field_map(flow=flow.name, map_key="warehouse-map")
 
 		with self.assertRaises(UniqueValidationError):
-			self.make_field_map(flow=flow.name, map_key="warehouse-map", target_field_path="target.other_field")
+			self.make_field_map(
+				flow=flow.name, map_key="warehouse-map", target_field_path="target.other_field"
+			)
 
 	def test_field_map_key_can_repeat_across_flows(self):
 		first_flow = self.make_flow()
@@ -413,7 +415,9 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 	def test_action_binding_custom_handler_trigger_allows_same_flow_binding(self):
 		flow = self.make_flow()
 
-		binding = self.make_action_binding(flow=flow.name, binding_key=f"binding-{frappe.generate_hash(length=6)}")
+		binding = self.make_action_binding(
+			flow=flow.name, binding_key=f"binding-{frappe.generate_hash(length=6)}"
+		)
 
 		assert binding.name
 
@@ -724,7 +728,9 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 
 	def test_delete_unused_field_map_succeeds(self):
 		flow = self.make_flow()
-		field_map = self.make_field_map(flow=flow.name, map_key=f"unused-map-{frappe.generate_hash(length=6)}")
+		field_map = self.make_field_map(
+			flow=flow.name, map_key=f"unused-map-{frappe.generate_hash(length=6)}"
+		)
 
 		field_map.delete()
 
@@ -760,7 +766,9 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
 		condition = self.make_condition(flow=flow.name, condition_key="has-warehouse")
 		field_map = self.make_field_map(flow=flow.name, map_key="warehouse-map")
-		action = self.make_action_definition(action_key=f"create_purchase_receipt_{frappe.generate_hash(length=6)}")
+		action = self.make_action_definition(
+			action_key=f"create_purchase_receipt_{frappe.generate_hash(length=6)}"
+		)
 		binding = self.make_action_binding(flow=flow.name, binding_key="custom-receive", action=action.name)
 		transition = frappe.get_doc(
 			{

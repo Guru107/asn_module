@@ -1,7 +1,6 @@
 import frappe
 from frappe.utils import get_table_name
 
-
 UNIQUE_INDEX_SPECS = (
 	("Barcode Flow Node", ("flow", "node_key"), "uniq_bf_node_flow_key"),
 	("Barcode Flow Condition", ("flow", "condition_key"), "uniq_bf_condition_flow_key"),
@@ -11,7 +10,11 @@ UNIQUE_INDEX_SPECS = (
 )
 
 NON_UNIQUE_INDEX_SPECS = (
-	("Barcode Flow Transition", ("flow", "source_node", "priority"), "idx_bf_transition_flow_source_priority"),
+	(
+		"Barcode Flow Transition",
+		("flow", "source_node", "priority"),
+		"idx_bf_transition_flow_source_priority",
+	),
 )
 
 

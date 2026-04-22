@@ -62,7 +62,9 @@ class BarcodeFlowActionBinding(Document):
 			if not self.custom_handler:
 				frappe.throw(_("Custom Handler is required when Trigger Event is custom_handler."))
 			if self.target_node or self.target_transition:
-				frappe.throw(_("Target Node and Target Transition must be empty when Trigger Event is custom_handler."))
+				frappe.throw(
+					_("Target Node and Target Transition must be empty when Trigger Event is custom_handler.")
+				)
 			return
 
 		if self.trigger_event in {"On Enter Node", "On Exit Node"} and not self.target_node:
@@ -77,7 +79,7 @@ class BarcodeFlowActionBinding(Document):
 		)
 		if transition_refs:
 			frappe.throw(
-				_("Cannot delete Barcode Flow Action Binding {0}. Referenced by Transition.action_binding: {1}").format(
-					self.name, ", ".join(transition_refs)
-				)
+				_(
+					"Cannot delete Barcode Flow Action Binding {0}. Referenced by Transition.action_binding: {1}"
+				).format(self.name, ", ".join(transition_refs))
 			)

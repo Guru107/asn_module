@@ -206,7 +206,9 @@ class TestBarcodeFlowRuntime(TestCase):
 				"asn_module.barcode_flow.runtime.frappe.get_doc",
 				side_effect=lambda doctype, name: field_map if doctype == "Barcode Flow Field Map" else None,
 			),
-			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc) as build_target_doc,
+			patch(
+				"asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc
+			) as build_target_doc,
 		):
 			execute_transition_binding(
 				transition=transition,
@@ -563,7 +565,9 @@ class TestBarcodeFlowRuntime(TestCase):
 			patch("asn_module.barcode_flow.runtime.frappe.get_attr", return_value=handler),
 			patch(
 				"asn_module.barcode_flow.runtime.frappe.get_doc",
-				side_effect=lambda doctype, name: action_binding if doctype == "Barcode Flow Action Binding" else None,
+				side_effect=lambda doctype, name: action_binding
+				if doctype == "Barcode Flow Action Binding"
+				else None,
 			),
 		):
 			result = execute_transition_binding(

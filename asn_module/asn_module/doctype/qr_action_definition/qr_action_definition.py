@@ -29,8 +29,12 @@ class QRActionDefinition(Document):
 			frappe.throw(_("Invalid allowed roles: {0}").format(", ".join(sorted(set(invalid_roles)))))
 
 	def on_trash(self):
-		transition_refs = frappe.get_all("Barcode Flow Transition", filters={"action": self.name}, pluck="name")
-		binding_refs = frappe.get_all("Barcode Flow Action Binding", filters={"action": self.name}, pluck="name")
+		transition_refs = frappe.get_all(
+			"Barcode Flow Transition", filters={"action": self.name}, pluck="name"
+		)
+		binding_refs = frappe.get_all(
+			"Barcode Flow Action Binding", filters={"action": self.name}, pluck="name"
+		)
 
 		blockers = []
 		if transition_refs:

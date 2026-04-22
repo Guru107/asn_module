@@ -504,7 +504,10 @@ class TestBarcodeFlowProperties(UnitTestCase):
 
 		self.assertEqual(_same_flow_link_violations(graph), [])
 
-	@given(flow_ids=st.lists(st.integers(min_value=1, max_value=24), min_size=2, max_size=4, unique=True), link_field=_TRANSITION_LINK_FIELDS)
+	@given(
+		flow_ids=st.lists(st.integers(min_value=1, max_value=24), min_size=2, max_size=4, unique=True),
+		link_field=_TRANSITION_LINK_FIELDS,
+	)
 	def test_cross_flow_transition_links_are_detected(self, flow_ids, link_field):
 		graph = _build_relational_graph(flow_ids)
 		first_flow, second_flow = graph["flows"][:2]

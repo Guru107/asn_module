@@ -317,9 +317,7 @@ def _get_transition_condition(flow_definition: frappe.model.document.Document, t
 
 	condition = get_cached_condition(condition_name, cache_holder=flow_definition)
 	if not condition:
-		transition_key = (
-			_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
-		)
+		transition_key = _normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
 		raise TransitionResolutionError(
 			f"Transition {transition_key} references unknown condition: {condition_name}"
 		)

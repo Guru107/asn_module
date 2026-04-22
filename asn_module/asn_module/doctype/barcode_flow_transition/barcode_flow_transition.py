@@ -76,9 +76,13 @@ class BarcodeFlowTransition(Document):
 			if not self.field_map:
 				frappe.throw(_("Field Map is required when Binding Mode is {0}.").format(self.binding_mode))
 			if self.binding_mode == "mapping" and not self.target_doctype:
-				frappe.throw(_("Target DocType is required when Binding Mode is {0}.").format(self.binding_mode))
+				frappe.throw(
+					_("Target DocType is required when Binding Mode is {0}.").format(self.binding_mode)
+				)
 			if self.binding_mode == "both" and not override_wins and not self.target_doctype:
-				frappe.throw(_("Target DocType is required when Binding Mode is both unless handler override wins."))
+				frappe.throw(
+					_("Target DocType is required when Binding Mode is both unless handler override wins.")
+				)
 
 		if self.binding_mode not in {"custom_handler", "both"}:
 			return
@@ -108,7 +112,7 @@ class BarcodeFlowTransition(Document):
 		)
 		if binding_refs:
 			frappe.throw(
-				_("Cannot delete Barcode Flow Transition {0}. Referenced by ActionBinding.target_transition: {1}").format(
-					self.name, ", ".join(binding_refs)
-				)
+				_(
+					"Cannot delete Barcode Flow Transition {0}. Referenced by ActionBinding.target_transition: {1}"
+				).format(self.name, ", ".join(binding_refs))
 			)

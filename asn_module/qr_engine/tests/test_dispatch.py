@@ -151,21 +151,24 @@ class TestDispatch(FrappeTestCase):
 
 	def test_resolve_action_self_heals_registry_for_known_canonical_action(self):
 		# Simulate stale singleton rows from interrupted test runs.
-		with patch(
-			"asn_module.qr_engine.dispatch.frappe.get_all",
-			side_effect=[
-				[],
-				[
-					SimpleNamespace(
-						name="ACT-create_purchase_invoice",
-						action_key="create_purchase_invoice",
-						handler_method="asn_module.handlers.purchase_invoice.create_from_purchase_receipt",
-						source_doctype="Purchase Receipt",
-						allowed_roles="Accounts User,Accounts Manager",
-					)
+		with (
+			patch(
+				"asn_module.qr_engine.dispatch.frappe.get_all",
+				side_effect=[
+					[],
+					[
+						SimpleNamespace(
+							name="ACT-create_purchase_invoice",
+							action_key="create_purchase_invoice",
+							handler_method="asn_module.handlers.purchase_invoice.create_from_purchase_receipt",
+							source_doctype="Purchase Receipt",
+							allowed_roles="Accounts User,Accounts Manager",
+						)
+					],
 				],
-			],
-		), patch("asn_module.setup_actions.register_actions") as register_actions:
+			),
+			patch("asn_module.setup_actions.register_actions") as register_actions,
+		):
 			action = _resolve_action("create_purchase_invoice")
 
 		register_actions.assert_called_once()

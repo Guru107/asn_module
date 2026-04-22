@@ -200,9 +200,7 @@ def _is_child_transition_condition_met(
 	return evaluate_conditions(resolved_target_doc, [condition])
 
 
-def _get_transitions_for_source_node(
-	*, flow_definition: Any, flow: str, source_node: str
-) -> list[Any]:
+def _get_transitions_for_source_node(*, flow_definition: Any, flow: str, source_node: str) -> list[Any]:
 	flow = (flow or "").strip()
 	source_node = (source_node or "").strip()
 	if not flow or not source_node:
@@ -226,7 +224,10 @@ def _get_transitions_for_source_node(
 			action=action_name,
 		):
 			transition_name = (_get_value(row, "name") or "").strip()
-			cache_key = transition_name or f"{_get_value(row, 'priority', '')}:{_get_value(row, 'creation', '')}:{_get_value(row, 'transition_key', '')}"
+			cache_key = (
+				transition_name
+				or f"{_get_value(row, 'priority', '')}:{_get_value(row, 'creation', '')}:{_get_value(row, 'transition_key', '')}"
+			)
 			transition_index[cache_key] = row
 
 	return sorted(
@@ -339,9 +340,7 @@ def _resolve_action_binding(transition: Any, flow_definition: Any = None, requir
 		return linked_action_binding
 
 	if required:
-		raise frappe.ValidationError(
-			"Action Binding link is required for custom handler transition binding"
-		)
+		raise frappe.ValidationError("Action Binding link is required for custom handler transition binding")
 	return None
 
 

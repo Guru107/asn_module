@@ -68,7 +68,7 @@ class TestBarcodeFlowIntegration(FrappeTestCase):
 					action=stock_transfer_action,
 					generation_mode="runtime",
 				),
-			]
+			],
 		)
 		source_doc = {"doctype": "DocType", "name": "QR Action Registry"}
 		target_todo = frappe.get_doc(

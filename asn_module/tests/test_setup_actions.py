@@ -77,13 +77,13 @@ class TestRegisterActions(FrappeTestCase):
 		}
 		expected_rows.update(
 			{
-			row["action_key"]: {
-				"handler_method": row["handler_method"],
-				"source_doctype": row["source_doctype"],
-				"allowed_roles": row["allowed_roles"],
-			}
-			for row in rows
-			if row["is_active"]
+				row["action_key"]: {
+					"handler_method": row["handler_method"],
+					"source_doctype": row["source_doctype"],
+					"allowed_roles": row["allowed_roles"],
+				}
+				for row in rows
+				if row["is_active"]
 			}
 		)
 		self.assertEqual(sorted(row.action_key for row in registry.actions), sorted(expected_rows))
