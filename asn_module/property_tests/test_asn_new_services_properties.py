@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-from frappe.tests import UnitTestCase
 from frappe.utils import flt
 from hypothesis import given
 from hypothesis import settings as hypothesis_settings
@@ -14,6 +13,7 @@ from asn_module.templates.pages.asn_new_services import (
 	normalize_group_value,
 	parse_positive_qty,
 )
+from asn_module.tests.compat import UnitTestCase
 
 
 def _identity(x):

@@ -1,10 +1,10 @@
 from types import SimpleNamespace
 
-from frappe.tests import UnitTestCase
 from hypothesis import given
 from hypothesis import strategies as st
 
 from asn_module.barcode_process_flow.rules import evaluate_rule
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestBarcodeProcessFlowProperties(UnitTestCase):

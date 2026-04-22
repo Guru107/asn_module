@@ -3,10 +3,10 @@ import json
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import UnitTestCase
 
 from asn_module.qr_engine import token as token_module
 from asn_module.qr_engine.token import InvalidTokenError, create_token, verify_token
+from asn_module.tests.compat import UnitTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 

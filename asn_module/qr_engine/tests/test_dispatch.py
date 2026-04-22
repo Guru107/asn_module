@@ -1,9 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from frappe.tests import UnitTestCase
-
 from asn_module.qr_engine.dispatch import ScanCodeNotFoundError, dispatch
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestDispatch(UnitTestCase):

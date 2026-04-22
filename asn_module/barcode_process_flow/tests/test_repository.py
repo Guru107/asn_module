@@ -1,9 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from frappe.tests import UnitTestCase
-
 from asn_module.barcode_process_flow.repository import get_active_steps_for_source
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestRepository(UnitTestCase):

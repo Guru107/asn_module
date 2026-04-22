@@ -1,8 +1,7 @@
 from unittest.mock import patch
 
-from frappe.tests import UnitTestCase
-
 from asn_module.barcode_process_flow import capabilities
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestCapabilities(UnitTestCase):

@@ -1,11 +1,10 @@
-from frappe.tests import UnitTestCase
-
 from asn_module.setup_actions import (
 	get_canonical_actions,
 	get_standard_handler_templates,
 	register_actions,
 	sync_qr_action_definitions,
 )
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestSetupActions(UnitTestCase):

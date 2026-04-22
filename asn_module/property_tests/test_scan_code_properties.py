@@ -1,8 +1,8 @@
-from frappe.tests import UnitTestCase
 from hypothesis import given
 
 from asn_module.property_tests.strategies import scan_text
 from asn_module.qr_engine.scan_codes import format_scan_code_for_display, normalize_scan_code
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestScanCodeProperties(UnitTestCase):

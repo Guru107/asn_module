@@ -1,9 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from frappe.tests import UnitTestCase
-
 from asn_module.barcode_process_flow.runtime import dispatch_from_scan
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestRuntime(UnitTestCase):

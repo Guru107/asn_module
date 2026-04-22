@@ -1,9 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from frappe.tests import UnitTestCase
-
 from asn_module.barcode_process_flow.mapping import build_target_doc
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestMapping(UnitTestCase):

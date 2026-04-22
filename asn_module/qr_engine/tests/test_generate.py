@@ -1,8 +1,7 @@
 from unittest.mock import patch
 
-from frappe.tests import UnitTestCase
-
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
+from asn_module.tests.compat import UnitTestCase
 
 
 class TestGenerate(UnitTestCase):
