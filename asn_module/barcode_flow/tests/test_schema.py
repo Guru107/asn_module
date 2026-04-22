@@ -703,6 +703,24 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 
 		assert not frappe.db.exists("Barcode Flow Field Map", field_map.name)
 
+	def test_delete_node_succeeds_after_transition_reference_is_detached(self):
+		flow = self.make_flow()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name, map_key=f"map-{frappe.generate_hash(length=6)}")
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		transition.delete()
+		source_node.delete()
+
+		assert not frappe.db.exists("Barcode Flow Node", source_node.name)
+
 	def test_deterministic_semantic_autoname_for_node(self):
 		flow = self.make_flow(flow_name=f"Inbound-ACME-Node-{frappe.generate_hash(length=6)}")
 		node = self.make_node(flow=flow.name, node_key="scan")

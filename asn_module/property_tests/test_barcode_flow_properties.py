@@ -1,3 +1,4 @@
+from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -40,6 +41,11 @@ _ITEM_VALUE = st.one_of(
 _OPERATORS = st.sampled_from(
 	["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "contains", "is_set", "exists"]
 )
+_FLOW_IDS = st.lists(st.integers(min_value=1, max_value=24), min_size=1, max_size=4, unique=True)
+_TRANSITION_LINK_FIELDS = st.sampled_from(
+	["source_node", "target_node", "condition", "field_map", "action_binding"]
+)
+_BINDING_LINK_FIELDS = st.sampled_from(["target_node", "target_transition"])
 
 
 @st.composite
@@ -257,6 +263,183 @@ def _build_rule(
 	return rule
 
 
+def _entity_name(*, flow: str, entity_code: str, key: str) -> str:
+	return f"FLOW-{flow}-{entity_code}-{key}"
+
+
+def _build_relational_graph(flow_ids: list[int]) -> dict[str, object]:
+	graph = {
+		"flows": [],
+		"by_flow": {},
+		"nodes": {},
+		"conditions": {},
+		"field_maps": {},
+		"bindings": {},
+		"transitions": {},
+	}
+
+	for flow_id in flow_ids:
+		flow = f"FLOW-{flow_id}"
+		graph["flows"].append(flow)
+		scan_node = SimpleNamespace(
+			name=_entity_name(flow=flow, entity_code="NODE", key="scan"),
+			flow=flow,
+			node_key="scan",
+		)
+		received_node = SimpleNamespace(
+			name=_entity_name(flow=flow, entity_code="NODE", key="received"),
+			flow=flow,
+			node_key="received",
+		)
+		condition = SimpleNamespace(
+			name=_entity_name(flow=flow, entity_code="COND", key="allow-received"),
+			flow=flow,
+			condition_key="allow-received",
+		)
+		field_map = SimpleNamespace(
+			name=_entity_name(flow=flow, entity_code="MAP", key="warehouse-map"),
+			flow=flow,
+			map_key="warehouse-map",
+		)
+		handler_binding = SimpleNamespace(
+			name=_entity_name(flow=flow, entity_code="BIND", key="handler-binding"),
+			flow=flow,
+			binding_key="handler-binding",
+			target_node="",
+			target_transition="",
+		)
+		transition = SimpleNamespace(
+			name=_entity_name(flow=flow, entity_code="TRANS", key="scan-to-received"),
+			flow=flow,
+			transition_key="scan-to-received",
+			source_node=scan_node.name,
+			target_node=received_node.name,
+			condition=condition.name,
+			field_map=field_map.name,
+			action_binding=handler_binding.name,
+		)
+		node_binding = SimpleNamespace(
+			name=_entity_name(flow=flow, entity_code="BIND", key="enter-received"),
+			flow=flow,
+			binding_key="enter-received",
+			target_node=received_node.name,
+			target_transition="",
+		)
+		transition_binding = SimpleNamespace(
+			name=_entity_name(flow=flow, entity_code="BIND", key="after-scan"),
+			flow=flow,
+			binding_key="after-scan",
+			target_node="",
+			target_transition=transition.name,
+		)
+
+		for row in (scan_node, received_node):
+			graph["nodes"][row.name] = row
+		graph["conditions"][condition.name] = condition
+		graph["field_maps"][field_map.name] = field_map
+		for row in (handler_binding, node_binding, transition_binding):
+			graph["bindings"][row.name] = row
+		graph["transitions"][transition.name] = transition
+		graph["by_flow"][flow] = {
+			"nodes": {"scan": scan_node.name, "received": received_node.name},
+			"condition": condition.name,
+			"field_map": field_map.name,
+			"bindings": {
+				"handler": handler_binding.name,
+				"node": node_binding.name,
+				"transition": transition_binding.name,
+			},
+			"transition": transition.name,
+		}
+
+	return graph
+
+
+def _same_flow_link_violations(graph: dict[str, object]) -> list[tuple[str, str]]:
+	violations: list[tuple[str, str]] = []
+
+	for transition in graph["transitions"].values():
+		for fieldname, pool in (
+			("source_node", "nodes"),
+			("target_node", "nodes"),
+			("condition", "conditions"),
+			("field_map", "field_maps"),
+			("action_binding", "bindings"),
+		):
+			link_name = _get_value(transition, fieldname, "")
+			if not link_name:
+				continue
+			linked = graph[pool].get(link_name)
+			if not linked or _get_value(linked, "flow") != _get_value(transition, "flow"):
+				violations.append((_get_value(transition, "name"), fieldname))
+
+	for binding in graph["bindings"].values():
+		for fieldname, pool in (("target_node", "nodes"), ("target_transition", "transitions")):
+			link_name = _get_value(binding, fieldname, "")
+			if not link_name:
+				continue
+			linked = graph[pool].get(link_name)
+			if not linked or _get_value(linked, "flow") != _get_value(binding, "flow"):
+				violations.append((_get_value(binding, "name"), fieldname))
+
+	return violations
+
+
+def _delete_blockers(graph: dict[str, object]) -> dict[str, dict[str, list[str]]]:
+	blockers = {
+		"nodes": {},
+		"conditions": {},
+		"field_maps": {},
+		"bindings": {},
+		"transitions": {},
+	}
+
+	def _add(pool: str, entity_name: str, ref: str) -> None:
+		if not entity_name:
+			return
+		blockers[pool].setdefault(entity_name, []).append(ref)
+
+	for transition in graph["transitions"].values():
+		transition_name = _get_value(transition, "name")
+		_add("nodes", _get_value(transition, "source_node", ""), f"{transition_name}.source_node")
+		_add("nodes", _get_value(transition, "target_node", ""), f"{transition_name}.target_node")
+		_add("conditions", _get_value(transition, "condition", ""), f"{transition_name}.condition")
+		_add("field_maps", _get_value(transition, "field_map", ""), f"{transition_name}.field_map")
+		_add("bindings", _get_value(transition, "action_binding", ""), f"{transition_name}.action_binding")
+
+	for binding in graph["bindings"].values():
+		binding_name = _get_value(binding, "name")
+		_add("nodes", _get_value(binding, "target_node", ""), f"{binding_name}.target_node")
+		_add(
+			"transitions",
+			_get_value(binding, "target_transition", ""),
+			f"{binding_name}.target_transition",
+		)
+
+	return blockers
+
+
+def _detach_flow_references(graph: dict[str, object], *, flow: str) -> dict[str, object]:
+	detached = deepcopy(graph)
+
+	for transition in detached["transitions"].values():
+		if _get_value(transition, "flow") != flow:
+			continue
+		transition.source_node = ""
+		transition.target_node = ""
+		transition.condition = ""
+		transition.field_map = ""
+		transition.action_binding = ""
+
+	for binding in detached["bindings"].values():
+		if _get_value(binding, "flow") != flow:
+			continue
+		binding.target_node = ""
+		binding.target_transition = ""
+
+	return detached
+
+
 class TestBarcodeFlowProperties(UnitTestCase):
 	@given(context=_contexts(), flow_specs=_flow_specs())
 	def test_resolver_outcomes_are_bounded_and_deterministic(self, context, flow_specs):
@@ -303,3 +486,70 @@ class TestBarcodeFlowProperties(UnitTestCase):
 		aggregate_exists_result = evaluate_conditions(doc, [aggregate_exists_rule])
 
 		self.assertEqual(items_any_result, aggregate_exists_result)
+
+	@given(flow_ids=_FLOW_IDS)
+	def test_modeled_relational_graphs_preserve_same_flow_links(self, flow_ids):
+		graph = _build_relational_graph(flow_ids)
+
+		self.assertEqual(_same_flow_link_violations(graph), [])
+
+	@given(flow_ids=st.lists(st.integers(min_value=1, max_value=24), min_size=2, max_size=4, unique=True), link_field=_TRANSITION_LINK_FIELDS)
+	def test_cross_flow_transition_links_are_detected(self, flow_ids, link_field):
+		graph = _build_relational_graph(flow_ids)
+		first_flow, second_flow = graph["flows"][:2]
+		transition_name = graph["by_flow"][first_flow]["transition"]
+		transition = graph["transitions"][transition_name]
+		foreign_targets = {
+			"source_node": graph["by_flow"][second_flow]["nodes"]["scan"],
+			"target_node": graph["by_flow"][second_flow]["nodes"]["received"],
+			"condition": graph["by_flow"][second_flow]["condition"],
+			"field_map": graph["by_flow"][second_flow]["field_map"],
+			"action_binding": graph["by_flow"][second_flow]["bindings"]["handler"],
+		}
+
+		setattr(transition, link_field, foreign_targets[link_field])
+
+		self.assertIn((transition.name, link_field), _same_flow_link_violations(graph))
+
+	@given(
+		flow_ids=st.lists(st.integers(min_value=1, max_value=24), min_size=2, max_size=4, unique=True),
+		link_field=_BINDING_LINK_FIELDS,
+	)
+	def test_cross_flow_binding_links_are_detected(self, flow_ids, link_field):
+		graph = _build_relational_graph(flow_ids)
+		first_flow, second_flow = graph["flows"][:2]
+		binding_key = "node" if link_field == "target_node" else "transition"
+		binding_name = graph["by_flow"][first_flow]["bindings"][binding_key]
+		binding = graph["bindings"][binding_name]
+		foreign_targets = {
+			"target_node": graph["by_flow"][second_flow]["nodes"]["received"],
+			"target_transition": graph["by_flow"][second_flow]["transition"],
+		}
+
+		setattr(binding, link_field, foreign_targets[link_field])
+
+		self.assertIn((binding.name, link_field), _same_flow_link_violations(graph))
+
+	@given(flow_ids=_FLOW_IDS)
+	def test_referenced_entities_require_detach_before_delete(self, flow_ids):
+		graph = _build_relational_graph(flow_ids)
+		blockers = _delete_blockers(graph)
+		first_flow = graph["flows"][0]
+		owned = graph["by_flow"][first_flow]
+
+		self.assertTrue(blockers["nodes"].get(owned["nodes"]["scan"]))
+		self.assertTrue(blockers["nodes"].get(owned["nodes"]["received"]))
+		self.assertTrue(blockers["conditions"].get(owned["condition"]))
+		self.assertTrue(blockers["field_maps"].get(owned["field_map"]))
+		self.assertTrue(blockers["bindings"].get(owned["bindings"]["handler"]))
+		self.assertTrue(blockers["transitions"].get(owned["transition"]))
+
+		detached = _detach_flow_references(graph, flow=first_flow)
+		detached_blockers = _delete_blockers(detached)
+
+		self.assertEqual(detached_blockers["nodes"].get(owned["nodes"]["scan"], []), [])
+		self.assertEqual(detached_blockers["nodes"].get(owned["nodes"]["received"], []), [])
+		self.assertEqual(detached_blockers["conditions"].get(owned["condition"], []), [])
+		self.assertEqual(detached_blockers["field_maps"].get(owned["field_map"], []), [])
+		self.assertEqual(detached_blockers["bindings"].get(owned["bindings"]["handler"], []), [])
+		self.assertEqual(detached_blockers["transitions"].get(owned["transition"], []), [])

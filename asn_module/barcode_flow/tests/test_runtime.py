@@ -229,6 +229,41 @@ class TestBarcodeFlowRuntime(TestCase):
 
 		self.assertEqual(build_target_doc.call_args.kwargs["mappings"], [])
 
+	def test_child_generation_ignores_legacy_action_key_without_action_link(self):
+		transition = SimpleNamespace(
+			binding_mode="mapping",
+			target_doctype="Purchase Receipt",
+			flow="FLOW-1",
+			target_node="FLOW-1-NODE-received",
+			field_maps=[],
+		)
+		flow_definition = SimpleNamespace(name="FLOW-1")
+		target_doc = _FakeTargetDoc()
+		child_transition = SimpleNamespace(
+			transition_key="legacy-key-only-child",
+			source_node="FLOW-1-NODE-received",
+			action="",
+			action_key="create_purchase_invoice",
+			generation_mode="immediate",
+		)
+
+		with (
+			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime._get_transitions_for_source_node",
+				return_value=[child_transition],
+			),
+			patch("asn_module.barcode_flow.runtime.build_scan_code_metadata") as build_metadata,
+		):
+			result = execute_transition_binding(
+				transition=transition,
+				source_doc={"name": "ASN-0001"},
+				flow_definition=flow_definition,
+			)
+
+		build_metadata.assert_not_called()
+		self.assertEqual(result["generated_scan_codes"], [])
+
 	def test_hybrid_mode_pre_generates_child_code(self):
 		transition = SimpleNamespace(
 			binding_mode="mapping",
