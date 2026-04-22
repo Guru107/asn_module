@@ -26,7 +26,20 @@ class BarcodeFlowActionBinding(Document):
 		self.action = normalize_key(self.action)
 		self.custom_handler = normalize_key(self.custom_handler)
 
+		self._validate_same_flow_links()
 		self._validate_trigger_contract()
+
+	def _validate_same_flow_links(self):
+		self._validate_link_flow("Barcode Flow Node", self.target_node, "Target Node")
+		self._validate_link_flow("Barcode Flow Transition", self.target_transition, "Target Transition")
+
+	def _validate_link_flow(self, doctype: str, docname: str, label: str):
+		if not docname:
+			return
+
+		link_flow = frappe.db.get_value(doctype, docname, "flow")
+		if link_flow and normalize_key(link_flow) != self.flow:
+			frappe.throw(_("{0} must belong to flow {1}.").format(label, self.flow))
 
 	def _validate_trigger_contract(self):
 		if self.trigger_event == "custom_handler":
