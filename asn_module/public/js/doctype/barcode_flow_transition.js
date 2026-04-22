@@ -1,6 +1,11 @@
 frappe.ui.form.on("Barcode Flow Transition", {
 	setup(frm) {
-		const flowFilters = () => ({ filters: { flow: frm.doc.flow || "" } });
+		const flowFilters = () => {
+			if (!frm.doc.flow) {
+				return { filters: { name: ["=", ""] } };
+			}
+			return { filters: { flow: frm.doc.flow } };
+		};
 
 		frm.set_query("source_node", flowFilters);
 		frm.set_query("target_node", flowFilters);
