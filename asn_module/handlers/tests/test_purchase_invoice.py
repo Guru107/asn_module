@@ -52,7 +52,6 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		with (
 			_mock_asn_attachments(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
 		):
 			pr.submit()
 		return pr
@@ -80,7 +79,6 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		with (
 			_mock_asn_attachments(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
 		):
 			return_pr.submit()
 
@@ -97,7 +95,6 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		with (
 			_mock_asn_attachments(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
 		):
 			asn.submit()
 		pr = self._make_submitted_purchase_receipt(asn=asn)

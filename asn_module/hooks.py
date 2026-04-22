@@ -47,8 +47,7 @@ app_include_js = [
 
 # include js in doctype views
 doctype_js = {
-	"Barcode Flow Transition": "public/js/doctype/barcode_flow_transition.js",
-	"Barcode Flow Action Binding": "public/js/doctype/barcode_flow_action_binding.js",
+	"Barcode Process Flow": "public/js/doctype/barcode_process_flow.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -162,15 +161,6 @@ after_install = "asn_module.setup.after_install"
 doc_events = {
 	"Purchase Receipt": {
 		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
-	},
-	"Quality Inspection": {
-		"on_submit": "asn_module.handlers.quality_inspection.on_quality_inspection_submit",
-	},
-	"Stock Entry": {
-		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_dispatch_submit",
-	},
-	"Subcontracting Order": {
-		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_order_submit",
 	},
 }
 

@@ -1,0 +1,119 @@
+{
+	"creation": "2026-04-22 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"label",
+		"from_doctype",
+		"to_doctype",
+		"scan_action_key",
+		"execution_mode",
+		"mapping_set",
+		"server_script",
+		"condition",
+		"priority",
+		"generate_next_barcode",
+		"generation_mode",
+		"is_active"
+	],
+	"fields": [
+		{
+			"fieldname": "label",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Label"
+		},
+		{
+			"fieldname": "from_doctype",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "From DocType",
+			"options": "DocType",
+			"reqd": 1
+		},
+		{
+			"fieldname": "to_doctype",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "To DocType",
+			"options": "DocType",
+			"reqd": 1
+		},
+		{
+			"fieldname": "scan_action_key",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Scan Action Key",
+			"description": "Optional stable key for generated scan codes. If empty, step row ID is used."
+		},
+		{
+			"default": "Mapping",
+			"fieldname": "execution_mode",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Execution Mode",
+			"options": "Mapping\nServer Script",
+			"reqd": 1
+		},
+		{
+			"depends_on": "eval:doc.execution_mode=='Mapping'",
+			"fieldname": "mapping_set",
+			"fieldtype": "Link",
+			"label": "Mapping Set",
+			"mandatory_depends_on": "eval:doc.execution_mode=='Mapping'",
+			"options": "Barcode Mapping Set"
+		},
+		{
+			"depends_on": "eval:doc.execution_mode=='Server Script'",
+			"fieldname": "server_script",
+			"fieldtype": "Link",
+			"label": "Server Script",
+			"mandatory_depends_on": "eval:doc.execution_mode=='Server Script'",
+			"options": "Server Script"
+		},
+		{
+			"fieldname": "condition",
+			"fieldtype": "Link",
+			"label": "Condition",
+			"options": "Barcode Rule"
+		},
+		{
+			"default": "100",
+			"fieldname": "priority",
+			"fieldtype": "Int",
+			"in_list_view": 1,
+			"label": "Priority"
+		},
+		{
+			"default": "1",
+			"fieldname": "generate_next_barcode",
+			"fieldtype": "Check",
+			"label": "Generate Next Barcode"
+		},
+		{
+			"default": "hybrid",
+			"fieldname": "generation_mode",
+			"fieldtype": "Select",
+			"label": "Generation Mode",
+			"options": "immediate\nruntime\nhybrid",
+			"reqd": 1
+		},
+		{
+			"default": "1",
+			"fieldname": "is_active",
+			"fieldtype": "Check",
+			"label": "Is Active"
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"istable": 1,
+	"modified": "2026-04-22 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "Flow Step",
+	"owner": "Administrator",
+	"permissions": [],
+	"sort_field": "idx",
+	"sort_order": "ASC",
+	"states": []
+}

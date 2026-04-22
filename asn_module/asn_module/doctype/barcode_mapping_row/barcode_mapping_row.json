@@ -1,0 +1,60 @@
+{
+	"creation": "2026-04-22 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"mapping_type",
+		"source_selector",
+		"constant_value",
+		"target_selector",
+		"transform"
+	],
+	"fields": [
+		{
+			"default": "source",
+			"fieldname": "mapping_type",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Mapping Type",
+			"options": "source\nconstant",
+			"reqd": 1
+		},
+		{
+			"depends_on": "eval:doc.mapping_type=='source'",
+			"fieldname": "source_selector",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Source Selector"
+		},
+		{
+			"depends_on": "eval:doc.mapping_type=='constant'",
+			"fieldname": "constant_value",
+			"fieldtype": "Small Text",
+			"label": "Constant Value"
+		},
+		{
+			"fieldname": "target_selector",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Target Selector",
+			"reqd": 1
+		},
+		{
+			"fieldname": "transform",
+			"fieldtype": "Select",
+			"label": "Transform",
+			"options": "\nupper\nlower\nint\nfloat\nstr"
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"istable": 1,
+	"modified": "2026-04-22 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "Barcode Mapping Row",
+	"owner": "Administrator",
+	"permissions": [],
+	"sort_field": "idx",
+	"sort_order": "ASC",
+	"states": []
+}

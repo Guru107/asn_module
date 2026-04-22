@@ -1,0 +1,101 @@
+{
+	"actions": [],
+	"allow_rename": 1,
+	"autoname": "field:rule_name",
+	"creation": "2026-04-22 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"rule_name",
+		"is_active",
+		"scope",
+		"field_path",
+		"aggregate_fn",
+		"operator",
+		"value",
+		"description"
+	],
+	"fields": [
+		{
+			"fieldname": "rule_name",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Rule Name",
+			"reqd": 1
+		},
+		{
+			"default": "1",
+			"fieldname": "is_active",
+			"fieldtype": "Check",
+			"in_list_view": 1,
+			"label": "Is Active"
+		},
+		{
+			"default": "header",
+			"fieldname": "scope",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Scope",
+			"options": "header\nitems_any\nitems_all\nitems_aggregate",
+			"reqd": 1
+		},
+		{
+			"fieldname": "field_path",
+			"fieldtype": "Data",
+			"label": "Field Path",
+			"description": "Examples: status, supplier_type, items.item_code"
+		},
+		{
+			"depends_on": "eval:doc.scope=='items_aggregate'",
+			"fieldname": "aggregate_fn",
+			"fieldtype": "Select",
+			"label": "Aggregate Function",
+			"options": "\nexists\ncount\nsum\nmin\nmax\navg"
+		},
+		{
+			"default": "=",
+			"fieldname": "operator",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Operator",
+			"options": "=\n!=\n>\n>=\n<\n<=\nin\nnot_in\ncontains\nis_set\nexists",
+			"reqd": 1
+		},
+		{
+			"fieldname": "value",
+			"fieldtype": "Small Text",
+			"label": "Value"
+		},
+		{
+			"fieldname": "description",
+			"fieldtype": "Small Text",
+			"label": "Description"
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"links": [],
+	"modified": "2026-04-22 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "Barcode Rule",
+	"owner": "Administrator",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "System Manager",
+			"share": 1,
+			"write": 1
+		}
+	],
+	"sort_field": "modified",
+	"sort_order": "DESC",
+	"states": [],
+	"track_changes": 1,
+	"indexes": [["is_active", "scope"]]
+}

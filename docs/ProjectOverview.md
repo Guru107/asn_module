@@ -6,15 +6,14 @@ This is a **Frappe framework** custom app called `asn_module`. It follows standa
 
 - Operator/System Manager runbook: [BarcodeFlowConfiguration.md](BarcodeFlowConfiguration.md)
 - User walkthrough wiki: [BarcodeFlowUserWiki.md](BarcodeFlowUserWiki.md)
-- Current model is relational and link-native.
-- Author in this order:
-  1. `Barcode Flow Definition` plus `scopes`
-  2. standalone `Barcode Flow Node`, `Barcode Flow Condition`, `Barcode Flow Field Map`, and active `QR Action Definition`
-  3. custom-handler `Barcode Flow Action Binding` records
-  4. `Barcode Flow Transition` records using flow-scoped link pickers
-  5. optional node/transition event bindings
-- Save-time validation enforces same-flow link integrity and mode/trigger contracts.
-- Delete guards block removal of referenced nodes, conditions, field maps, bindings, transitions, and QR action definitions until references are detached.
+- Current model is the one-screen hard-cut design.
+- Primary setup doctype: `Barcode Process Flow` (with child table `Flow Step`).
+- Supporting doctypes:
+  1. `Barcode Rule`
+  2. `Barcode Mapping Set`
+  3. `Barcode Mapping Row`
+- Legacy `Barcode Flow *` graph doctypes and `QR Action Registry`/`QR Action Definition` are removed.
+- Runtime dispatch executes only `barcode_process_flow/*`.
 
 ## Bench server setups
 
@@ -66,6 +65,7 @@ HYPOTHESIS_PROFILE=local bench --site frappe16.localhost run-tests \
 # Full property suite: run each module explicitly
 for m in \
   asn_module.property_tests.test_asn_new_services_properties \
+  asn_module.property_tests.test_barcode_process_flow_properties \
   asn_module.property_tests.test_scan_code_properties \
   asn_module.property_tests.test_token_properties; do
   HYPOTHESIS_PROFILE=local bench --site frappe16.localhost run-tests --module "$m" --lightmode
@@ -120,21 +120,21 @@ pre-commit run --all-files
 
 ### Barcode Flow Verification Commands
 ```bash
-# Run barcode flow unit tests
-bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_schema --lightmode
-bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_resolver --lightmode
-bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_conditions --lightmode
-bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_mapping --lightmode
-bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_flow.tests.test_runtime --lightmode
-HYPOTHESIS_PROFILE=ci bench --site <site_name> run-tests --module asn_module.property_tests.test_barcode_flow_properties --lightmode
+# Run barcode process flow unit tests
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_process_flow.tests.test_capabilities --lightmode
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_process_flow.tests.test_repository --lightmode
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_process_flow.tests.test_rules --lightmode
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_process_flow.tests.test_mapping --lightmode
+bench --site <site_name> run-tests --app asn_module --module asn_module.barcode_process_flow.tests.test_runtime --lightmode
+HYPOTHESIS_PROFILE=ci bench --site <site_name> run-tests --module asn_module.property_tests.test_barcode_process_flow_properties --lightmode
 
-# Run integration route coverage for scoped flow behavior
-bench --site <site_name> run-tests --app asn_module --module asn_module.tests.integration.test_barcode_flow_integration --lightmode
+# Run integration smoke coverage for one-screen flow dispatch
+bench --site <site_name> run-tests --app asn_module --module asn_module.tests.integration.test_barcode_process_flow_integration --lightmode
 ```
 
 Operational note:
-- Barcode flow runtime now executes against link fields, not legacy transition key wiring.
-- If dispatch cannot resolve a source node, transition matching fails explicitly instead of falling back to a wider flow/action search.
+- Barcode flow runtime now resolves `Flow Step` rows directly from `Barcode Process Flow`.
+- Scan tokens are step-key based; dispatch fails closed if no eligible step matches.
 
 ### Pre-commit Setup
 ```bash

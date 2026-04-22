@@ -30,12 +30,23 @@ def _build_dispatch_url(code: str) -> str:
 
 
 def build_scan_code_metadata(
-	*, action_key: str, source_doctype: str, source_name: str, generation_mode: str
+	*,
+	action_key: str | None = None,
+	flow_step: str | None = None,
+	source_doctype: str,
+	source_name: str,
+	generation_mode: str,
 ) -> dict:
 	"""Create scan-code metadata for downstream display/dispatch payloads."""
-	scan_code = get_or_create_scan_code(action_key, source_doctype, source_name)
+	step_key = (flow_step or "").strip()
+	effective_action_key = (action_key or "").strip() or step_key
+	if not effective_action_key:
+		frappe.throw("action_key or flow_step is required to build scan code metadata")
+
+	scan_code = get_or_create_scan_code(effective_action_key, source_doctype, source_name)
 	return {
-		"action_key": action_key,
+		"action_key": effective_action_key,
+		"flow_step": step_key or None,
 		"scan_code": scan_code,
 		"human_readable": format_scan_code_for_display(scan_code),
 		"generation_mode": (generation_mode or "").strip().lower(),

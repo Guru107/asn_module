@@ -42,19 +42,19 @@
 		{
 			"fieldname": "barcode_flow_definition",
 			"fieldtype": "Data",
-			"label": "Barcode Flow Definition",
+			"label": "Barcode Process Flow",
 			"read_only": 1
 		},
 		{
 			"fieldname": "barcode_flow_transition",
 			"fieldtype": "Data",
-			"label": "Barcode Flow Transition",
+			"label": "Flow Step",
 			"read_only": 1
 		},
 		{
 			"fieldname": "scope_resolution_key",
 			"fieldtype": "Data",
-			"label": "Scope Resolution Key",
+			"label": "Flow Step Name",
 			"read_only": 1
 		},
 		{

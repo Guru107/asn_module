@@ -5,12 +5,14 @@ auto-discovered during full app test runs.
 """
 
 from asn_module.property_tests.test_asn_new_services_properties import TestPropertyHarness
-from asn_module.property_tests.test_barcode_flow_properties import TestBarcodeFlowProperties
+from asn_module.property_tests.test_barcode_process_flow_properties import (
+	TestBarcodeProcessFlowProperties,
+)
 from asn_module.property_tests.test_scan_code_properties import TestScanCodeProperties
 from asn_module.property_tests.test_token_properties import TestTokenProperties
 
 __all__ = [
-	"TestBarcodeFlowProperties",
+	"TestBarcodeProcessFlowProperties",
 	"TestPropertyHarness",
 	"TestScanCodeProperties",
 	"TestTokenProperties",

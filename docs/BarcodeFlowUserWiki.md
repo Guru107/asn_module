@@ -1,253 +1,107 @@
-# Barcode Flow Wiki (User Guide)
+# Barcode Process Flow Wiki (User Guide)
 
-> Applies to the current relational `Barcode Flow *` model.
-> Planned one-screen hard-cut redesign is documented in `docs/superpowers/specs/2026-04-22-barcode-process-flow-one-screen-hard-cut-design.md`.
+This wiki shows one complete setup using the new one-screen model.
 
-This page explains, from a System Manager/operator perspective, how to configure a full end-to-end barcode-driven process using one real example.
+## Use Case
 
-This is for the `Barcode Flow *` doctypes in this app (not ERPNext native `Workflow`).
+Target process:
 
-## Example Use Case
+`ASN -> Purchase Receipt -> (Purchase Invoice / Putaway)`
 
-You want this inbound process:
+Branching rule:
+- If **any item** has `inspection_required_before_purchase = 1`, use `Quality Inspection` route before stock movement.
 
-1. Supplier ASN barcode is scanned at security gate.
-2. System creates **Gate Pass (Gate In)**.
-3. Next scan creates **Purchase Receipt**.
-4. From Purchase Receipt, system exposes two paths:
-   - **Purchase Invoice** path for Accounts.
-   - **Stock Transfer Entry** path for Store (only when inspection is required).
-5. Optional dispatch path creates **Gate Pass (Gate Out)**.
+## Step 1: Create Rules
 
-### Flow Map
-
-`ASN Barcode -> Gate Pass (Gate In) -> Purchase Receipt -> (Purchase Invoice + Stock Transfer Entry)`
-
-Optional:
-
-`Purchase Receipt -> Gate Pass (Gate Out)`
-
-## Before You Start
-
-1. Login as a role with permission to manage these doctypes (typically `System Manager`).
-2. Confirm required doctypes/actions exist:
-   - `Barcode Flow Definition`
-   - `Barcode Flow Node`
-   - `Barcode Flow Condition`
-   - `Barcode Flow Field Map`
-   - `Barcode Flow Action Binding`
-   - `Barcode Flow Transition`
-   - `QR Action Definition`
-3. For non-standard documents (example: custom `Gate Pass`, direct Stock Entry from PR), ensure your app already has handler methods.
-
-Note:
-- Built-in actions include `create_purchase_receipt`, `create_purchase_invoice`, `create_stock_transfer` (from Quality Inspection), etc.
-- If you need `Purchase Receipt -> Stock Entry` directly, create a custom `QR Action Definition` and custom handler.
-
-## Step 1: Define Actions (`QR Action Definition`)
-
-Create/verify action rows first.
-
-Minimum rows for this use case:
-
-1. `create_gate_pass_in` (custom)
-   - `source_doctype`: `ASN`
-   - `handler_method`: your custom gate-in handler
-   - `allowed_roles`: roles that can scan at gate
-2. `create_purchase_receipt_from_gate_pass` (custom or your chosen implementation)
-   - `source_doctype`: `Gate Pass`
-   - `handler_method`: creates PR from gate-pass context
-3. `create_purchase_invoice` (existing or custom)
-   - `source_doctype`: `Purchase Receipt`
-4. `create_stock_transfer_from_pr` (custom if direct-from-PR is needed)
-   - `source_doctype`: `Purchase Receipt`
-5. Optional `create_gate_pass_out` (custom)
-   - `source_doctype`: `Purchase Receipt` or your outbound source doctype
-
-## Step 2: Create Flow Definition and Scope
-
-Create one `Barcode Flow Definition`:
-
-- `flow_name`: `Inbound::GateIn::PR::InvoiceAndTransfer`
-- `is_active`: checked
-- `description`: short business description
-
-Add scope row inside `scopes` child table:
-
-- `scope_key`: `default-inbound`
-- `priority`: `100`
-- `is_default`: checked
-- `source_doctype`: `ASN`
-- Optional filters: `company`, `warehouse`, `supplier_type` (use these when you need context-specific routing)
-
-## Step 3: Create Nodes
-
-Create `Barcode Flow Node` records with `flow` linked to your definition:
-
-1. `scan_asn` (`Start`)
-2. `gate_in_done` (`State`)
-3. `pr_draft` (`State`)
-4. `invoice_ready` (`End`)
-5. `transfer_ready` (`End`)
-6. Optional `gate_out_done` (`End`)
-
-## Step 4: Create Field Maps
-
-Create `Barcode Flow Field Map` rows for mapping transitions:
-
-1. `gatein-to-pr` (if mapping mode is used for PR creation)
-2. `pr-to-pi` (if mapping mode is used for PI creation)
-3. `pr-to-transfer` (if mapping mode is used for Stock Entry)
-
-For each row:
-
-- `mapping_type`: `source` or `constant`
-- `source_field_path`: source document field path (for `source` mode)
-- `target_field_path`: target document field path
-- `constant_value`: only for `constant` mode
-
-## Step 5: Add Rules (Conditions)
-
-Create `Barcode Flow Condition` rows for route control.
-
-### Item-level rule (day-one requirement)
-
-Example: “any item requires inspection”
-
-- `condition_key`: `any-item-needs-inspection`
+Create `Barcode Rule`:
+- `rule_name`: `any_item_requires_inspection`
 - `scope`: `items_any`
-- `field_path`: `inspection_required_before_purchase`
+- `field_path`: `items[].inspection_required_before_purchase`
 - `operator`: `=`
 - `value`: `1`
+- `is_active`: checked
 
-### Aggregate rule example
+## Step 2: Create Mapping Sets
 
-Example: total line count must be at least 1
+### Mapping Set: `ASN_to_PR`
+Rows:
+- `source_selector=supplier` -> `target_selector=supplier`
+- `source_selector=supplier_invoice_no` -> `target_selector=supplier_delivery_note`
+- `source_selector=items[].item_code` -> `target_selector=items[].item_code`
+- `source_selector=items[].qty` -> `target_selector=items[].qty`
+- `source_selector=items[].uom` -> `target_selector=items[].uom`
 
-- `condition_key`: `at-least-one-line`
-- `scope`: `items_aggregate`
-- `aggregate_fn`: `count`
-- `field_path`: `item_code`
-- `operator`: `>=`
-- `value`: `1`
+### Mapping Set: `PR_to_PI`
+Use a standard handler path where possible. If custom fields are needed, add mapping rows similarly.
 
-## Step 6: Create Action Bindings
+## Step 3: Create Barcode Process Flow
 
-Create `Barcode Flow Action Binding` rows for custom handler execution.
+Create `Barcode Process Flow`:
+- `flow_name`: `Inbound::PR::InvoiceAndTransfer`
+- `is_active`: checked
+- optional filters as needed (`company`, `warehouse`, `supplier_type`)
 
-Example bindings:
+Add `Flow Step` rows:
 
-1. `bind-gate-in`
-   - `trigger_event`: `custom_handler`
-   - `action`: `create_gate_pass_in`
-   - `custom_handler`: your gate-in method
-2. `bind-pr-create`
-   - `trigger_event`: `custom_handler`
-   - `action`: `create_purchase_receipt_from_gate_pass`
-3. `bind-pr-to-transfer`
-   - `trigger_event`: `custom_handler`
-   - `action`: `create_stock_transfer_from_pr`
-4. Optional `bind-gate-out`
-   - `trigger_event`: `custom_handler`
-   - `action`: `create_gate_pass_out`
+1. `ASN -> Purchase Receipt`
+- `from_doctype`: `ASN`
+- `to_doctype`: `Purchase Receipt`
+- `scan_action_key`: `asn_to_pr`
+- `execution_mode`: `Mapping`
+- `mapping_set`: `ASN_to_PR`
+- `priority`: `100`
+- `generate_next_barcode`: checked
+- `generation_mode`: `hybrid`
+- `is_active`: checked
 
-## Step 7: Create Transitions
+2. `Purchase Receipt -> Purchase Invoice`
+- `from_doctype`: `Purchase Receipt`
+- `to_doctype`: `Purchase Invoice`
+- `scan_action_key`: `pr_to_pi`
+- `execution_mode`: `Mapping` (or `Server Script` if required)
+- `mapping_set`: `PR_to_PI`
+- `priority`: `100`
+- `generate_next_barcode`: checked
+- `generation_mode`: `hybrid`
+- `is_active`: checked
 
-Now create `Barcode Flow Transition` rows.
+3. `Purchase Receipt -> Quality Inspection` (conditional branch)
+- `from_doctype`: `Purchase Receipt`
+- `to_doctype`: `Quality Inspection`
+- `scan_action_key`: `pr_to_qi`
+- `execution_mode`: `Mapping` or standard handler
+- `condition`: `any_item_requires_inspection`
+- `priority`: `110` (higher than direct path if you want inspection-first)
+- `generate_next_barcode`: checked
+- `generation_mode`: `hybrid`
+- `is_active`: checked
 
-Recommended setup:
+4. `Quality Inspection -> Stock Entry` (accepted path)
+- `from_doctype`: `Quality Inspection`
+- `to_doctype`: `Stock Entry`
+- `scan_action_key`: `qi_to_transfer`
+- `execution_mode`: `Mapping` or standard handler
+- `priority`: `100`
+- `is_active`: checked
 
-1. `asn-to-gatein`
-   - `source_node`: `scan_asn`
-   - `target_node`: `gate_in_done`
-   - `action`: `create_gate_pass_in`
-   - `binding_mode`: `custom_handler`
-   - `action_binding`: `bind-gate-in`
-   - `generation_mode`: `hybrid` (recommended)
+## Step 4: Generate Initial Barcode
 
-2. `gatein-to-pr`
-   - `source_node`: `gate_in_done`
-   - `target_node`: `pr_draft`
-   - `action`: `create_purchase_receipt_from_gate_pass`
-   - `binding_mode`: `custom_handler` (or `mapping`/`both` as designed)
-   - `action_binding`: `bind-pr-create`
-   - `generation_mode`: `hybrid`
+Create scan code for the first step key (`asn_to_pr`) against the ASN document.
+That barcode drives the full chain because downstream barcodes are generated automatically from step settings.
 
-3. `pr-to-pi`
-   - `source_node`: `pr_draft`
-   - `target_node`: `invoice_ready`
-   - `action`: `create_purchase_invoice`
-   - `binding_mode`: `custom_handler` or `both`
-   - `generation_mode`: `immediate` or `hybrid`
+## Step 5: Validate
 
-4. `pr-to-transfer`
-   - `source_node`: `pr_draft`
-   - `target_node`: `transfer_ready`
-   - `action`: `create_stock_transfer_from_pr`
-   - `binding_mode`: `custom_handler` or `both`
-   - `action_binding`: `bind-pr-to-transfer`
-   - `condition`: `any-item-needs-inspection`
-   - `generation_mode`: `hybrid`
+1. Scan ASN barcode.
+2. Confirm `Purchase Receipt` is created.
+3. Confirm `Scan Log` has:
+- `Barcode Process Flow`
+- `Flow Step`
+- `Flow Step Name`
+4. If condition matched, confirm inspection branch barcode is generated.
+5. Scan downstream barcodes and confirm created docs.
 
-5. Optional `pr-to-gateout`
-   - `source_node`: `pr_draft`
-   - `target_node`: `gate_out_done`
-   - `action`: `create_gate_pass_out`
-   - `binding_mode`: `custom_handler`
+## Notes
 
-## Step 8: Test the End-to-End Flow
-
-Run one controlled test document through the scanner sequence.
-
-### Test Case A: Item requires inspection
-
-1. Scan ASN barcode -> Gate In document should be created.
-2. Scan next barcode -> Purchase Receipt should be created.
-3. At PR stage, you should see paths for:
-   - Purchase Invoice
-   - Stock Transfer (because condition matched)
-
-### Test Case B: No item requires inspection
-
-1. Repeat with all items having inspection flag off.
-2. Stock Transfer path should not be produced for this route.
-3. Purchase Invoice path should still work.
-
-## Step 9: Verify Auditability
-
-Check:
-
-1. `Scan Log`
-   - `barcode_flow_definition`
-   - `barcode_flow_transition`
-   - `scope_resolution_key`
-2. Generated target documents exist and are linked correctly.
-3. No ambiguity errors during scan.
-
-## Common Mistakes
-
-1. **Wrong source doctype in action definition**
-   - Scans fail because action expects a different source document type.
-2. **Cross-flow linking**
-   - Link fields only allow records from the same flow; setup must stay flow-consistent.
-3. **Missing binding contract**
-   - `custom_handler` modes require valid action binding and handler method.
-4. **Overly narrow scope**
-   - If scope filters are too tight, no flow matches at runtime.
-
-## Variant: Direct ASN -> Purchase Receipt (No Gate Pass Module)
-
-If `Gate Pass` is not installed, configure a simpler route:
-
-`ASN Barcode -> Purchase Receipt -> (Purchase Invoice + other next-step transitions)`
-
-For this variant:
-
-1. Use `source_doctype=ASN` in scope.
-2. Use `create_purchase_receipt` action.
-3. Remove Gate Pass nodes/transitions.
-4. Keep downstream PR transitions as needed.
-
----
-
-If you want, this wiki can be cloned into your internal SOP format with role-based sections (Security, Store, Accounts) and a go-live checklist page.
+- For custom docs (for example Gate Pass), set `from_doctype` / `to_doctype` directly and use mapping or server script mode.
+- Branching is just multiple `Flow Step` rows with same `from_doctype`.
+- Higher `priority` wins when multiple rows are eligible.

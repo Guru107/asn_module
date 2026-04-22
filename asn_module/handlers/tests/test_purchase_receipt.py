@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -113,19 +111,12 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				payload={"action": "create_purchase_receipt"},
 			)
 
-	@patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc")
-	@patch("asn_module.qr_engine.generate.generate_qr")
-	def test_submit_updates_asn_and_attaches_one_putaway_qr(self, generate_qr, attach_qr_to_doc):
+	def test_submit_updates_asn_without_auto_qr_generation(self):
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10)
 		asn = make_test_asn_with_two_items(purchase_order=purchase_order, qty=5)
 		asn.insert(ignore_permissions=True)
 		with _mock_asn_attachments():
 			asn.submit()
-
-		generate_qr.side_effect = [
-			{"image_base64": "ZmFrZS1wdXJjaGFzZS1pbnZvaWNl"},
-			{"image_base64": "ZmFrZS1wdXRhd2F5"},
-		]
 
 		result = create_from_asn(
 			source_doctype="ASN",
@@ -140,13 +131,3 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(asn.status, "Received")
 		self.assertEqual([row.received_qty for row in asn.items], [5, 5])
 		self.assertEqual([row.discrepancy_qty for row in asn.items], [0, 0])
-		self.assertEqual(generate_qr.call_count, 2)
-		self.assertEqual(
-			[action.kwargs["action"] for action in generate_qr.call_args_list],
-			["create_purchase_invoice", "confirm_putaway"],
-		)
-		self.assertEqual(attach_qr_to_doc.call_count, 2)
-		self.assertEqual(
-			[call.args[2] for call in attach_qr_to_doc.call_args_list],
-			["purchase-invoice-qr", f"putaway-{pr.name}"],
-		)

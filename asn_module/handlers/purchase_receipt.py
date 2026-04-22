@@ -4,7 +4,6 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from asn_module.handlers.utils import attach_qr_to_doc
 from asn_module.traceability import emit_asn_item_transition
 
 
@@ -136,25 +135,3 @@ def on_purchase_receipt_submit(doc, method):
 			ref_doctype="Purchase Receipt",
 			ref_name=doc.name,
 		)
-
-	from asn_module.qr_engine.generate import generate_qr
-
-	purchase_invoice_qr = generate_qr(
-		action="create_purchase_invoice",
-		source_doctype="Purchase Receipt",
-		source_name=doc.name,
-	)
-	attach_qr_to_doc(doc, purchase_invoice_qr, "purchase-invoice-qr")
-
-	putaway_required = any(
-		not frappe.get_cached_value("Item", pr_item.item_code, "inspection_required_before_purchase")
-		for pr_item in doc.items
-	)
-
-	if putaway_required:
-		putaway_qr = generate_qr(
-			action="confirm_putaway",
-			source_doctype="Purchase Receipt",
-			source_name=doc.name,
-		)
-		attach_qr_to_doc(doc, putaway_qr, f"putaway-{doc.name}")

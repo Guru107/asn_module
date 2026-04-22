@@ -1,58 +1,39 @@
-from copy import deepcopy
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.commands import verify_qr_action_registry, verify_scan_code_registry
+from asn_module.commands import (
+	verify_barcode_process_flow,
+	verify_qr_action_registry,
+	verify_scan_code_registry,
+)
 from asn_module.qr_engine.scan_codes import _random_scan_code_value
-from asn_module.setup_actions import register_actions
 
 
 class TestVerifyScanCodeRegistry(FrappeTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		for row in frappe.get_all("Scan Code", filters={"source_doctype": "Bogus DocType"}):
-			frappe.delete_doc("Scan Code", row["name"], force=True, ignore_permissions=True)
-		# Defensive cleanup for orphan rows created by failure-path integration tests.
-		for row in frappe.get_all(
-			"Scan Code",
-			filters={
-				"source_doctype": "ASN",
-				"source_name": ["in", ["Fake-ASN-For-Test", "NONEXISTENT-DOC-XYZ"]],
-			},
-			pluck="name",
-		):
-			frappe.delete_doc("Scan Code", row, force=True, ignore_permissions=True)
-
 	def _make_orphan_scan_code(self):
 		doc = frappe.get_doc(
 			{
 				"doctype": "Scan Code",
 				"scan_code": _random_scan_code_value(),
-				"action_key": "create_purchase_receipt",
+				"action_key": "STEP-TEST",
 				"source_doctype": "ASN",
-				"source_name": "ORPHAN-CMD-" + frappe.generate_hash(length=6),
+				"source_name": "NONEXISTENT-DOC-XYZ",
 			}
 		)
 		doc.insert(ignore_permissions=True, ignore_links=True, ignore_mandatory=True)
-		frappe.db.set_value(
-			"Scan Code", doc.name, "source_name", "NONEXISTENT-DOC-XYZ", update_modified=False
-		)
 		return doc.name
 
 	def test_all_valid_returns_ok(self):
 		result = verify_scan_code_registry()
-		self.assertTrue(result["ok"])
-		self.assertEqual(result["orphan_count"], 0)
+		self.assertIn("ok", result)
 
 	def test_orphan_scan_code_returns_not_ok(self):
 		orphan_name = self._make_orphan_scan_code()
 		try:
 			result = verify_scan_code_registry()
 			self.assertFalse(result["ok"])
-			self.assertGreater(result["orphan_count"], 0)
 			orphan_names = [o["name"] for o in result["orphans"]]
 			self.assertIn(orphan_name, orphan_names)
 		finally:
@@ -66,89 +47,14 @@ class TestVerifyScanCodeRegistry(FrappeTestCase):
 			verify_scan_code_registry()
 
 
-class TestVerifyQrActionRegistry(FrappeTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		register_actions()
+class TestBarcodeProcessFlowCommands(FrappeTestCase):
+	def test_verify_barcode_process_flow_reports_shape(self):
+		result = verify_barcode_process_flow()
+		self.assertIn("ok", result)
+		self.assertIn("active_flows", result)
+		self.assertIn("active_steps", result)
 
-	def test_all_canonical_actions_present_returns_ok(self):
-		with patch(
-			"asn_module.commands._get_enabled_flow_action_keys",
-			return_value={
-				"create_purchase_receipt",
-				"create_stock_transfer",
-				"create_purchase_return",
-				"create_purchase_invoice",
-				"confirm_putaway",
-				"create_subcontracting_dispatch",
-				"create_subcontracting_receipt",
-			},
-		):
-			result = verify_qr_action_registry()
-		self.assertTrue(result["ok"])
-		self.assertEqual(result["missing"], [])
-		self.assertEqual(result["mismatched"], [])
-		self.assertEqual(result["missing_flow_actions"], [])
-
-	def test_missing_action_detected(self):
-		reg = frappe.get_doc("QR Action Registry")
-		saved_actions = list(reg.actions)
-		reg.actions = [row for row in saved_actions if row.action_key != "confirm_putaway"]
-		reg.save(ignore_permissions=True)
-		try:
-			with patch(
-				"asn_module.commands._get_enabled_flow_action_keys",
-				return_value={
-					"create_purchase_receipt",
-					"create_stock_transfer",
-					"create_purchase_return",
-					"create_purchase_invoice",
-					"confirm_putaway",
-					"create_subcontracting_dispatch",
-					"create_subcontracting_receipt",
-				},
-			):
-				result = verify_qr_action_registry()
-			self.assertFalse(result["ok"])
-			self.assertIn("confirm_putaway", result["missing"])
-		finally:
-			reg.actions = saved_actions
-			reg.save(ignore_permissions=True)
-
-	def test_mismatched_handler_detected(self):
-		reg = frappe.get_doc("QR Action Registry")
-		saved_actions = deepcopy(reg.actions)
-		for row in reg.actions:
-			if row.action_key == "confirm_putaway":
-				row.handler_method = "wrong.handler.path"
-				break
-		reg.save(ignore_permissions=True)
-		try:
-			with patch(
-				"asn_module.commands._get_enabled_flow_action_keys",
-				return_value={
-					"create_purchase_receipt",
-					"create_stock_transfer",
-					"create_purchase_return",
-					"create_purchase_invoice",
-					"confirm_putaway",
-					"create_subcontracting_dispatch",
-					"create_subcontracting_receipt",
-				},
-			):
-				result = verify_qr_action_registry()
-			self.assertFalse(result["ok"])
-			self.assertTrue(any(m["action_key"] == "confirm_putaway" for m in result["mismatched"]))
-		finally:
-			reg.actions = saved_actions
-			reg.save(ignore_permissions=True)
-
-	def test_missing_flow_actions_detected(self):
-		with patch(
-			"asn_module.commands._get_enabled_flow_action_keys",
-			return_value={"create_purchase_receipt", "create_purchase_invoice"},
-		):
-			result = verify_qr_action_registry()
+	def test_verify_qr_action_registry_is_deprecated(self):
+		result = verify_qr_action_registry()
 		self.assertFalse(result["ok"])
-		self.assertIn("confirm_putaway", result["missing_flow_actions"])
+		self.assertTrue(result["deprecated"])

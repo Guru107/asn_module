@@ -1,0 +1,82 @@
+{
+	"actions": [],
+	"allow_rename": 1,
+	"autoname": "field:mapping_set_name",
+	"creation": "2026-04-22 00:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"mapping_set_name",
+		"is_active",
+		"source_doctype",
+		"target_doctype",
+		"description",
+		"rows"
+	],
+	"fields": [
+		{
+			"fieldname": "mapping_set_name",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Mapping Set Name",
+			"reqd": 1,
+			"search_index": 1
+		},
+		{
+			"default": "1",
+			"fieldname": "is_active",
+			"fieldtype": "Check",
+			"in_list_view": 1,
+			"label": "Is Active"
+		},
+		{
+			"fieldname": "source_doctype",
+			"fieldtype": "Link",
+			"label": "Source DocType",
+			"options": "DocType"
+		},
+		{
+			"fieldname": "target_doctype",
+			"fieldtype": "Link",
+			"label": "Target DocType",
+			"options": "DocType"
+		},
+		{
+			"fieldname": "description",
+			"fieldtype": "Small Text",
+			"label": "Description"
+		},
+		{
+			"fieldname": "rows",
+			"fieldtype": "Table",
+			"label": "Rows",
+			"options": "Barcode Mapping Row"
+		}
+	],
+	"index_web_pages_for_search": 0,
+	"links": [],
+	"modified": "2026-04-22 00:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "ASN Module",
+	"name": "Barcode Mapping Set",
+	"owner": "Administrator",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "System Manager",
+			"share": 1,
+			"write": 1
+		}
+	],
+	"sort_field": "modified",
+	"sort_order": "DESC",
+	"states": [],
+	"track_changes": 1,
+	"indexes": [["is_active", "source_doctype", "target_doctype"]]
+}
