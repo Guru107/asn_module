@@ -27,5 +27,5 @@ class TestQRActionDefinition(FrappeTestCase):
 		action_key = f"test_unique_action_{frappe.generate_hash(length=8)}"
 		self.make_action_definition(action_key=action_key)
 
-		with self.assertRaises(frappe.UniqueValidationError):
+		with self.assertRaises(frappe.DuplicateEntryError):
 			self.make_action_definition(action_key=action_key)

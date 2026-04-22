@@ -3,7 +3,12 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.setup_actions import get_canonical_actions, register_actions
+from asn_module.setup_actions import (
+	DEFAULT_QR_ACTION_DEFINITIONS,
+	get_canonical_actions,
+	register_actions,
+	sync_qr_action_definitions,
+)
 
 
 class TestRegisterActions(FrappeTestCase):
@@ -62,8 +67,54 @@ class TestRegisterActions(FrappeTestCase):
 		register_actions()
 
 		registry = frappe.get_single("QR Action Registry")
-		expected_keys = sorted(row["action_key"] for row in rows if row["is_active"])
-		self.assertEqual(sorted(row.action_key for row in registry.actions), expected_keys)
+		expected_rows = {
+			row["action_key"]: {
+				"handler_method": row["handler_method"],
+				"source_doctype": row["source_doctype"],
+				"allowed_roles": ",".join(row["roles"]),
+			}
+			for row in DEFAULT_QR_ACTION_DEFINITIONS
+		}
+		expected_rows.update(
+			{
+			row["action_key"]: {
+				"handler_method": row["handler_method"],
+				"source_doctype": row["source_doctype"],
+				"allowed_roles": row["allowed_roles"],
+			}
+			for row in rows
+			if row["is_active"]
+			}
+		)
+		self.assertEqual(sorted(row.action_key for row in registry.actions), sorted(expected_rows))
+		for row in registry.actions:
+			self.assertEqual(row.handler_method, expected_rows[row.action_key]["handler_method"])
+			self.assertEqual(row.source_doctype, expected_rows[row.action_key]["source_doctype"])
+			self.assertEqual(row.allowed_roles, expected_rows[row.action_key]["allowed_roles"])
+
+	def test_sync_qr_action_definitions_adds_missing_defaults_without_overwriting_existing_rows(self):
+		frappe.db.delete("QR Action Definition")
+		existing_action_key = DEFAULT_QR_ACTION_DEFINITIONS[0]["action_key"]
+		frappe.get_doc(
+			{
+				"doctype": "QR Action Definition",
+				"action_key": existing_action_key,
+				"handler_method": "custom.handler",
+				"source_doctype": DEFAULT_QR_ACTION_DEFINITIONS[0]["source_doctype"],
+				"allowed_roles": "Stock User",
+				"is_active": 1,
+			}
+		).insert(ignore_permissions=True)
+
+		sync_qr_action_definitions()
+
+		self.assertEqual(
+			frappe.db.count("QR Action Definition"),
+			len(DEFAULT_QR_ACTION_DEFINITIONS),
+		)
+		existing = frappe.get_doc("QR Action Definition", existing_action_key)
+		self.assertEqual(existing.handler_method, "custom.handler")
+		self.assertEqual(existing.allowed_roles, "Stock User")
 
 	def test_idempotent_no_duplicates(self):
 		register_actions()

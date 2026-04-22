@@ -1,4 +1,5 @@
 import time
+from contextlib import contextmanager
 
 import frappe
 
@@ -48,22 +49,46 @@ DEFAULT_QR_ACTION_DEFINITIONS = [
 ]
 
 
+@contextmanager
+def _named_lock(lock_name: str, *, timeout: int = 30, failure_message: str):
+	lock_acquired = frappe.db.sql("SELECT GET_LOCK(%s, %s)", (lock_name, timeout))[0][0]
+	if not lock_acquired:
+		raise frappe.ValidationError(failure_message)
+
+	try:
+		yield
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (lock_name,))
+
+
 def sync_qr_action_definitions():
 	"""Seed the persisted QR action catalog with the app's default definitions."""
-	if frappe.get_all("QR Action Definition", limit=1, pluck="name"):
-		return
+	with _named_lock(
+		"asn_module:qr_action_definition:sync",
+		failure_message="Failed to acquire lock for QR action definition sync",
+	):
+		existing_action_keys = set(
+			frappe.get_all(
+				"QR Action Definition",
+				filters={"action_key": ["in", [row["action_key"] for row in DEFAULT_QR_ACTION_DEFINITIONS]]},
+				pluck="name",
+			)
+		)
+		for row in DEFAULT_QR_ACTION_DEFINITIONS:
+			if row["action_key"] in existing_action_keys:
+				continue
 
-	for row in DEFAULT_QR_ACTION_DEFINITIONS:
-		frappe.get_doc(
-			{
-				"doctype": "QR Action Definition",
-				"action_key": row["action_key"],
-				"handler_method": row["handler_method"],
-				"source_doctype": row["source_doctype"],
-				"allowed_roles": ",".join(row["roles"]),
-				"is_active": 1,
-			}
-		).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "QR Action Definition",
+					"action_key": row["action_key"],
+					"handler_method": row["handler_method"],
+					"source_doctype": row["source_doctype"],
+					"allowed_roles": ",".join(row["roles"]),
+					"is_active": 1,
+				}
+			).insert(ignore_permissions=True, ignore_if_duplicate=True)
+			existing_action_keys.add(row["action_key"])
 
 
 def get_canonical_actions() -> list[dict]:
@@ -95,13 +120,11 @@ def register_actions():
 		fields=["action_key", "handler_method", "source_doctype", "allowed_roles"],
 		order_by="action_key asc",
 	)
-	lock_name = "asn_module:qr_action_registry:register_actions"
-	lock_acquired = frappe.db.sql("SELECT GET_LOCK(%s, %s)", (lock_name, 30))[0][0]
-	if not lock_acquired:
-		raise frappe.ValidationError("Failed to acquire lock for QR action registry update")
-
 	last_error = None
-	try:
+	with _named_lock(
+		"asn_module:qr_action_registry:register_actions",
+		failure_message="Failed to acquire lock for QR action registry update",
+	):
 		for attempt in range(3):
 			save_point = f"register_actions_retry_{attempt}"
 			frappe.db.savepoint(save_point)
@@ -129,5 +152,3 @@ def register_actions():
 				continue
 		if last_error:
 			raise last_error
-	finally:
-		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (lock_name,))
