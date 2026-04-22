@@ -7,7 +7,6 @@ import frappe
 from asn_module.barcode_flow.cache import (
 	get_cached_condition,
 	get_cached_transitions_for_source_node_action,
-	get_condition_by_key,
 	get_enabled_transitions,
 )
 from asn_module.barcode_flow.conditions import evaluate_conditions
@@ -184,23 +183,14 @@ def _is_child_transition_condition_met(
 ) -> bool:
 	condition_name = (_get_value(child_transition, "condition") or "").strip()
 	if not condition_name:
-		condition_key = (_get_value(child_transition, "condition_key") or "").strip()
-		if not condition_key:
-			return True
+		return True
 
-		condition = get_condition_by_key(flow_definition, condition_key)
-		if not condition:
-			transition_key = (_get_value(child_transition, "transition_key") or "<unknown-transition>").strip()
-			raise frappe.ValidationError(
-				f"Transition {transition_key} references unknown condition key: {condition_key}"
-			)
-	else:
-		condition = get_cached_condition(condition_name, cache_holder=flow_definition)
-		if not condition:
-			transition_key = (_get_value(child_transition, "transition_key") or "<unknown-transition>").strip()
-			raise frappe.ValidationError(
-				f"Transition {transition_key} references unknown condition: {condition_name}"
-			)
+	condition = get_cached_condition(condition_name, cache_holder=flow_definition)
+	if not condition:
+		transition_key = (_get_value(child_transition, "transition_key") or "<unknown-transition>").strip()
+		raise frappe.ValidationError(
+			f"Transition {transition_key} references unknown condition: {condition_name}"
+		)
 
 	resolved_target_doc = _resolve_target_doc_for_conditions(
 		target_doc=target_doc,
@@ -332,21 +322,7 @@ def _resolve_field_maps(transition: Any, flow_definition: Any = None) -> list[An
 	if field_map:
 		return [field_map]
 
-	map_key = (_get_value(transition, "field_map_key") or "").strip()
-	if not map_key:
-		return []
-
-	if not flow_definition:
-		raise frappe.ValidationError(
-			f"Field map key {map_key} requires flow definition context for resolution"
-		)
-
-	field_maps = _get_value(flow_definition, "field_maps") or []
-	for row in field_maps:
-		if (_get_value(row, "map_key") or "").strip() == map_key:
-			return [row]
-
-	raise frappe.ValidationError(f"Unknown field map key on transition: {map_key}")
+	return []
 
 
 def _resolve_action_binding(transition: Any, flow_definition: Any = None, required: bool = False) -> Any:
@@ -362,23 +338,11 @@ def _resolve_action_binding(transition: Any, flow_definition: Any = None, requir
 	if linked_action_binding:
 		return linked_action_binding
 
-	binding_key = (_get_value(transition, "binding_key") or "").strip()
-	if not binding_key:
-		if required:
-			raise frappe.ValidationError("Binding key is required for custom handler transition binding")
-		return None
-
-	if not flow_definition:
+	if required:
 		raise frappe.ValidationError(
-			f"Binding key {binding_key} requires flow definition context for resolution"
+			"Action Binding link is required for custom handler transition binding"
 		)
-
-	bindings = _get_value(flow_definition, "action_bindings") or []
-	for row in bindings:
-		if (_get_value(row, "binding_key") or "").strip() == binding_key:
-			return row
-
-	raise frappe.ValidationError(f"Unknown binding key on transition: {binding_key}")
+	return None
 
 
 def _resolve_linked_doc(doctype: str, value: Any) -> Any | None:

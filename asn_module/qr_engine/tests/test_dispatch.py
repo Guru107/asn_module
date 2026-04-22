@@ -131,6 +131,24 @@ class TestDispatch(FrappeTestCase):
 			with self.assertRaises(ActionNotFoundError):
 				_resolve_action("unknown_action")
 
+	def test_resolve_action_does_not_fallback_to_registry_without_action_definition(self):
+		with (
+			patch("asn_module.qr_engine.dispatch.frappe.get_all", return_value=[]),
+			patch("asn_module.setup_actions.register_actions"),
+			patch(
+				"asn_module.qr_engine.dispatch.frappe.get_single",
+				return_value=SimpleNamespace(
+					get_action=lambda _action_key: {
+						"handler_method": "asn_module.tests.fake_handler",
+						"source_doctype": "DocType",
+						"allowed_roles": ["System Manager"],
+					}
+				),
+			),
+		):
+			with self.assertRaises(ActionNotFoundError):
+				_resolve_action("create_purchase_receipt")
+
 	def test_resolve_action_self_heals_registry_for_known_canonical_action(self):
 		# Simulate stale singleton rows from interrupted test runs.
 		with patch(
@@ -567,6 +585,27 @@ class TestDispatch(FrappeTestCase):
 			action="ACT-create_purchase_receipt",
 		)
 		self.assertEqual(winner.transition_key, "scan-runtime")
+
+	def test_resolve_matching_transition_requires_resolved_source_node(self):
+		flow_definition = SimpleNamespace(name="FLOW-MISSING-NODE")
+		action = {"name": "ACT-create_purchase_receipt", "action_key": "create_purchase_receipt"}
+
+		with (
+			patch(
+				"asn_module.qr_engine.dispatch.get_cached_transitions_for_source_node_action"
+			) as get_candidates,
+			patch("asn_module.qr_engine.dispatch.frappe.get_all") as get_all,
+		):
+			with self.assertRaises(TransitionResolutionError) as ctx:
+				_resolve_matching_transition(
+					flow_definition=flow_definition,
+					action=action,
+					source_doc=SimpleNamespace(),
+				)
+
+		get_candidates.assert_not_called()
+		get_all.assert_not_called()
+		self.assertIn("source node", str(ctx.exception).lower())
 
 	def test_resolve_matching_transition_raises_ambiguity_when_tie_remains_after_mode_tiebreak(self):
 		flow_definition = SimpleNamespace(name="FLOW-MODE-TIE-AMBIG")

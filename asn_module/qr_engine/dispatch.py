@@ -5,8 +5,6 @@ from frappe.utils import cint
 from asn_module.barcode_flow.cache import (
 	get_cached_condition,
 	get_cached_transitions_for_source_node_action,
-	get_condition_by_key,
-	get_enabled_transitions,
 )
 from asn_module.barcode_flow.conditions import evaluate_conditions
 from asn_module.barcode_flow.resolver import resolve_flow_with_scope
@@ -55,18 +53,7 @@ def _resolve_action(action_key: str) -> dict:
 	if action:
 		return action
 
-	registry = frappe.get_single("QR Action Registry")
-	registry_action = registry.get_action(action_key)
-	if not registry_action:
-		raise ActionNotFoundError(f"Unknown QR action: {action_key}")
-
-	return {
-		"name": "",
-		"action_key": action_key,
-		"handler": registry_action["handler_method"],
-		"source_doctype": registry_action["source_doctype"],
-		"allowed_roles": registry_action["allowed_roles"],
-	}
+	raise ActionNotFoundError(f"Unknown QR action: {action_key}")
 
 
 def _get_active_action_definition(action_key: str) -> dict | None:
@@ -233,6 +220,10 @@ def _resolve_matching_transition(
 ) -> frappe.model.document.Document:
 	action_key = _normalize_value(action.get("action_key")) or ""
 	action_name = _normalize_value(action.get("name")) or ""
+	if not action_name:
+		raise TransitionResolutionError(
+			f"Cannot resolve barcode transition for action '{action_key}': missing QR Action Definition link"
+		)
 	matching = _get_transition_candidates(
 		flow_definition=flow_definition,
 		action_name=action_name,
@@ -287,31 +278,22 @@ def _get_transition_candidates(
 ) -> list[frappe.model.document.Document]:
 	flow_name = _normalize_value(_get_value(flow_definition, "name")) or ""
 	source_node = _resolve_source_node(source_doc)
-	if flow_name and source_node and action_name:
-		return list(
-			get_cached_transitions_for_source_node_action(
-				flow_definition,
-				flow=flow_name,
-				source_node=source_node,
-				action=action_name,
-			)
-		)
-
-	# Compatibility path for callers that have not persisted the current flow node yet.
-	transitions = get_enabled_transitions(flow_definition)
-	if transitions:
-		return [t for t in transitions if _normalize_value(_get_value(t, "action")) == action_name]
-
 	if not flow_name or not action_name:
 		return []
 
-	transition_names = frappe.get_all(
-		"Barcode Flow Transition",
-		filters={"flow": flow_name, "action": action_name},
-		pluck="name",
-		order_by="priority desc, creation asc, name asc",
+	if not source_node:
+		raise TransitionResolutionError(
+			f"Cannot resolve barcode transition in flow '{flow_name}' for action '{action_name}': source node is required"
+		)
+
+	return list(
+		get_cached_transitions_for_source_node_action(
+			flow_definition,
+			flow=flow_name,
+			source_node=source_node,
+			action=action_name,
+		)
 	)
-	return [frappe.get_doc("Barcode Flow Transition", name) for name in transition_names]
 
 
 def _resolve_source_node(source_doc: frappe.model.document.Document) -> str | None:
@@ -330,28 +312,16 @@ def _resolve_source_node(source_doc: frappe.model.document.Document) -> str | No
 
 def _get_transition_condition(flow_definition: frappe.model.document.Document, transition: object):
 	condition_name = _normalize_value(_get_value(transition, "condition"))
-	if condition_name:
-		condition = get_cached_condition(condition_name, cache_holder=flow_definition)
-		if not condition:
-			transition_key = (
-				_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
-			)
-			raise TransitionResolutionError(
-				f"Transition {transition_key} references unknown condition: {condition_name}"
-			)
-		return condition
-
-	condition_key = _normalize_value(_get_value(transition, "condition_key"))
-	if not condition_key:
+	if not condition_name:
 		return None
 
-	condition = get_condition_by_key(flow_definition, condition_key)
+	condition = get_cached_condition(condition_name, cache_holder=flow_definition)
 	if not condition:
 		transition_key = (
 			_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
 		)
 		raise TransitionResolutionError(
-			f"Transition {transition_key} references unknown condition key: {condition_key}"
+			f"Transition {transition_key} references unknown condition: {condition_name}"
 		)
 	return condition
 

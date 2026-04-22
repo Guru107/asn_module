@@ -218,37 +218,16 @@ class TestBarcodeFlowRuntime(TestCase):
 		self.assertEqual(len(resolved_mappings), 1)
 		self.assertEqual(resolved_mappings[0].name, "FLOW-1-MAP-warehouse-map")
 
-	def test_mapping_mode_supports_legacy_field_map_resolution_from_flow_definition(self):
-		transition = SimpleNamespace(
-			binding_mode="mapping",
-			target_doctype="Purchase Receipt",
-			field_map_key="warehouse-map",
-		)
-		flow_definition = SimpleNamespace(
-			field_maps=[
-				SimpleNamespace(
-					map_key="warehouse-map",
-					mapping_type="constant",
-					target_field_path="set_warehouse",
-					constant_value="WH-001",
-				)
-			]
-		)
+	def test_mapping_mode_requires_linked_field_map(self):
+		transition = SimpleNamespace(binding_mode="mapping", target_doctype="Purchase Receipt")
 		target_doc = _FakeTargetDoc()
 
 		with patch(
 			"asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc
 		) as build_target_doc:
-			execute_transition_binding(
-				transition=transition,
-				source_doc={"name": "ASN-0001"},
-				flow_definition=flow_definition,
-			)
+			execute_transition_binding(transition=transition, source_doc={"name": "ASN-0001"})
 
-		self.assertEqual(build_target_doc.call_args.kwargs["target_doctype"], "Purchase Receipt")
-		resolved_mappings = build_target_doc.call_args.kwargs["mappings"]
-		self.assertEqual(len(resolved_mappings), 1)
-		self.assertEqual(resolved_mappings[0].map_key, "warehouse-map")
+		self.assertEqual(build_target_doc.call_args.kwargs["mappings"], [])
 
 	def test_hybrid_mode_pre_generates_child_code(self):
 		transition = SimpleNamespace(
@@ -592,38 +571,31 @@ class TestBarcodeFlowRuntime(TestCase):
 
 	def test_both_override_with_missing_target_doctype_still_calls_handler(self):
 		handler = MagicMock(return_value=self._handler_result("PR-OVERRIDE-NO-MAP"))
+		action_binding = SimpleNamespace(
+			name="FLOW-1-BIND-custom-receive",
+			custom_handler="fake.module.handler",
+			handler_override_wins=1,
+		)
 		transition = SimpleNamespace(
 			binding_mode="both",
 			target_doctype="",
-			field_map_key="warehouse-map",
-			binding_key="custom-receive",
-		)
-		flow_definition = SimpleNamespace(
-			field_maps=[
-				SimpleNamespace(
-					map_key="warehouse-map",
-					mapping_type="constant",
-					target_field_path="set_warehouse",
-					constant_value="WH-001",
-				)
-			],
-			action_bindings=[
-				SimpleNamespace(
-					binding_key="custom-receive",
-					custom_handler="fake.module.handler",
-					handler_override_wins=1,
-				)
-			],
+			field_map="FLOW-1-MAP-warehouse-map",
+			action_binding=action_binding.name,
 		)
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc") as build_target_doc,
 			patch("asn_module.barcode_flow.runtime.frappe.get_attr", return_value=handler),
+			patch(
+				"asn_module.barcode_flow.runtime.frappe.get_doc",
+				side_effect=lambda doctype, name: action_binding
+				if doctype == "Barcode Flow Action Binding"
+				else None,
+			),
 		):
 			result = execute_transition_binding(
 				transition=transition,
 				source_doc={"doctype": "ASN", "name": "ASN-0001"},
-				flow_definition=flow_definition,
 			)
 
 		build_target_doc.assert_not_called()
@@ -633,27 +605,33 @@ class TestBarcodeFlowRuntime(TestCase):
 
 	def test_both_override_does_not_swallow_mapping_validation_errors(self):
 		handler = MagicMock(return_value=self._handler_result("PR-IGNORED"))
+		field_map = SimpleNamespace(
+			name="FLOW-1-MAP-warehouse-map",
+			mapping_type="source",
+			target_field_path="supplier",
+		)
+		action_binding = SimpleNamespace(
+			name="FLOW-1-BIND-custom-receive",
+			custom_handler="fake.module.handler",
+			handler_override_wins=1,
+		)
 		transition = SimpleNamespace(
 			binding_mode="both",
 			target_doctype="Purchase Receipt",
-			field_map_key="warehouse-map",
-			binding_key="custom-receive",
-		)
-		flow_definition = SimpleNamespace(
-			field_maps=[
-				SimpleNamespace(map_key="warehouse-map", mapping_type="source", target_field_path="supplier")
-			],
-			action_bindings=[
-				SimpleNamespace(
-					binding_key="custom-receive",
-					custom_handler="fake.module.handler",
-					handler_override_wins=1,
-				)
-			],
+			field_map=field_map.name,
+			action_binding=action_binding.name,
 		)
 
 		with (
 			patch("asn_module.barcode_flow.runtime.frappe.get_attr", return_value=handler),
+			patch(
+				"asn_module.barcode_flow.runtime.frappe.get_doc",
+				side_effect=lambda doctype, name: field_map
+				if doctype == "Barcode Flow Field Map"
+				else action_binding
+				if doctype == "Barcode Flow Action Binding"
+				else None,
+			),
 			patch(
 				"asn_module.barcode_flow.runtime.build_target_doc",
 				side_effect=frappe.ValidationError("Bad mapping config"),
@@ -663,7 +641,6 @@ class TestBarcodeFlowRuntime(TestCase):
 				execute_transition_binding(
 					transition=transition,
 					source_doc={"doctype": "ASN", "name": "ASN-0003"},
-					flow_definition=flow_definition,
 				)
 
 		self.assertIn("Bad mapping config", str(ctx.exception))
@@ -671,38 +648,39 @@ class TestBarcodeFlowRuntime(TestCase):
 
 	def test_both_mode_without_override_inserts_mapped_doc(self):
 		target_doc = _FakeTargetDoc()
+		field_map = SimpleNamespace(
+			name="FLOW-1-MAP-warehouse-map",
+			mapping_type="constant",
+			target_field_path="set_warehouse",
+			constant_value="WH-001",
+		)
+		action_binding = SimpleNamespace(
+			name="FLOW-1-BIND-custom-receive",
+			custom_handler="fake.module.handler",
+			handler_override_wins=0,
+		)
 		transition = SimpleNamespace(
 			binding_mode="both",
 			target_doctype="Purchase Receipt",
-			field_map_key="warehouse-map",
-			binding_key="custom-receive",
-		)
-		flow_definition = SimpleNamespace(
-			field_maps=[
-				SimpleNamespace(
-					map_key="warehouse-map",
-					mapping_type="constant",
-					target_field_path="set_warehouse",
-					constant_value="WH-001",
-				)
-			],
-			action_bindings=[
-				SimpleNamespace(
-					binding_key="custom-receive",
-					custom_handler="fake.module.handler",
-					handler_override_wins=0,
-				)
-			],
+			field_map=field_map.name,
+			action_binding=action_binding.name,
 		)
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
 			patch("asn_module.barcode_flow.runtime.frappe.get_attr") as get_attr,
+			patch(
+				"asn_module.barcode_flow.runtime.frappe.get_doc",
+				side_effect=lambda doctype, name: field_map
+				if doctype == "Barcode Flow Field Map"
+				else action_binding
+				if doctype == "Barcode Flow Action Binding"
+				else None,
+			),
 		):
 			result = execute_transition_binding(
 				transition=transition,
 				source_doc={"name": "ASN-0001"},
-				flow_definition=flow_definition,
 			)
 
 		get_attr.assert_not_called()
