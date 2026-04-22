@@ -41,3 +41,14 @@ class BarcodeFlowFieldMap(Document):
 				),
 				exc=UniqueValidationError,
 			)
+
+	def on_trash(self):
+		transition_refs = frappe.get_all(
+			"Barcode Flow Transition", filters={"field_map": self.name}, pluck="name"
+		)
+		if transition_refs:
+			frappe.throw(
+				_("Cannot delete Barcode Flow Field Map {0}. Referenced by Transition.field_map: {1}").format(
+					self.name, ", ".join(transition_refs)
+				)
+			)

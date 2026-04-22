@@ -36,3 +36,28 @@ class BarcodeFlowNode(Document):
 				),
 				exc=UniqueValidationError,
 			)
+
+	def on_trash(self):
+		source_transitions = frappe.get_all(
+			"Barcode Flow Transition", filters={"source_node": self.name}, pluck="name"
+		)
+		target_transitions = frappe.get_all(
+			"Barcode Flow Transition", filters={"target_node": self.name}, pluck="name"
+		)
+		target_bindings = frappe.get_all(
+			"Barcode Flow Action Binding", filters={"target_node": self.name}, pluck="name"
+		)
+
+		blockers = []
+		if source_transitions:
+			blockers.append(f"Transition.source_node: {', '.join(source_transitions)}")
+		if target_transitions:
+			blockers.append(f"Transition.target_node: {', '.join(target_transitions)}")
+		if target_bindings:
+			blockers.append(f"ActionBinding.target_node: {', '.join(target_bindings)}")
+		if blockers:
+			frappe.throw(
+				_("Cannot delete Barcode Flow Node {0}. Referenced by {1}").format(
+					self.name, "; ".join(blockers)
+				)
+			)

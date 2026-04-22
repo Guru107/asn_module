@@ -537,6 +537,172 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 
 		assert binding.name
 
+	def test_delete_node_blocked_by_transition_source_reference(self):
+		flow = self.make_flow()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name)
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, transition.name):
+			source_node.delete()
+
+	def test_delete_node_blocked_by_transition_target_reference(self):
+		flow = self.make_flow()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name)
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, transition.name):
+			target_node.delete()
+
+	def test_delete_node_blocked_by_action_binding_target_node_reference(self):
+		flow = self.make_flow()
+		node = self.make_node(flow=flow.name, node_key="scan")
+		binding = frappe.get_doc(
+			{
+				"doctype": "Barcode Flow Action Binding",
+				"flow": flow.name,
+				"binding_key": f"binding-{frappe.generate_hash(length=6)}",
+				"trigger_event": "On Enter Node",
+				"target_node": node.name,
+				"action": self.make_action_definition().name,
+			}
+		).insert(ignore_permissions=True)
+
+		with self.assertRaisesRegex(frappe.ValidationError, binding.name):
+			node.delete()
+
+	def test_delete_condition_blocked_by_transition_reference(self):
+		flow = self.make_flow()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		condition = self.make_condition(flow=flow.name)
+		field_map = self.make_field_map(flow=flow.name)
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			condition=condition.name,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, transition.name):
+			condition.delete()
+
+	def test_delete_field_map_blocked_by_transition_reference(self):
+		flow = self.make_flow()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name)
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, transition.name):
+			field_map.delete()
+
+	def test_delete_action_binding_blocked_by_transition_reference(self):
+		flow = self.make_flow()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name)
+		binding = self.make_action_binding(flow=flow.name, binding_key="custom-receive")
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			binding_mode="both",
+			field_map=field_map.name,
+			action_binding=binding.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, transition.name):
+			binding.delete()
+
+	def test_delete_transition_blocked_by_action_binding_target_transition_reference(self):
+		flow = self.make_flow()
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name)
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+		binding = frappe.get_doc(
+			{
+				"doctype": "Barcode Flow Action Binding",
+				"flow": flow.name,
+				"binding_key": f"binding-{frappe.generate_hash(length=6)}",
+				"trigger_event": "On Transition",
+				"target_transition": transition.name,
+				"action": self.make_action_definition().name,
+			}
+		).insert(ignore_permissions=True)
+
+		with self.assertRaisesRegex(frappe.ValidationError, binding.name):
+			transition.delete()
+
+	def test_delete_qr_action_definition_blocked_by_transition_reference(self):
+		flow = self.make_flow()
+		action = self.make_action_definition(action_key=f"action-{frappe.generate_hash(length=6)}")
+		source_node = self.make_node(flow=flow.name, node_key="scan")
+		target_node = self.make_node(flow=flow.name, node_key="received", label="Received")
+		field_map = self.make_field_map(flow=flow.name)
+		transition = self.make_transition(
+			flow=flow.name,
+			source_node=source_node.name,
+			target_node=target_node.name,
+			action=action.name,
+			field_map=field_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, transition.name):
+			action.delete()
+
+	def test_delete_qr_action_definition_blocked_by_action_binding_reference(self):
+		flow = self.make_flow()
+		action = self.make_action_definition(action_key=f"action-{frappe.generate_hash(length=6)}")
+		binding = self.make_action_binding(
+			flow=flow.name,
+			binding_key=f"binding-{frappe.generate_hash(length=6)}",
+			action=action.name,
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, binding.name):
+			action.delete()
+
+	def test_delete_unused_field_map_succeeds(self):
+		flow = self.make_flow()
+		field_map = self.make_field_map(flow=flow.name, map_key=f"unused-map-{frappe.generate_hash(length=6)}")
+
+		field_map.delete()
+
+		assert not frappe.db.exists("Barcode Flow Field Map", field_map.name)
+
 	def test_deterministic_semantic_autoname_for_node(self):
 		flow = self.make_flow(flow_name=f"Inbound-ACME-Node-{frappe.generate_hash(length=6)}")
 		node = self.make_node(flow=flow.name, node_key="scan")

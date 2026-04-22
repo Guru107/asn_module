@@ -70,3 +70,14 @@ class BarcodeFlowActionBinding(Document):
 
 		if self.trigger_event == "On Transition" and not self.target_transition:
 			frappe.throw(_("Target Transition is required when Trigger Event is On Transition."))
+
+	def on_trash(self):
+		transition_refs = frappe.get_all(
+			"Barcode Flow Transition", filters={"action_binding": self.name}, pluck="name"
+		)
+		if transition_refs:
+			frappe.throw(
+				_("Cannot delete Barcode Flow Action Binding {0}. Referenced by Transition.action_binding: {1}").format(
+					self.name, ", ".join(transition_refs)
+				)
+			)

@@ -41,3 +41,14 @@ class BarcodeFlowCondition(Document):
 				),
 				exc=UniqueValidationError,
 			)
+
+	def on_trash(self):
+		transition_refs = frappe.get_all(
+			"Barcode Flow Transition", filters={"condition": self.name}, pluck="name"
+		)
+		if transition_refs:
+			frappe.throw(
+				_("Cannot delete Barcode Flow Condition {0}. Referenced by Transition.condition: {1}").format(
+					self.name, ", ".join(transition_refs)
+				)
+			)

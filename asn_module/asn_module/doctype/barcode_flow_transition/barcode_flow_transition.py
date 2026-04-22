@@ -101,3 +101,14 @@ class BarcodeFlowTransition(Document):
 			["trigger_event", "custom_handler", "handler_override_wins"],
 			as_dict=True,
 		)
+
+	def on_trash(self):
+		binding_refs = frappe.get_all(
+			"Barcode Flow Action Binding", filters={"target_transition": self.name}, pluck="name"
+		)
+		if binding_refs:
+			frappe.throw(
+				_("Cannot delete Barcode Flow Transition {0}. Referenced by ActionBinding.target_transition: {1}").format(
+					self.name, ", ".join(binding_refs)
+				)
+			)
