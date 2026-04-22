@@ -201,6 +201,20 @@ def cleanup_dispatch_flow_fixtures(*, flow_name_prefix: str = "IT-Dispatch-Flow"
 		filters={"flow_name": ["like", f"{flow_name_prefix}::%"]},
 		pluck="name",
 	)
+	_delete_flow_definitions(flow_names)
+
+
+def cleanup_all_dispatch_flow_fixtures() -> None:
+	"""Remove all fixture flows under the ``IT-Dispatch-Flow`` namespace."""
+	flow_names = frappe.get_all(
+		"Barcode Flow Definition",
+		filters={"flow_name": ["like", "IT-Dispatch-Flow%"]},
+		pluck="name",
+	)
+	_delete_flow_definitions(flow_names)
+
+
+def _delete_flow_definitions(flow_names: list[str]) -> None:
 	if not flow_names:
 		return
 

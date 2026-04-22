@@ -4,7 +4,6 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from asn_module.barcode_flow.cache import get_enabled_transitions
 from asn_module.qr_engine.scan_codes import verify_registry_row_points_to_existing_source
 from asn_module.setup_actions import get_canonical_actions
 
@@ -110,12 +109,43 @@ def _get_enabled_flow_action_keys() -> set[str]:
 		filters={"is_active": 1},
 		pluck="name",
 	)
-	for flow_name in flow_names:
-		flow = frappe.get_doc("Barcode Flow Definition", flow_name)
-		if not bool(cint(getattr(flow, "is_active", 1))):
-			continue
-		for transition in get_enabled_transitions(flow):
-			action_key = (getattr(transition, "action_key", "") or "").strip()
-			if action_key:
-				keys.add(action_key)
+	if not flow_names:
+		return keys
+
+	transition_meta = frappe.get_meta("Barcode Flow Transition")
+	fields = ["action"]
+	for fieldname in ("enabled", "is_active"):
+		if transition_meta.has_field(fieldname):
+			fields.append(fieldname)
+
+	transitions = frappe.get_all(
+		"Barcode Flow Transition",
+		filters={"flow": ["in", flow_names]},
+		fields=fields,
+	)
+	action_names = {
+		(row.action or "").strip()
+		for row in transitions
+		if _is_enabled_transition(row) and (row.action or "").strip()
+	}
+	if not action_names:
+		return keys
+
+	for row in frappe.get_all(
+		"QR Action Definition",
+		filters={"name": ["in", sorted(action_names)]},
+		fields=["action_key"],
+	):
+		action_key = (row.action_key or "").strip()
+		if action_key:
+			keys.add(action_key)
 	return keys
+
+
+def _is_enabled_transition(row) -> bool:
+	for fieldname in ("enabled", "is_active"):
+		value = getattr(row, fieldname, None)
+		if value is None:
+			continue
+		return bool(cint(value))
+	return True

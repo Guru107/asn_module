@@ -11,11 +11,13 @@ from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
 from asn_module.tests.integration.fixtures import (
+	cleanup_all_dispatch_flow_fixtures,
 	cleanup_conflicting_scoped_flow_fixtures,
 	cleanup_dispatch_flow_fixtures,
 	ensure_dispatch_flow_fixtures,
 	ensure_integration_user,
 	integration_user_context,
+	relational_source_node_resolution,
 )
 from asn_module.utils.test_setup import before_tests
 
@@ -44,6 +46,7 @@ class TestEndToEndFlow(FrappeTestCase):
 		register_actions()
 		ensure_integration_user()
 		cleanup_conflicting_scoped_flow_fixtures()
+		cleanup_all_dispatch_flow_fixtures()
 		cls._flow_fixture_prefix = "IT-Dispatch-Flow-E2EFlow"
 		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 		cls._flow_fixture_map = ensure_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
@@ -96,8 +99,9 @@ class TestEndToEndFlow(FrappeTestCase):
 			with real_asn_attachment_context():
 				asn.submit()
 
-			pr_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
-			pr_result = dispatch(code=pr_code, device_info="E2E-Integration")
+			with relational_source_node_resolution():
+				pr_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				pr_result = dispatch(code=pr_code, device_info="E2E-Integration")
 			self.assertTrue(pr_result["success"])
 			pr = frappe.get_doc("Purchase Receipt", pr_result["name"])
 			pr.items[0].qty = 8

@@ -112,7 +112,13 @@ class TestRegisterActions(FrappeTestCase):
 			frappe.db.count("QR Action Definition"),
 			len(DEFAULT_QR_ACTION_DEFINITIONS),
 		)
-		existing = frappe.get_doc("QR Action Definition", existing_action_key)
+		existing_name = frappe.db.get_value(
+			"QR Action Definition",
+			{"action_key": existing_action_key},
+			"name",
+		)
+		self.assertTrue(existing_name)
+		existing = frappe.get_doc("QR Action Definition", existing_name)
 		self.assertEqual(existing.handler_method, "custom.handler")
 		self.assertEqual(existing.allowed_roles, "Stock User")
 

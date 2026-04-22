@@ -15,6 +15,7 @@ from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
 from asn_module.tests.integration.fixtures import (
+	cleanup_all_dispatch_flow_fixtures,
 	cleanup_dispatch_flow_fixtures,
 	ensure_integration_user,
 	ensure_scoped_flow_route_fixtures,
@@ -174,6 +175,7 @@ class TestBarcodeFlowScopedRoutingIntegration(FrappeTestCase):
 		cls._registry_snapshot = cls._snapshot_registry_actions()
 		register_actions()
 		ensure_integration_user()
+		cleanup_all_dispatch_flow_fixtures()
 		cls._flow_fixture_prefix = "IT-Dispatch-Flow-ScopedRoutingIntegration"
 		cleanup_dispatch_flow_fixtures(flow_name_prefix=cls._flow_fixture_prefix)
 		cls._scoped_routes = ensure_scoped_flow_route_fixtures(
