@@ -9,10 +9,14 @@ if frappe_stub is None:
 	sys.modules["frappe"] = frappe_stub
 if not hasattr(frappe_stub, "ValidationError"):
 	frappe_stub.ValidationError = type("ValidationError", (Exception,), {})
+if not hasattr(frappe_stub, "DoesNotExistError"):
+	frappe_stub.DoesNotExistError = type("DoesNotExistError", (Exception,), {})
 if not hasattr(frappe_stub, "get_attr"):
 	frappe_stub.get_attr = lambda _path: None
 if not hasattr(frappe_stub, "get_doc"):
 	frappe_stub.get_doc = lambda payload: payload
+if not hasattr(frappe_stub, "get_all"):
+	frappe_stub.get_all = lambda *args, **kwargs: []
 
 frappe_utils_stub = sys.modules.get("frappe.utils")
 if frappe_utils_stub is None:
@@ -23,6 +27,11 @@ if not hasattr(frappe_utils_stub, "cint"):
 
 import frappe
 
+from asn_module.barcode_flow.cache import (
+	get_cached_condition,
+	get_cached_transitions_for_source_node_action,
+)
+from asn_module.barcode_flow.repository import get_condition, get_transitions_for_source_node_action
 from asn_module.barcode_flow.runtime import execute_transition_binding
 
 
@@ -47,6 +56,88 @@ class TestBarcodeFlowRuntime(TestCase):
 			"name": name,
 			"url": f"/app/purchase-receipt/{name}",
 		}
+
+	def test_get_transitions_for_source_node_and_action_is_flow_scoped(self):
+		transition_docs = {
+			"TRANS-HIGH": SimpleNamespace(name="TRANS-HIGH", enabled=1),
+			"TRANS-DISABLED": SimpleNamespace(name="TRANS-DISABLED", enabled=0),
+			"TRANS-LOW": SimpleNamespace(name="TRANS-LOW", enabled=1),
+		}
+
+		with (
+			patch(
+				"asn_module.barcode_flow.repository.frappe.get_all",
+				return_value=["TRANS-HIGH", "TRANS-DISABLED", "TRANS-LOW"],
+			) as get_all,
+			patch(
+				"asn_module.barcode_flow.repository.frappe.get_doc",
+				side_effect=lambda doctype, name: transition_docs[name],
+			) as get_doc,
+		):
+			rows = get_transitions_for_source_node_action(
+				flow="FLOW-1",
+				source_node="NODE-1",
+				action="ACT-1",
+			)
+
+		self.assertEqual([row.name for row in rows], ["TRANS-HIGH", "TRANS-LOW"])
+		self.assertEqual(
+			get_all.call_args.kwargs["filters"],
+			{"flow": "FLOW-1", "source_node": "NODE-1", "action": "ACT-1"},
+		)
+		self.assertEqual(get_all.call_args.kwargs["order_by"], "priority asc, creation asc, name asc")
+		self.assertEqual(get_doc.call_count, 3)
+
+	def test_get_condition_returns_enabled_condition_and_excludes_disabled_or_missing(self):
+		enabled = SimpleNamespace(name="COND-ENABLED", enabled=1)
+		disabled = SimpleNamespace(name="COND-DISABLED", enabled=0)
+
+		def _get_doc(_doctype, name):
+			if name == "COND-ENABLED":
+				return enabled
+			if name == "COND-DISABLED":
+				return disabled
+			raise frappe.DoesNotExistError(name)
+
+		with patch("asn_module.barcode_flow.repository.frappe.get_doc", side_effect=_get_doc):
+			self.assertIs(get_condition("COND-ENABLED"), enabled)
+			self.assertIsNone(get_condition("COND-DISABLED"))
+			self.assertIsNone(get_condition("COND-MISSING"))
+
+	def test_cached_relational_helpers_memoize_repository_calls(self):
+		cache_holder = SimpleNamespace()
+		transitions = [SimpleNamespace(name="TRANS-1")]
+		condition = SimpleNamespace(name="COND-1", enabled=1)
+
+		with (
+			patch(
+				"asn_module.barcode_flow.cache.repository.get_transitions_for_source_node_action",
+				return_value=transitions,
+			) as get_transitions,
+			patch(
+				"asn_module.barcode_flow.cache.repository.get_condition",
+				return_value=condition,
+			) as get_condition_doc,
+		):
+			first_transitions = get_cached_transitions_for_source_node_action(
+				cache_holder,
+				flow="FLOW-1",
+				source_node="NODE-1",
+				action="ACT-1",
+			)
+			second_transitions = get_cached_transitions_for_source_node_action(
+				cache_holder,
+				flow="FLOW-1",
+				source_node="NODE-1",
+				action="ACT-1",
+			)
+			first_condition = get_cached_condition("COND-1", cache_holder=cache_holder)
+			second_condition = get_cached_condition("COND-1", cache_holder=cache_holder)
+
+		self.assertIs(first_transitions, second_transitions)
+		self.assertIs(first_condition, second_condition)
+		get_transitions.assert_called_once_with(flow="FLOW-1", source_node="NODE-1", action="ACT-1")
+		get_condition_doc.assert_called_once_with("COND-1")
 
 	def test_custom_handler_mode_calls_handler_and_returns_contract(self):
 		handler = MagicMock(return_value=self._handler_result())
