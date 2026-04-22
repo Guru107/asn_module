@@ -5,9 +5,6 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.handlers.tests.test_purchase_return import TestCreatePurchaseReturn
-from asn_module.handlers.tests.test_stock_transfer import TestCreateStockTransfer
-from asn_module.handlers.tests.test_subcontracting import TestSubcontractingHandlers
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
@@ -122,6 +119,8 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		self.assertEqual(len(states), 1)
 
 	def test_create_stock_transfer_via_dispatch(self):
+		from asn_module.handlers.tests.test_stock_transfer import TestCreateStockTransfer
+
 		fixture = TestCreateStockTransfer()
 		_pr, qi = fixture._make_purchase_receipt_with_qi("Accepted")
 		with integration_user_context(), relational_source_node_resolution():
@@ -134,6 +133,8 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		self.assertEqual(se.stock_entry_type, "Material Transfer")
 
 	def test_create_purchase_return_via_dispatch(self):
+		from asn_module.handlers.tests.test_purchase_return import TestCreatePurchaseReturn
+
 		fixture = TestCreatePurchaseReturn()
 		pr, qi = fixture._make_rejected_purchase_receipt_with_qi()
 		with integration_user_context(), relational_source_node_resolution():
@@ -147,6 +148,8 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		self.assertEqual(ret.return_against, pr.name)
 
 	def test_subcontracting_dispatches_via_scan_code(self):
+		from asn_module.handlers.tests.test_subcontracting import TestSubcontractingHandlers
+
 		helper = TestSubcontractingHandlers()
 		sco = helper._make_integration_subcontracting_order()
 		with integration_user_context(), relational_source_node_resolution():
