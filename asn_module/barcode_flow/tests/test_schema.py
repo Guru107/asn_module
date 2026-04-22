@@ -1,3 +1,5 @@
+import importlib
+
 import frappe
 from frappe.exceptions import UniqueValidationError
 from frappe.tests.utils import FrappeTestCase
@@ -180,6 +182,15 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		with self.assertRaises(UniqueValidationError):
 			self.make_condition(flow=flow.name, condition_key="has-warehouse", value="Main Warehouse")
 
+	def test_condition_key_can_repeat_across_flows(self):
+		first_flow = self.make_flow()
+		second_flow = self.make_flow()
+
+		first_condition = self.make_condition(flow=first_flow.name, condition_key="has-warehouse")
+		second_condition = self.make_condition(flow=second_flow.name, condition_key="has-warehouse")
+
+		assert first_condition.name != second_condition.name
+
 	def test_field_map_key_must_be_unique_within_flow(self):
 		flow = self.make_flow()
 		self.make_field_map(flow=flow.name, map_key="warehouse-map")
@@ -187,12 +198,30 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 		with self.assertRaises(UniqueValidationError):
 			self.make_field_map(flow=flow.name, map_key="warehouse-map", target_field_path="target.other_field")
 
+	def test_field_map_key_can_repeat_across_flows(self):
+		first_flow = self.make_flow()
+		second_flow = self.make_flow()
+
+		first_map = self.make_field_map(flow=first_flow.name, map_key="warehouse-map")
+		second_map = self.make_field_map(flow=second_flow.name, map_key="warehouse-map")
+
+		assert first_map.name != second_map.name
+
 	def test_action_binding_key_must_be_unique_within_flow(self):
 		flow = self.make_flow()
 		self.make_action_binding(flow=flow.name, binding_key="custom-receive")
 
 		with self.assertRaises(UniqueValidationError):
 			self.make_action_binding(flow=flow.name, binding_key="custom-receive")
+
+	def test_action_binding_key_can_repeat_across_flows(self):
+		first_flow = self.make_flow()
+		second_flow = self.make_flow()
+
+		first_binding = self.make_action_binding(flow=first_flow.name, binding_key="custom-receive")
+		second_binding = self.make_action_binding(flow=second_flow.name, binding_key="custom-receive")
+
+		assert first_binding.name != second_binding.name
 
 	def test_transition_key_must_be_unique_within_flow(self):
 		flow = self.make_flow()
@@ -220,16 +249,48 @@ class TestBarcodeFlowSchema(FrappeTestCase):
 				target_doctype="Purchase Receipt",
 			)
 
-		with self.assertRaises(frappe.ValidationError):
-			frappe.get_doc(
-				{
-					"doctype": "Barcode Flow Field Map",
-					"map_key": "warehouse-map",
-					"mapping_type": "source",
-					"source_field_path": "header.set_warehouse",
-					"target_field_path": "target.set_warehouse",
-				}
-			).insert(ignore_permissions=True)
+	def test_transition_key_can_repeat_across_flows(self):
+		transition_key = "scan-to-received"
+		first_flow = self.make_flow()
+		second_flow = self.make_flow()
+
+		first_source = self.make_node(flow=first_flow.name, node_key="scan")
+		first_target = self.make_node(flow=first_flow.name, node_key="received", label="Received")
+		first_map = self.make_field_map(flow=first_flow.name, map_key="warehouse-map")
+
+		second_source = self.make_node(flow=second_flow.name, node_key="scan")
+		second_target = self.make_node(flow=second_flow.name, node_key="received", label="Received")
+		second_map = self.make_field_map(flow=second_flow.name, map_key="warehouse-map")
+
+		first_transition = self.make_transition(
+			flow=first_flow.name,
+			source_node=first_source.name,
+			target_node=first_target.name,
+			transition_key=transition_key,
+			field_map=first_map.name,
+			target_doctype="Purchase Receipt",
+		)
+		second_transition = self.make_transition(
+			flow=second_flow.name,
+			source_node=second_source.name,
+			target_node=second_target.name,
+			transition_key=transition_key,
+			field_map=second_map.name,
+			target_doctype="Purchase Receipt",
+		)
+
+		assert first_transition.name != second_transition.name
+
+	def test_index_patch_execute_is_idempotent_and_verified(self):
+		patch = importlib.import_module(
+			"asn_module.patches.post_model_sync.2026_04_21_add_barcode_flow_indexes"
+		)
+
+		patch.execute()
+		patch.execute()
+		verified = patch.verify_indexes()
+
+		assert all(verified.values())
 
 	def test_transition_mapping_mode_requires_field_map_and_target_doctype(self):
 		flow = self.make_flow()
