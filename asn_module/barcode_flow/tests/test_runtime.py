@@ -191,6 +191,37 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="mapping",
 			target_doctype="Purchase Receipt",
+			field_map="FLOW-1-MAP-warehouse-map",
+		)
+		target_doc = _FakeTargetDoc()
+		field_map = SimpleNamespace(
+			name="FLOW-1-MAP-warehouse-map",
+			mapping_type="constant",
+			target_field_path="set_warehouse",
+			constant_value="WH-001",
+		)
+
+		with (
+			patch(
+				"asn_module.barcode_flow.runtime.frappe.get_doc",
+				side_effect=lambda doctype, name: field_map if doctype == "Barcode Flow Field Map" else None,
+			),
+			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc) as build_target_doc,
+		):
+			execute_transition_binding(
+				transition=transition,
+				source_doc={"name": "ASN-0001"},
+			)
+
+		self.assertEqual(build_target_doc.call_args.kwargs["target_doctype"], "Purchase Receipt")
+		resolved_mappings = build_target_doc.call_args.kwargs["mappings"]
+		self.assertEqual(len(resolved_mappings), 1)
+		self.assertEqual(resolved_mappings[0].name, "FLOW-1-MAP-warehouse-map")
+
+	def test_mapping_mode_supports_legacy_field_map_resolution_from_flow_definition(self):
+		transition = SimpleNamespace(
+			binding_mode="mapping",
+			target_doctype="Purchase Receipt",
 			field_map_key="warehouse-map",
 		)
 		flow_definition = SimpleNamespace(
@@ -223,23 +254,30 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="mapping",
 			target_doctype="Purchase Receipt",
-			target_node_key="received",
+			flow="FLOW-1",
+			target_node="FLOW-1-NODE-received",
 			field_maps=[],
 		)
-		flow_definition = SimpleNamespace(
-			transitions=[
-				SimpleNamespace(
-					transition_key="to-putaway",
-					source_node_key="received",
-					action_key="confirm_putaway",
-					generation_mode="hybrid",
-				)
-			]
-		)
+		flow_definition = SimpleNamespace(name="FLOW-1")
 		target_doc = _FakeTargetDoc()
+		action_definition = SimpleNamespace(name="ACT-confirm_putaway", action_key="confirm_putaway")
+		child_transition = SimpleNamespace(
+			transition_key="to-putaway",
+			source_node="FLOW-1-NODE-received",
+			action=action_definition.name,
+			generation_mode="hybrid",
+		)
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime._get_transitions_for_source_node",
+				return_value=[child_transition],
+			),
+			patch(
+				"asn_module.barcode_flow.runtime._get_action_definition",
+				return_value=action_definition,
+			),
 			patch(
 				"asn_module.barcode_flow.runtime.build_scan_code_metadata",
 				return_value={
@@ -269,23 +307,33 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="mapping",
 			target_doctype="Purchase Receipt",
-			target_node_key="received",
+			flow="FLOW-1",
+			target_node="FLOW-1-NODE-received",
 			field_maps=[],
 		)
-		flow_definition = SimpleNamespace(
-			transitions=[
-				SimpleNamespace(
-					transition_key="to-invoice",
-					source_node_key="received",
-					action_key="create_purchase_invoice",
-					generation_mode="immediate",
-				)
-			]
-		)
+		flow_definition = SimpleNamespace(name="FLOW-1")
 		target_doc = _FakeTargetDoc()
+		action_definition = SimpleNamespace(
+			name="ACT-create_purchase_invoice",
+			action_key="create_purchase_invoice",
+		)
+		child_transition = SimpleNamespace(
+			transition_key="to-invoice",
+			source_node="FLOW-1-NODE-received",
+			action=action_definition.name,
+			generation_mode="immediate",
+		)
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime._get_transitions_for_source_node",
+				return_value=[child_transition],
+			),
+			patch(
+				"asn_module.barcode_flow.runtime._get_action_definition",
+				return_value=action_definition,
+			),
 			patch(
 				"asn_module.barcode_flow.runtime.build_scan_code_metadata",
 				return_value={
@@ -315,23 +363,25 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="mapping",
 			target_doctype="Purchase Receipt",
-			target_node_key="received",
+			flow="FLOW-1",
+			target_node="FLOW-1-NODE-received",
 			field_maps=[],
 		)
-		flow_definition = SimpleNamespace(
-			transitions=[
-				SimpleNamespace(
-					transition_key="to-runtime-only",
-					source_node_key="received",
-					action_key="create_purchase_invoice",
-					generation_mode="runtime",
-				)
-			]
-		)
+		flow_definition = SimpleNamespace(name="FLOW-1")
 		target_doc = _FakeTargetDoc()
+		child_transition = SimpleNamespace(
+			transition_key="to-runtime-only",
+			source_node="FLOW-1-NODE-received",
+			action="ACT-create_purchase_invoice",
+			generation_mode="runtime",
+		)
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime._get_transitions_for_source_node",
+				return_value=[child_transition],
+			),
 			patch("asn_module.barcode_flow.runtime.build_scan_code_metadata") as build_metadata,
 		):
 			result = execute_transition_binding(
@@ -347,38 +397,51 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="mapping",
 			target_doctype="Purchase Receipt",
-			target_node_key="received",
+			flow="FLOW-1",
+			target_node="FLOW-1-NODE-received",
 			field_maps=[],
 		)
-		flow_definition = SimpleNamespace(
-			transitions=[
-				SimpleNamespace(
-					transition_key="to-invoice-allowed",
-					source_node_key="received",
-					action_key="create_purchase_invoice",
-					generation_mode="hybrid",
-					condition_key="allow-condition",
-				),
-				SimpleNamespace(
-					transition_key="to-putaway-blocked",
-					source_node_key="received",
-					action_key="confirm_putaway",
-					generation_mode="immediate",
-					condition_key="block-condition",
-				),
-			],
-			conditions=[
-				SimpleNamespace(condition_key="allow-condition"),
-				SimpleNamespace(condition_key="block-condition"),
-			],
-		)
+		flow_definition = SimpleNamespace(name="FLOW-1")
 		target_doc = _FakeTargetDoc()
+		allow_condition = SimpleNamespace(name="COND-ALLOW")
+		block_condition = SimpleNamespace(name="COND-BLOCK")
+		invoice_action = SimpleNamespace(
+			name="ACT-create_purchase_invoice",
+			action_key="create_purchase_invoice",
+		)
+		putaway_action = SimpleNamespace(name="ACT-confirm_putaway", action_key="confirm_putaway")
+		allowed_transition = SimpleNamespace(
+			transition_key="to-invoice-allowed",
+			source_node="FLOW-1-NODE-received",
+			action=invoice_action.name,
+			generation_mode="hybrid",
+			condition=allow_condition.name,
+		)
+		blocked_transition = SimpleNamespace(
+			transition_key="to-putaway-blocked",
+			source_node="FLOW-1-NODE-received",
+			action=putaway_action.name,
+			generation_mode="immediate",
+			condition=block_condition.name,
+		)
 
 		def _condition_result(_doc, rules):
-			return rules[0].condition_key == "allow-condition"
+			return rules[0].name == "COND-ALLOW"
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime._get_transitions_for_source_node",
+				return_value=[allowed_transition, blocked_transition],
+			),
+			patch(
+				"asn_module.barcode_flow.runtime._get_action_definition",
+				side_effect=[invoice_action, putaway_action],
+			),
+			patch(
+				"asn_module.barcode_flow.runtime.get_cached_condition",
+				side_effect=[allow_condition, block_condition],
+			),
 			patch(
 				"asn_module.barcode_flow.runtime.evaluate_conditions", side_effect=_condition_result
 			) as evaluate,
@@ -408,29 +471,39 @@ class TestBarcodeFlowRuntime(TestCase):
 		transition = SimpleNamespace(
 			binding_mode="mapping",
 			target_doctype="Purchase Receipt",
-			target_node_key="received",
+			flow="FLOW-1",
+			target_node="FLOW-1-NODE-received",
 			field_maps=[],
 		)
-		flow_definition = SimpleNamespace(
-			transitions=[
-				SimpleNamespace(
-					transition_key="to-invoice-a",
-					source_node_key="received",
-					action_key="create_purchase_invoice",
-					generation_mode="immediate",
-				),
-				SimpleNamespace(
-					transition_key="to-invoice-b",
-					source_node_key="received",
-					action_key="create_purchase_invoice",
-					generation_mode="hybrid",
-				),
-			]
-		)
+		flow_definition = SimpleNamespace(name="FLOW-1")
 		target_doc = _FakeTargetDoc()
+		action_definition = SimpleNamespace(
+			name="ACT-create_purchase_invoice",
+			action_key="create_purchase_invoice",
+		)
+		first_transition = SimpleNamespace(
+			transition_key="to-invoice-a",
+			source_node="FLOW-1-NODE-received",
+			action=action_definition.name,
+			generation_mode="immediate",
+		)
+		second_transition = SimpleNamespace(
+			transition_key="to-invoice-b",
+			source_node="FLOW-1-NODE-received",
+			action=action_definition.name,
+			generation_mode="hybrid",
+		)
 
 		with (
 			patch("asn_module.barcode_flow.runtime.build_target_doc", return_value=target_doc),
+			patch(
+				"asn_module.barcode_flow.runtime._get_transitions_for_source_node",
+				return_value=[first_transition, second_transition],
+			),
+			patch(
+				"asn_module.barcode_flow.runtime._get_action_definition",
+				return_value=action_definition,
+			),
 			patch(
 				"asn_module.barcode_flow.runtime.build_scan_code_metadata",
 				side_effect=[
@@ -460,32 +533,36 @@ class TestBarcodeFlowRuntime(TestCase):
 		self.assertEqual(result["generated_scan_codes"][0]["action_key"], "create_purchase_invoice")
 		self.assertEqual(result["generated_scan_codes"][0]["scan_code"], "DUPLICATE123")
 
-	def test_custom_handler_resolves_binding_by_key_and_uses_dispatch_style_kwargs(self):
+	def test_custom_handler_resolves_action_binding_link_and_uses_dispatch_style_kwargs(self):
 		handler = MagicMock(return_value=self._handler_result("PR-BIND"))
-		transition = SimpleNamespace(binding_mode="custom_handler", binding_key="custom-receive")
-		flow_definition = SimpleNamespace(
-			action_bindings=[
-				SimpleNamespace(
-					binding_key="custom-receive",
-					custom_handler="fake.module.handler",
-				)
-			]
+		action_binding = SimpleNamespace(
+			name="FLOW-1-BIND-custom-receive",
+			custom_handler="fake.module.handler",
+		)
+		transition = SimpleNamespace(
+			binding_mode="custom_handler",
+			action_binding=action_binding.name,
 		)
 		source_doc = {"doctype": "ASN", "name": "ASN-0002"}
 
-		with patch("asn_module.barcode_flow.runtime.frappe.get_attr", return_value=handler):
+		with (
+			patch("asn_module.barcode_flow.runtime.frappe.get_attr", return_value=handler),
+			patch(
+				"asn_module.barcode_flow.runtime.frappe.get_doc",
+				side_effect=lambda doctype, name: action_binding if doctype == "Barcode Flow Action Binding" else None,
+			),
+		):
 			result = execute_transition_binding(
 				transition=transition,
 				source_doc=source_doc,
-				flow_definition=flow_definition,
 			)
 
 		handler.assert_called_once()
 		self.assertEqual(handler.call_args.kwargs["source_doctype"], "ASN")
 		self.assertEqual(handler.call_args.kwargs["source_name"], "ASN-0002")
 		payload = handler.call_args.kwargs["payload"]
-		self.assertEqual(payload["transition"].binding_key, "custom-receive")
-		self.assertEqual(payload["action_binding"].binding_key, "custom-receive")
+		self.assertEqual(payload["transition"].action_binding, "FLOW-1-BIND-custom-receive")
+		self.assertEqual(payload["action_binding"].name, "FLOW-1-BIND-custom-receive")
 		self.assertEqual(result["name"], "PR-BIND")
 
 	def test_both_mode_with_override_calls_handler_and_skips_insert(self):

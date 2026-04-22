@@ -16,6 +16,24 @@ from asn_module.barcode_flow.mapping import build_target_doc
 
 
 class TestBarcodeFlowMapping(TestCase):
+	def test_build_target_doc_accepts_single_mapping_row(self):
+		source_doc = SimpleNamespace(company="COMP-001")
+		mapping = SimpleNamespace(
+			mapping_type="source",
+			source_field_path="company",
+			target_field_path="company",
+		)
+
+		with patch("asn_module.barcode_flow.mapping.frappe.get_doc", side_effect=lambda payload: payload):
+			payload = build_target_doc(
+				source_doc=source_doc,
+				mappings=mapping,
+				target_doctype="Purchase Receipt",
+			)
+
+		self.assertEqual(payload["doctype"], "Purchase Receipt")
+		self.assertEqual(payload["company"], "COMP-001")
+
 	def test_build_target_doc_maps_source_fields_from_dict_source(self):
 		source_doc = {
 			"header": {

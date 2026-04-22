@@ -4,7 +4,12 @@ from typing import Any
 
 import frappe
 
-from asn_module.barcode_flow.cache import get_condition_by_key, get_enabled_transitions
+from asn_module.barcode_flow.cache import (
+	get_cached_condition,
+	get_cached_transitions_for_source_node_action,
+	get_condition_by_key,
+	get_enabled_transitions,
+)
 from asn_module.barcode_flow.conditions import evaluate_conditions
 from asn_module.barcode_flow.mapping import build_target_doc
 
@@ -120,23 +125,25 @@ def _generate_child_scan_codes(
 	if not flow_definition:
 		return []
 
-	source_node_key = (_get_value(transition, "target_node_key") or "").strip()
+	flow_name = (_get_value(flow_definition, "name") or _get_value(transition, "flow") or "").strip()
+	source_node = (_get_value(transition, "target_node") or "").strip()
 	target_doctype = (target_doctype or "").strip()
 	target_name = (target_name or "").strip()
-	if not source_node_key or not target_doctype or not target_name:
+	if not flow_name or not source_node or not target_doctype or not target_name:
 		return []
 
 	generated: list[dict] = []
 	seen_scan_entries: set[tuple[str, str]] = set()
-	for child_transition in get_enabled_transitions(flow_definition):
-		if (_get_value(child_transition, "source_node_key") or "").strip() != source_node_key:
-			continue
-
+	for child_transition in _get_transitions_for_source_node(
+		flow_definition=flow_definition,
+		flow=flow_name,
+		source_node=source_node,
+	):
 		generation_mode = (_get_value(child_transition, "generation_mode") or "runtime").strip().lower()
 		if generation_mode not in _PREGENERATE_MODES:
 			continue
 
-		action_key = (_get_value(child_transition, "action_key") or "").strip()
+		action_key = _get_action_key(_get_value(child_transition, "action"))
 		if not action_key:
 			continue
 
@@ -175,16 +182,25 @@ def _is_child_transition_condition_met(
 	target_name: str,
 	target_doc: Any = None,
 ) -> bool:
-	condition_key = (_get_value(child_transition, "condition_key") or "").strip()
-	if not condition_key:
-		return True
+	condition_name = (_get_value(child_transition, "condition") or "").strip()
+	if not condition_name:
+		condition_key = (_get_value(child_transition, "condition_key") or "").strip()
+		if not condition_key:
+			return True
 
-	condition = get_condition_by_key(flow_definition, condition_key)
-	if not condition:
-		transition_key = (_get_value(child_transition, "transition_key") or "<unknown-transition>").strip()
-		raise frappe.ValidationError(
-			f"Transition {transition_key} references unknown condition key: {condition_key}"
-		)
+		condition = get_condition_by_key(flow_definition, condition_key)
+		if not condition:
+			transition_key = (_get_value(child_transition, "transition_key") or "<unknown-transition>").strip()
+			raise frappe.ValidationError(
+				f"Transition {transition_key} references unknown condition key: {condition_key}"
+			)
+	else:
+		condition = get_cached_condition(condition_name, cache_holder=flow_definition)
+		if not condition:
+			transition_key = (_get_value(child_transition, "transition_key") or "<unknown-transition>").strip()
+			raise frappe.ValidationError(
+				f"Transition {transition_key} references unknown condition: {condition_name}"
+			)
 
 	resolved_target_doc = _resolve_target_doc_for_conditions(
 		target_doc=target_doc,
@@ -192,6 +208,74 @@ def _is_child_transition_condition_met(
 		target_name=target_name,
 	)
 	return evaluate_conditions(resolved_target_doc, [condition])
+
+
+def _get_transitions_for_source_node(
+	*, flow_definition: Any, flow: str, source_node: str
+) -> list[Any]:
+	flow = (flow or "").strip()
+	source_node = (source_node or "").strip()
+	if not flow or not source_node:
+		return []
+
+	# Backward-compatible path for any still-hydrated test fixtures.
+	hydrated = [
+		row
+		for row in get_enabled_transitions(flow_definition)
+		if (_get_value(row, "source_node") or "").strip() == source_node
+	]
+	if hydrated:
+		return hydrated
+
+	transition_index: dict[str, Any] = {}
+	for action_name in _get_active_action_names():
+		for row in get_cached_transitions_for_source_node_action(
+			flow_definition,
+			flow=flow,
+			source_node=source_node,
+			action=action_name,
+		):
+			transition_name = (_get_value(row, "name") or "").strip()
+			cache_key = transition_name or f"{_get_value(row, 'priority', '')}:{_get_value(row, 'creation', '')}:{_get_value(row, 'transition_key', '')}"
+			transition_index[cache_key] = row
+
+	return sorted(
+		transition_index.values(),
+		key=lambda row: (
+			int(_get_value(row, "priority") or 0),
+			(_get_value(row, "creation") or ""),
+			(_get_value(row, "name") or ""),
+		),
+	)
+
+
+def _get_active_action_names() -> list[str]:
+	return frappe.get_all(
+		"QR Action Definition",
+		filters={"is_active": 1},
+		pluck="name",
+		order_by="name asc",
+	)
+
+
+def _get_action_key(action_link: Any) -> str:
+	action_definition = _get_action_definition(action_link)
+	if not action_definition:
+		return ""
+	return (_get_value(action_definition, "action_key") or "").strip()
+
+
+def _get_action_definition(action_link: Any) -> Any | None:
+	if not action_link:
+		return None
+
+	if not isinstance(action_link, str):
+		return action_link
+
+	try:
+		return frappe.get_doc("QR Action Definition", action_link)
+	except getattr(frappe, "DoesNotExistError", Exception):
+		return None
 
 
 def _resolve_target_doc_for_conditions(*, target_doc: Any, target_doctype: str, target_name: str) -> Any:
@@ -244,6 +328,10 @@ def _resolve_field_maps(transition: Any, flow_definition: Any = None) -> list[An
 	if hydrated:
 		return list(hydrated)
 
+	field_map = _resolve_linked_doc("Barcode Flow Field Map", _get_value(transition, "field_map"))
+	if field_map:
+		return [field_map]
+
 	map_key = (_get_value(transition, "field_map_key") or "").strip()
 	if not map_key:
 		return []
@@ -267,8 +355,12 @@ def _resolve_action_binding(transition: Any, flow_definition: Any = None, requir
 		or _get_value(transition, "binding")
 		or _get_value(transition, "binding_row")
 	)
-	if hydrated:
+	if hydrated and not isinstance(hydrated, str):
 		return hydrated
+
+	linked_action_binding = _resolve_linked_doc("Barcode Flow Action Binding", hydrated)
+	if linked_action_binding:
+		return linked_action_binding
 
 	binding_key = (_get_value(transition, "binding_key") or "").strip()
 	if not binding_key:
@@ -287,6 +379,19 @@ def _resolve_action_binding(transition: Any, flow_definition: Any = None, requir
 			return row
 
 	raise frappe.ValidationError(f"Unknown binding key on transition: {binding_key}")
+
+
+def _resolve_linked_doc(doctype: str, value: Any) -> Any | None:
+	if not value:
+		return None
+
+	if not isinstance(value, str):
+		return value
+
+	try:
+		return frappe.get_doc(doctype, value)
+	except getattr(frappe, "DoesNotExistError", Exception):
+		return None
 
 
 def _run_custom_handler(

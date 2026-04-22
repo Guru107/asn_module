@@ -2,7 +2,12 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from asn_module.barcode_flow.cache import get_condition_by_key, get_enabled_transitions
+from asn_module.barcode_flow.cache import (
+	get_cached_condition,
+	get_cached_transitions_for_source_node_action,
+	get_condition_by_key,
+	get_enabled_transitions,
+)
 from asn_module.barcode_flow.conditions import evaluate_conditions
 from asn_module.barcode_flow.resolver import resolve_flow_with_scope
 from asn_module.barcode_flow.runtime import execute_transition_binding
@@ -38,22 +43,49 @@ GENERATION_MODE_PRECEDENCE = {
 
 
 def _resolve_action(action_key: str) -> dict:
-	registry = frappe.get_single("QR Action Registry")
-	action = registry.get_action(action_key)
-	if not action:
-		# Self-heal: re-apply canonical action registry when singleton rows are stale.
-		from asn_module.setup_actions import register_actions
+	action = _get_active_action_definition(action_key)
+	if action:
+		return action
 
-		register_actions()
-		registry = frappe.get_single("QR Action Registry")
-		action = registry.get_action(action_key)
-		if not action:
-			raise ActionNotFoundError(f"Unknown QR action: {action_key}")
+	# Self-heal: refresh canonical rows before falling back to the compatibility registry.
+	from asn_module.setup_actions import register_actions
+
+	register_actions()
+	action = _get_active_action_definition(action_key)
+	if action:
+		return action
+
+	registry = frappe.get_single("QR Action Registry")
+	registry_action = registry.get_action(action_key)
+	if not registry_action:
+		raise ActionNotFoundError(f"Unknown QR action: {action_key}")
 
 	return {
-		"handler": action["handler_method"],
-		"source_doctype": action["source_doctype"],
-		"allowed_roles": action["allowed_roles"],
+		"name": "",
+		"action_key": action_key,
+		"handler": registry_action["handler_method"],
+		"source_doctype": registry_action["source_doctype"],
+		"allowed_roles": registry_action["allowed_roles"],
+	}
+
+
+def _get_active_action_definition(action_key: str) -> dict | None:
+	rows = frappe.get_all(
+		"QR Action Definition",
+		filters={"action_key": action_key, "is_active": 1},
+		fields=["name", "action_key", "handler_method", "source_doctype", "allowed_roles"],
+		limit_page_length=1,
+	)
+	if not rows:
+		return None
+
+	row = rows[0]
+	return {
+		"name": row.name,
+		"action_key": row.action_key,
+		"handler": row.handler_method,
+		"source_doctype": row.source_doctype,
+		"allowed_roles": [role.strip() for role in (row.allowed_roles or "").split(",") if role.strip()],
 	}
 
 
@@ -196,29 +228,27 @@ def _resolve_supplier_type(source_doc: frappe.model.document.Document) -> str | 
 
 def _resolve_matching_transition(
 	flow_definition: frappe.model.document.Document,
-	action_key: str,
+	action: dict,
 	source_doc: frappe.model.document.Document,
 ) -> frappe.model.document.Document:
-	matching: list[frappe.model.document.Document] = []
+	action_key = _normalize_value(action.get("action_key")) or ""
+	action_name = _normalize_value(action.get("name")) or ""
+	matching = _get_transition_candidates(
+		flow_definition=flow_definition,
+		action_name=action_name,
+		source_doc=source_doc,
+	)
 
-	for transition in get_enabled_transitions(flow_definition):
-		if _normalize_value(_get_value(transition, "action_key")) != action_key:
-			continue
-
-		condition_key = _normalize_value(_get_value(transition, "condition_key"))
-		if condition_key and _should_revalidate_condition_at_scan_time(transition):
-			condition = get_condition_by_key(flow_definition, condition_key)
-			if not condition:
-				transition_key = (
-					_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
-				)
-				raise TransitionResolutionError(
-					f"Transition {transition_key} references unknown condition key: {condition_key}"
-				)
-			if not evaluate_conditions(source_doc, [condition]):
+	filtered: list[frappe.model.document.Document] = []
+	for transition in matching:
+		condition = None
+		if _should_revalidate_condition_at_scan_time(transition):
+			condition = _get_transition_condition(flow_definition, transition)
+			if condition and not evaluate_conditions(source_doc, [condition]):
 				continue
+		filtered.append(transition)
 
-		matching.append(transition)
+	matching = filtered
 
 	if not matching:
 		raise TransitionResolutionError(
@@ -247,6 +277,83 @@ def _resolve_matching_transition(
 			f"Ambiguous barcode transition resolution in flow '{flow_definition.name}' for action '{action_key}'. "
 			f"Matching transitions: {transition_keys}"
 		)
+
+
+def _get_transition_candidates(
+	*,
+	flow_definition: frappe.model.document.Document,
+	action_name: str,
+	source_doc: frappe.model.document.Document,
+) -> list[frappe.model.document.Document]:
+	flow_name = _normalize_value(_get_value(flow_definition, "name")) or ""
+	source_node = _resolve_source_node(source_doc)
+	if flow_name and source_node and action_name:
+		return list(
+			get_cached_transitions_for_source_node_action(
+				flow_definition,
+				flow=flow_name,
+				source_node=source_node,
+				action=action_name,
+			)
+		)
+
+	# Compatibility path for callers that have not persisted the current flow node yet.
+	transitions = get_enabled_transitions(flow_definition)
+	if transitions:
+		return [t for t in transitions if _normalize_value(_get_value(t, "action")) == action_name]
+
+	if not flow_name or not action_name:
+		return []
+
+	transition_names = frappe.get_all(
+		"Barcode Flow Transition",
+		filters={"flow": flow_name, "action": action_name},
+		pluck="name",
+		order_by="priority desc, creation asc, name asc",
+	)
+	return [frappe.get_doc("Barcode Flow Transition", name) for name in transition_names]
+
+
+def _resolve_source_node(source_doc: frappe.model.document.Document) -> str | None:
+	for fieldname in (
+		"barcode_flow_node",
+		"barcode_flow_current_node",
+		"current_flow_node",
+		"flow_node",
+		"source_node",
+	):
+		value = _normalize_value(_get_value(source_doc, fieldname))
+		if value:
+			return value
+	return None
+
+
+def _get_transition_condition(flow_definition: frappe.model.document.Document, transition: object):
+	condition_name = _normalize_value(_get_value(transition, "condition"))
+	if condition_name:
+		condition = get_cached_condition(condition_name, cache_holder=flow_definition)
+		if not condition:
+			transition_key = (
+				_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
+			)
+			raise TransitionResolutionError(
+				f"Transition {transition_key} references unknown condition: {condition_name}"
+			)
+		return condition
+
+	condition_key = _normalize_value(_get_value(transition, "condition_key"))
+	if not condition_key:
+		return None
+
+	condition = get_condition_by_key(flow_definition, condition_key)
+	if not condition:
+		transition_key = (
+			_normalize_value(_get_value(transition, "transition_key")) or "<unknown-transition>"
+		)
+		raise TransitionResolutionError(
+			f"Transition {transition_key} references unknown condition key: {condition_key}"
+		)
+	return condition
 
 
 def _transition_priority(transition: frappe.model.document.Document) -> int:
@@ -318,7 +425,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		source_doc = frappe.get_doc(source_doctype, source_name)
 		flow_context = _build_flow_resolution_context(source_doc)
 		flow_definition, scope_resolution_key = resolve_flow_with_scope(flow_context)
-		transition = _resolve_matching_transition(flow_definition, action_key, source_doc)
+		transition = _resolve_matching_transition(flow_definition, action, source_doc)
 
 		barcode_flow_definition = flow_definition.name
 		barcode_flow_transition = _normalize_value(_get_value(transition, "transition_key"))

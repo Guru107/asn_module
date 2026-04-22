@@ -23,6 +23,21 @@ from asn_module.setup_actions import register_actions
 
 
 class TestDispatch(FrappeTestCase):
+	def _resolved_action(
+		self,
+		*,
+		action_key: str = "create_purchase_receipt",
+		source_doctype: str = "DocType",
+		allowed_roles: list[str] | None = None,
+	) -> dict:
+		return {
+			"name": f"ACT-{action_key}",
+			"action_key": action_key,
+			"handler": "asn_module.tests.fake_handler",
+			"source_doctype": source_doctype,
+			"allowed_roles": allowed_roles or ["System Manager"],
+		}
+
 	@classmethod
 	def _snapshot_registry_actions(cls) -> list[dict]:
 		registry = frappe.get_doc("QR Action Registry")
@@ -80,34 +95,70 @@ class TestDispatch(FrappeTestCase):
 		return get_or_create_scan_code(action_key, source_doctype, source_name)
 
 	def test_resolve_action_returns_registered_action(self):
-		self._set_registry()
+		with (
+			patch(
+				"asn_module.qr_engine.dispatch.frappe.get_all",
+				return_value=[
+					SimpleNamespace(
+						name="ACT-create_purchase_receipt",
+						action_key="create_purchase_receipt",
+						handler_method="asn_module.tests.fake_handler",
+						source_doctype="DocType",
+						allowed_roles="System Manager",
+					)
+				],
+			) as get_all,
+			patch("asn_module.qr_engine.dispatch.frappe.get_single") as get_single,
+		):
+			action = _resolve_action("create_purchase_receipt")
 
-		action = _resolve_action("create_purchase_receipt")
-
+		self.assertEqual(action["name"], "ACT-create_purchase_receipt")
 		self.assertEqual(action["handler"], "asn_module.tests.fake_handler")
 		self.assertEqual(action["source_doctype"], "DocType")
 		self.assertEqual(action["allowed_roles"], ["System Manager"])
+		get_all.assert_called_once()
+		get_single.assert_not_called()
 
 	def test_resolve_action_raises_for_unknown_action(self):
-		self._set_registry()
-
-		with self.assertRaises(ActionNotFoundError):
-			_resolve_action("unknown_action")
+		with (
+			patch("asn_module.qr_engine.dispatch.frappe.get_all", return_value=[]),
+			patch("asn_module.setup_actions.register_actions"),
+			patch(
+				"asn_module.qr_engine.dispatch.frappe.get_single",
+				return_value=SimpleNamespace(get_action=lambda _action_key: None),
+			),
+		):
+			with self.assertRaises(ActionNotFoundError):
+				_resolve_action("unknown_action")
 
 	def test_resolve_action_self_heals_registry_for_known_canonical_action(self):
 		# Simulate stale singleton rows from interrupted test runs.
-		self._set_registry(action_key="create_purchase_receipt")
+		with patch(
+			"asn_module.qr_engine.dispatch.frappe.get_all",
+			side_effect=[
+				[],
+				[
+					SimpleNamespace(
+						name="ACT-create_purchase_invoice",
+						action_key="create_purchase_invoice",
+						handler_method="asn_module.handlers.purchase_invoice.create_from_purchase_receipt",
+						source_doctype="Purchase Receipt",
+						allowed_roles="Accounts User,Accounts Manager",
+					)
+				],
+			],
+		), patch("asn_module.setup_actions.register_actions") as register_actions:
+			action = _resolve_action("create_purchase_invoice")
 
-		action = _resolve_action("create_purchase_invoice")
-
+		register_actions.assert_called_once()
 		self.assertEqual(
 			action["handler"],
 			"asn_module.handlers.purchase_invoice.create_from_purchase_receipt",
 		)
+		self.assertEqual(action["name"], "ACT-create_purchase_invoice")
 		self.assertEqual(action["source_doctype"], "Purchase Receipt")
 
 	def test_dispatch_returns_success_payload_and_logs_success(self):
-		self._set_registry()
 		code = self._make_scan_code()
 		frappe.local.flags.commit = False
 
@@ -122,6 +173,16 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value={
+					"name": "ACT-create_purchase_receipt",
+					"action_key": "create_purchase_receipt",
+					"handler": "asn_module.tests.fake_handler",
+					"source_doctype": "DocType",
+					"allowed_roles": ["System Manager"],
+				},
+			),
 			patch(
 				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
 			),
@@ -212,6 +273,10 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value=self._resolved_action(action_key="create_purchase_receipt_partial_result"),
+			),
+			patch(
 				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
 			),
 			patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
@@ -255,6 +320,10 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value=self._resolved_action(action_key="create_purchase_receipt_failure"),
+			),
+			patch(
 				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
 			),
 			patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
@@ -286,8 +355,12 @@ class TestDispatch(FrappeTestCase):
 		code = self._make_scan_code()
 
 		with patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["Accounts User"]):
-			with self.assertRaises(PermissionDeniedError):
-				dispatch(code=code)
+			with patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value=self._resolved_action(allowed_roles=["System Manager"]),
+			):
+				with self.assertRaises(PermissionDeniedError):
+					dispatch(code=code)
 
 	def test_dispatch_no_duplicate_success_scan_log_when_handler_returns_scan_log(self):
 		self._set_registry(action_key="emit_scan_log_success")
@@ -329,6 +402,10 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value=self._resolved_action(action_key="emit_scan_log_success"),
+			),
+			patch(
 				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
 			),
 			patch("asn_module.qr_engine.dispatch._resolve_matching_transition", return_value=transition),
@@ -352,6 +429,10 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value=self._resolved_action(),
+			),
+			patch(
 				"asn_module.qr_engine.dispatch.resolve_flow_with_scope",
 				side_effect=NoMatchingFlowError("No active barcode flow matches context"),
 			),
@@ -366,6 +447,10 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value=self._resolved_action(),
+			),
 			patch(
 				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-ambig")
 			),
@@ -386,6 +471,10 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value=self._resolved_action(),
+			),
+			patch(
 				"asn_module.qr_engine.dispatch.resolve_flow_with_scope",
 				side_effect=AmbiguousFlowScopeError("Ambiguous barcode flow resolution"),
 			),
@@ -403,6 +492,10 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch(
+				"asn_module.qr_engine.dispatch._resolve_action",
+				return_value=self._resolved_action(),
+			),
 			patch(
 				"asn_module.qr_engine.dispatch.resolve_flow_with_scope", return_value=(flow, "scope-default")
 			),
@@ -438,106 +531,138 @@ class TestDispatch(FrappeTestCase):
 		self.assertEqual(log["scope_resolution_key"], "scope-default")
 
 	def test_resolve_matching_transition_prefers_runtime_generation_mode_on_priority_tie(self):
-		flow_definition = SimpleNamespace(
-			name="FLOW-MODE-TIE",
-			transitions=[
+		flow_definition = SimpleNamespace(name="FLOW-MODE-TIE")
+		action = {"name": "ACT-create_purchase_receipt", "action_key": "create_purchase_receipt"}
+		source_doc = SimpleNamespace(barcode_flow_node="FLOW-MODE-TIE-NODE-scan")
+
+		with patch(
+			"asn_module.qr_engine.dispatch.get_cached_transitions_for_source_node_action",
+			return_value=[
 				SimpleNamespace(
 					transition_key="scan-immediate",
-					action_key="create_purchase_receipt",
+					source_node="FLOW-MODE-TIE-NODE-scan",
+					action=action["name"],
 					priority=100,
 					generation_mode="immediate",
 				),
 				SimpleNamespace(
 					transition_key="scan-runtime",
-					action_key="create_purchase_receipt",
+					source_node="FLOW-MODE-TIE-NODE-scan",
+					action=action["name"],
 					priority=100,
 					generation_mode="runtime",
 				),
 			],
-		)
+		) as get_candidates:
+			winner = _resolve_matching_transition(
+				flow_definition=flow_definition,
+				action=action,
+				source_doc=source_doc,
+			)
 
-		winner = _resolve_matching_transition(
-			flow_definition=flow_definition,
-			action_key="create_purchase_receipt",
-			source_doc=SimpleNamespace(),
+		get_candidates.assert_called_once_with(
+			flow_definition,
+			flow="FLOW-MODE-TIE",
+			source_node="FLOW-MODE-TIE-NODE-scan",
+			action="ACT-create_purchase_receipt",
 		)
-
 		self.assertEqual(winner.transition_key, "scan-runtime")
 
 	def test_resolve_matching_transition_raises_ambiguity_when_tie_remains_after_mode_tiebreak(self):
-		flow_definition = SimpleNamespace(
-			name="FLOW-MODE-TIE-AMBIG",
-			transitions=[
-				SimpleNamespace(
-					transition_key="scan-runtime-a",
-					action_key="create_purchase_receipt",
-					priority=100,
-					generation_mode="runtime",
-				),
-				SimpleNamespace(
-					transition_key="scan-runtime-b",
-					action_key="create_purchase_receipt",
-					priority=100,
-					generation_mode="runtime",
-				),
-			],
-		)
+		flow_definition = SimpleNamespace(name="FLOW-MODE-TIE-AMBIG")
+		action = {"name": "ACT-create_purchase_receipt", "action_key": "create_purchase_receipt"}
+		source_doc = SimpleNamespace(barcode_flow_node="FLOW-MODE-TIE-AMBIG-NODE-scan")
 
-		with self.assertRaises(TransitionResolutionError) as ctx:
-			_resolve_matching_transition(
-				flow_definition=flow_definition,
-				action_key="create_purchase_receipt",
-				source_doc=SimpleNamespace(),
-			)
+		with (
+			patch(
+				"asn_module.qr_engine.dispatch.get_cached_transitions_for_source_node_action",
+				return_value=[
+					SimpleNamespace(
+						transition_key="scan-runtime-a",
+						source_node="FLOW-MODE-TIE-AMBIG-NODE-scan",
+						action=action["name"],
+						priority=100,
+						generation_mode="runtime",
+					),
+					SimpleNamespace(
+						transition_key="scan-runtime-b",
+						source_node="FLOW-MODE-TIE-AMBIG-NODE-scan",
+						action=action["name"],
+						priority=100,
+						generation_mode="runtime",
+					),
+				],
+			),
+		):
+			with self.assertRaises(TransitionResolutionError) as ctx:
+				_resolve_matching_transition(
+					flow_definition=flow_definition,
+					action=action,
+					source_doc=source_doc,
+				)
 
 		self.assertIn("Ambiguous barcode transition resolution", str(ctx.exception))
 
 	def test_resolve_matching_transition_skips_scan_time_condition_for_immediate_mode(self):
-		flow_definition = SimpleNamespace(
-			name="FLOW-IMMEDIATE-CONDITION",
-			transitions=[
-				SimpleNamespace(
-					transition_key="scan-immediate",
-					action_key="create_purchase_receipt",
-					priority=100,
-					generation_mode="immediate",
-					condition_key="only-once",
-				),
-			],
-			conditions=[SimpleNamespace(condition_key="only-once")],
-		)
+		flow_definition = SimpleNamespace(name="FLOW-IMMEDIATE-CONDITION")
+		action = {"name": "ACT-create_purchase_receipt", "action_key": "create_purchase_receipt"}
+		source_doc = SimpleNamespace(barcode_flow_node="FLOW-IMMEDIATE-CONDITION-NODE-scan")
 
-		with patch("asn_module.qr_engine.dispatch.evaluate_conditions", return_value=False) as evaluate:
+		with (
+			patch(
+				"asn_module.qr_engine.dispatch.get_cached_transitions_for_source_node_action",
+				return_value=[
+					SimpleNamespace(
+						transition_key="scan-immediate",
+						source_node="FLOW-IMMEDIATE-CONDITION-NODE-scan",
+						action=action["name"],
+						priority=100,
+						generation_mode="immediate",
+						condition="FLOW-IMMEDIATE-CONDITION-COND-only-once",
+					),
+				],
+			),
+			patch("asn_module.qr_engine.dispatch.evaluate_conditions", return_value=False) as evaluate,
+		):
 			winner = _resolve_matching_transition(
 				flow_definition=flow_definition,
-				action_key="create_purchase_receipt",
-				source_doc=SimpleNamespace(),
+				action=action,
+				source_doc=source_doc,
 			)
 
 		evaluate.assert_not_called()
 		self.assertEqual(winner.transition_key, "scan-immediate")
 
 	def test_resolve_matching_transition_revalidates_condition_for_hybrid_mode(self):
-		flow_definition = SimpleNamespace(
-			name="FLOW-HYBRID-CONDITION",
-			transitions=[
-				SimpleNamespace(
-					transition_key="scan-hybrid",
-					action_key="create_purchase_receipt",
-					priority=100,
-					generation_mode="hybrid",
-					condition_key="must-pass",
-				),
-			],
-			conditions=[SimpleNamespace(condition_key="must-pass")],
-		)
+		flow_definition = SimpleNamespace(name="FLOW-HYBRID-CONDITION")
+		action = {"name": "ACT-create_purchase_receipt", "action_key": "create_purchase_receipt"}
+		source_doc = SimpleNamespace(barcode_flow_node="FLOW-HYBRID-CONDITION-NODE-scan")
 
-		with patch("asn_module.qr_engine.dispatch.evaluate_conditions", return_value=False) as evaluate:
+		with (
+			patch(
+				"asn_module.qr_engine.dispatch.get_cached_transitions_for_source_node_action",
+				return_value=[
+					SimpleNamespace(
+						transition_key="scan-hybrid",
+						source_node="FLOW-HYBRID-CONDITION-NODE-scan",
+						action=action["name"],
+						priority=100,
+						generation_mode="hybrid",
+						condition="FLOW-HYBRID-CONDITION-COND-must-pass",
+					),
+				],
+			),
+			patch(
+				"asn_module.qr_engine.dispatch.get_cached_condition",
+				return_value=SimpleNamespace(name="FLOW-HYBRID-CONDITION-COND-must-pass"),
+			),
+			patch("asn_module.qr_engine.dispatch.evaluate_conditions", return_value=False) as evaluate,
+		):
 			with self.assertRaises(TransitionResolutionError) as ctx:
 				_resolve_matching_transition(
 					flow_definition=flow_definition,
-					action_key="create_purchase_receipt",
-					source_doc=SimpleNamespace(),
+					action=action,
+					source_doc=source_doc,
 				)
 
 		evaluate.assert_called_once()

@@ -9,7 +9,7 @@ def build_target_doc(source_doc: Any, mappings: list[Any] | tuple[Any, ...] | No
 	"""Build a target document from source data and field-map rows."""
 	payload: dict[str, Any] = {"doctype": target_doctype}
 
-	for row in mappings or []:
+	for row in _iter_mappings(mappings):
 		mapping_type = (_get_value(row, "mapping_type") or "").strip().lower()
 		target_field_path = (_get_value(row, "target_field_path") or "").strip()
 		if not target_field_path:
@@ -28,6 +28,16 @@ def build_target_doc(source_doc: Any, mappings: list[Any] | tuple[Any, ...] | No
 		_set_dotted_path(payload, _normalize_target_path(target_field_path), value)
 
 	return frappe.get_doc(payload)
+
+
+def _iter_mappings(mappings: Any) -> list[Any] | tuple[Any, ...]:
+	if not mappings:
+		return []
+
+	if isinstance(mappings, (list, tuple)):
+		return mappings
+
+	return [mappings]
 
 
 def _resolve_source_value(source_doc: Any, source_field_path: str) -> Any:
