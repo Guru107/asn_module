@@ -9,8 +9,6 @@
 		"flow_name",
 		"is_active",
 		"company",
-		"warehouse",
-		"supplier_type",
 		"description",
 		"steps"
 	],
@@ -35,18 +33,6 @@
 			"fieldtype": "Link",
 			"label": "Company",
 			"options": "Company"
-		},
-		{
-			"fieldname": "warehouse",
-			"fieldtype": "Link",
-			"label": "Warehouse",
-			"options": "Warehouse"
-		},
-		{
-			"fieldname": "supplier_type",
-			"fieldtype": "Link",
-			"label": "Supplier Type",
-			"options": "Supplier Type"
 		},
 		{
 			"fieldname": "description",
@@ -85,5 +71,5 @@
 	"sort_order": "DESC",
 	"states": [],
 	"track_changes": 1,
-	"indexes": [["is_active", "company", "warehouse", "supplier_type"]]
+	"indexes": [["is_active", "company"]]
 }

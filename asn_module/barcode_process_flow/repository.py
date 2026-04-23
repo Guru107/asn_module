@@ -116,28 +116,50 @@ def _step_scan_key(step: Any) -> str:
 
 
 def _build_context(doc: Any) -> dict[str, str | None]:
-	company = (getattr(doc, "company", "") or "").strip() or None
-	warehouse = (
-		(getattr(doc, "warehouse", "") or "").strip()
-		or (getattr(doc, "set_warehouse", "") or "").strip()
-		or None
-	)
-	supplier_type = (getattr(doc, "supplier_type", "") or "").strip() or None
-	if not supplier_type:
-		supplier = (getattr(doc, "supplier", "") or "").strip()
-		if supplier:
-			supplier_type = (
-				(frappe.db.get_value("Supplier", supplier, "supplier_type") or "").strip() or None
-			)
+	company = _resolve_company(doc)
 	return {
 		"company": company,
-		"warehouse": warehouse,
-		"supplier_type": supplier_type,
 	}
 
 
+def _resolve_company(doc: Any) -> str | None:
+	company = (getattr(doc, "company", "") or "").strip()
+	if company:
+		return company
+
+	doctype = (getattr(doc, "doctype", "") or "").strip()
+	docname = (getattr(doc, "name", "") or "").strip()
+	if doctype != "ASN" or not docname:
+		return None
+
+	purchase_order = _first_linked_purchase_order(doc, docname)
+	if not purchase_order:
+		return None
+
+	po_company = frappe.db.get_value("Purchase Order", purchase_order, "company")
+	return (po_company or "").strip() or None
+
+
+def _first_linked_purchase_order(doc: Any, docname: str) -> str | None:
+	for row in list(getattr(doc, "items", []) or []):
+		po = (getattr(row, "purchase_order", "") or "").strip()
+		if po:
+			return po
+
+	rows = frappe.get_all(
+		"ASN Item",
+		filters={"parenttype": "ASN", "parent": docname, "purchase_order": ["!=", ""]},
+		fields=["purchase_order"],
+		order_by="idx asc",
+		limit=1,
+	)
+	if not rows:
+		return None
+	return (rows[0].get("purchase_order") or "").strip() or None
+
+
 def _flow_matches_context(flow: Any, context: dict[str, str | None]) -> bool:
-	for fieldname in ("company", "warehouse", "supplier_type"):
+	for fieldname in ("company",):
 		flow_value = (getattr(flow, fieldname, "") or "").strip()
 		if not flow_value:
 			continue

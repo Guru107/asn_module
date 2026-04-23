@@ -41,6 +41,12 @@ class TestASNPortalPage(FrappeTestCase):
 		self.assertNotIn("/app/asn/{{ asn.name }}", asn_row)
 		self.assertIn("asn-copy-scan-code-btn", asn_detail)
 
+	def test_asn_doctype_route_does_not_collide_with_portal_list_page(self):
+		asn_doctype_json = (
+			Path(__file__).parents[2] / "asn_module" / "doctype" / "asn" / "asn.json"
+		).read_text()
+		self.assertNotIn('"route": "asn"', asn_doctype_json)
+
 	def test_get_supplier_for_user_returns_portal_supplier(self):
 		with patch(
 			"asn_module.templates.pages.asn.frappe.db.get_value", return_value="Supp-001"

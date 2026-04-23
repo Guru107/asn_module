@@ -473,6 +473,33 @@ class TestASN(FrappeTestCase):
 		self.assertEqual(asn.qr_code, f"/files/{asn.name}-qr.png")
 		self.assertEqual(asn.barcode, f"/files/{asn.name}-barcode.png")
 
+	def test_submit_uses_flow_resolved_scan_action_key_for_attachments(self):
+		asn = make_test_asn()
+		asn.insert(ignore_permissions=True)
+
+		def fake_save_file(filename, *_args, **_kwargs):
+			return SimpleNamespace(file_url=f"/files/{filename}")
+
+		with (
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.ASN._resolve_initial_scan_action_key",
+				return_value="asn_to_purchase_receipt",
+			),
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.generate_qr",
+				return_value={"image_base64": "ZmFrZS1xcg=="},
+			) as generate_qr_mock,
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.generate_barcode",
+				return_value={"image_base64": "ZmFrZS1iYXI="},
+			) as generate_barcode_mock,
+			patch("asn_module.asn_module.doctype.asn.asn.save_file", side_effect=fake_save_file),
+		):
+			asn.submit()
+
+		generate_qr_mock.assert_called_once_with("asn_to_purchase_receipt", "ASN", asn.name)
+		generate_barcode_mock.assert_called_once_with("asn_to_purchase_receipt", "ASN", asn.name)
+
 	def test_submit_with_real_qr_and_barcode_attachments(self):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)

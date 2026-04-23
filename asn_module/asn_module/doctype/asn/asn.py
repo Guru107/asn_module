@@ -251,8 +251,9 @@ class ASN(WebsiteGenerator):
 			)
 
 	def _generate_attachments(self) -> tuple[str, str, str]:
-		qr_result = generate_qr("create_purchase_receipt", "ASN", self.name)
-		barcode_result = generate_barcode("create_purchase_receipt", "ASN", self.name)
+		action_key = self._resolve_initial_scan_action_key()
+		qr_result = generate_qr(action_key, "ASN", self.name)
+		barcode_result = generate_barcode(action_key, "ASN", self.name)
 		scan_label = qr_result.get("human_readable") or qr_result.get("scan_code", "")
 
 		qr_file = save_file(
@@ -273,6 +274,27 @@ class ASN(WebsiteGenerator):
 		)
 
 		return qr_file.file_url, barcode_file.file_url, scan_label
+
+	def _resolve_initial_scan_action_key(self) -> str:
+		"""Resolve the current flow-driven scan action key for ASN submit.
+
+		Fallback to legacy key to avoid blocking submit when no flow is configured.
+		"""
+		legacy_fallback = "create_purchase_receipt"
+		try:
+			from asn_module.barcode_process_flow import repository, runtime
+
+			candidates = repository.get_active_steps_for_source(self)
+			winners = runtime.resolve_eligible_steps(candidates, self)
+			if winners:
+				key = (getattr(winners[0], "scan_action_key", "") or "").strip()
+				if key:
+					return key
+		except Exception:
+			# Keep ASN submission resilient during flow bootstrap / partial configuration.
+			pass
+
+		return legacy_fallback
 
 
 def _get_shipped_qty_by_po_item(

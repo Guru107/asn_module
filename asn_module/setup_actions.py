@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import frappe
+
 from asn_module.barcode_process_flow import capabilities
 
 
-def get_standard_handler_templates(*, from_doctype: str | None = None) -> list[dict[str, Any]]:
+@frappe.whitelist()
+def get_standard_handler_templates(from_doctype: str | None = None) -> list[dict[str, Any]]:
 	"""Return runtime-supported built-in handler templates for the current ERP version."""
 	return capabilities.get_supported_templates(from_doctype=from_doctype)
 

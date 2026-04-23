@@ -39,7 +39,10 @@ Use a standard handler path where possible. If custom fields are needed, add map
 Create `Barcode Process Flow`:
 - `flow_name`: `Inbound::PR::InvoiceAndTransfer`
 - `is_active`: checked
-- optional filters as needed (`company`, `warehouse`, `supplier_type`)
+- optional filter as needed (`company`)
+
+Optional shortcut:
+- Click **Add Step From Standard Handler** to insert prefilled rows for supported standard transitions.
 
 Add `Flow Step` rows:
 

@@ -18,6 +18,7 @@ This guide documents the **one-screen hard-cut model**.
 2. Create `Barcode Mapping Set` records.
 3. Create one `Barcode Process Flow` record.
 4. Add `Flow Step` rows directly in that flow.
+   - You can use **Add Step From Standard Handler** to prefill rows for built-in transitions.
 
 ## Barcode Process Flow Header
 
@@ -27,8 +28,6 @@ Required:
 
 Optional context filters:
 - `company`
-- `warehouse`
-- `supplier_type`
 
 If header filters are empty, the flow is global for matching source documents.
 
@@ -44,6 +43,12 @@ Required core fields:
 Execution modes:
 - `Mapping`: requires `mapping_set`
 - `Server Script`: requires `server_script`
+
+Standard handler picker:
+- The **Add Step From Standard Handler** button inserts a row with:
+  - `from_doctype`, `to_doctype`, `scan_action_key`, `label`, and default execution settings.
+  - `execution_mode = Mapping` (runtime will auto-use built-in handler when available).
+- Keep `mapping_set` filled because `Flow Step` validation requires it.
 
 Optional controls:
 - `condition` (`Barcode Rule`)

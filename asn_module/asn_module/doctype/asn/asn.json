@@ -259,7 +259,7 @@
 			"write": 1
 		}
 	],
-	"route": "asn",
+	"route": "asn-records",
 	"sort_field": "creation",
 	"sort_order": "DESC",
 	"states": [],
