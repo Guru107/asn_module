@@ -30,7 +30,9 @@ def evaluate_rule(doc: Any, rule: Any) -> bool:
 
 
 def _evaluate_header_rule(doc: Any, rule: Any) -> bool:
-	left_value = _resolve_field_path(doc, _normalize_field_path(_get_value(rule, "field_path")), default=_MISSING)
+	left_value = _resolve_field_path(
+		doc, _normalize_field_path(_get_value(rule, "field_path")), default=_MISSING
+	)
 	return _apply_operator(
 		operator=_get_value(rule, "operator"),
 		left_value=left_value,
@@ -39,7 +41,9 @@ def _evaluate_header_rule(doc: Any, rule: Any) -> bool:
 
 
 def _evaluate_item_rule(item: Any, rule: Any) -> bool:
-	left_value = _resolve_field_path(item, _normalize_field_path(_get_value(rule, "field_path")), default=_MISSING)
+	left_value = _resolve_field_path(
+		item, _normalize_field_path(_get_value(rule, "field_path")), default=_MISSING
+	)
 	return _apply_operator(
 		operator=_get_value(rule, "operator"),
 		left_value=left_value,
@@ -54,7 +58,9 @@ def _evaluate_aggregate_rule(items: list[Any], rule: Any) -> bool:
 
 	field_path = _normalize_field_path(_get_value(rule, "field_path"))
 	if aggregate_fn == "exists":
-		left_value = any(_resolve_field_path(item, field_path, default=_MISSING) is not _MISSING for item in items)
+		left_value = any(
+			_resolve_field_path(item, field_path, default=_MISSING) is not _MISSING for item in items
+		)
 		return _apply_operator(
 			operator=_get_value(rule, "operator", "="),
 			left_value=left_value,

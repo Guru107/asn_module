@@ -15,17 +15,26 @@ class TestMapping(UnitTestCase):
 			],
 		)
 		rows = [
-			SimpleNamespace(mapping_type="source", source_selector="supplier", target_selector="supplier", transform=""),
+			SimpleNamespace(
+				mapping_type="source", source_selector="supplier", target_selector="supplier", transform=""
+			),
 			SimpleNamespace(
 				mapping_type="source",
 				source_selector="items[].item_code",
 				target_selector="items[].item_code",
 				transform="",
 			),
-			SimpleNamespace(mapping_type="source", source_selector="items[].qty", target_selector="items[].qty", transform=""),
+			SimpleNamespace(
+				mapping_type="source",
+				source_selector="items[].qty",
+				target_selector="items[].qty",
+				transform="",
+			),
 		]
 
-		with patch("asn_module.barcode_process_flow.mapping.frappe.get_doc", side_effect=lambda payload: payload):
+		with patch(
+			"asn_module.barcode_process_flow.mapping.frappe.get_doc", side_effect=lambda payload: payload
+		):
 			target = build_target_doc(source_doc=source, mapping_rows=rows, target_doctype="Purchase Receipt")
 
 		self.assertEqual(target["doctype"], "Purchase Receipt")

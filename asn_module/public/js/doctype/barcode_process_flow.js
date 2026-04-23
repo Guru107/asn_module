@@ -3,11 +3,15 @@ frappe.ui.form.on("Barcode Process Flow", {
 		const grid = frm.fields_dict.steps.grid;
 		grid.get_field("mapping_set").get_query = () => ({ filters: { is_active: 1 } });
 		grid.get_field("condition").get_query = () => ({ filters: { is_active: 1 } });
-		grid.get_field("server_script").get_query = () => ({ filters: { script_type: "API", disabled: 0 } });
+		grid.get_field("server_script").get_query = () => ({
+			filters: { script_type: "API", disabled: 0 },
+		});
 	},
 
 	refresh(frm) {
-		frm.add_custom_button(__("Add Step From Standard Handler"), () => open_standard_handler_picker(frm));
+		frm.add_custom_button(__("Add Step From Standard Handler"), () =>
+			open_standard_handler_picker(frm)
+		);
 	},
 });
 
@@ -112,7 +116,9 @@ async function open_standard_handler_picker(frm) {
 			}
 
 			const row = frm.add_child("steps", {
-				label: (values.label || "").trim() || `${template.from_doctype} -> ${template.to_doctype}`,
+				label:
+					(values.label || "").trim() ||
+					`${template.from_doctype} -> ${template.to_doctype}`,
 				from_doctype: template.from_doctype,
 				to_doctype: template.to_doctype,
 				scan_action_key: (values.scan_action_key || "").trim() || template.key,
@@ -128,7 +134,9 @@ async function open_standard_handler_picker(frm) {
 			dialog.hide();
 			frappe.show_alert(
 				{
-					message: __("Flow Step added: {0}", [row.label || `${row.from_doctype} -> ${row.to_doctype}`]),
+					message: __("Flow Step added: {0}", [
+						row.label || `${row.from_doctype} -> ${row.to_doctype}`,
+					]),
 					indicator: "green",
 				},
 				5
@@ -158,7 +166,9 @@ async function open_standard_handler_picker(frm) {
 			dialog.set_value("handler_path", "");
 			dialog.set_value("label", "");
 			dialog.set_value("scan_action_key", "");
-			dialog.fields_dict.doc_conditions_html.$wrapper.html(`<small>${__("No conditions.")}</small>`);
+			dialog.fields_dict.doc_conditions_html.$wrapper.html(
+				`<small>${__("No conditions.")}</small>`
+			);
 			return;
 		}
 
@@ -167,7 +177,9 @@ async function open_standard_handler_picker(frm) {
 		dialog.set_value("label", `${template.from_doctype} -> ${template.to_doctype}`);
 		dialog.set_value("scan_action_key", template.key);
 		dialog.fields_dict.doc_conditions_html.$wrapper.html(
-			`<small>${frappe.utils.escape_html(format_doc_conditions(template.doc_conditions))}</small>`
+			`<small>${frappe.utils.escape_html(
+				format_doc_conditions(template.doc_conditions)
+			)}</small>`
 		);
 	};
 
@@ -192,7 +204,11 @@ function find_template(templates, fromDoctype, templateKey) {
 }
 
 function format_doc_conditions(docConditions) {
-	if (!docConditions || typeof docConditions !== "object" || !Object.keys(docConditions).length) {
+	if (
+		!docConditions ||
+		typeof docConditions !== "object" ||
+		!Object.keys(docConditions).length
+	) {
 		return __("No conditions. Applies to all source documents.");
 	}
 

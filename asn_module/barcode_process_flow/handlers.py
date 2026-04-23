@@ -75,10 +75,9 @@ def material_request_to_pick_list(source_doctype: str, source_name: str, payload
 def create_subcontracting_receipt_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
 	del source_doctype
 	asn = frappe.get_doc("ASN", source_name)
-	order_name = (
-		(payload.get("subcontracting_order") or "").strip()
-		or (getattr(asn, "subcontracting_order", "") or "").strip()
-	)
+	order_name = (payload.get("subcontracting_order") or "").strip() or (
+		getattr(asn, "subcontracting_order", "") or ""
+	).strip()
 	if not order_name:
 		frappe.throw(
 			_(

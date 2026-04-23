@@ -54,7 +54,9 @@ def _resolve_row_value(*, row: Any, source_doc: Any, source_item: Any = None) ->
 		value = _get_value(row, "constant_value")
 	else:
 		source_selector = (_get_value(row, "source_selector") or "").strip()
-		value = _resolve_source_selector(source_doc=source_doc, source_item=source_item, selector=source_selector)
+		value = _resolve_source_selector(
+			source_doc=source_doc, source_item=source_item, selector=source_selector
+		)
 	return _apply_transform(value, (_get_value(row, "transform") or "").strip().lower())
 
 

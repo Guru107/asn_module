@@ -12,7 +12,11 @@ class TestRepository(UnitTestCase):
 			name="FLOW-1",
 			flow_name="Inbound",
 			company="",
-			steps=[SimpleNamespace(name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label="")],
+			steps=[
+				SimpleNamespace(
+					name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label=""
+				)
+			],
 		)
 		with (
 			patch("asn_module.barcode_process_flow.repository.frappe.get_all", return_value=["FLOW-1"]),
@@ -29,7 +33,11 @@ class TestRepository(UnitTestCase):
 			name="FLOW-1",
 			flow_name="Inbound",
 			company="TCPL",
-			steps=[SimpleNamespace(name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label="")],
+			steps=[
+				SimpleNamespace(
+					name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label=""
+				)
+			],
 		)
 
 		def _mock_get_all(doctype, *args, **kwargs):
@@ -59,7 +67,11 @@ class TestRepository(UnitTestCase):
 			name="FLOW-1",
 			flow_name="Inbound",
 			company="TCPL",
-			steps=[SimpleNamespace(name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label="")],
+			steps=[
+				SimpleNamespace(
+					name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label=""
+				)
+			],
 		)
 
 		def _mock_get_all(doctype, *args, **kwargs):

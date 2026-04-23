@@ -88,8 +88,7 @@ def get_active_steps_for_source(source_doc: Any, *, action_key: str | None = Non
 					priority=cint(getattr(step, "priority", 0) or 0),
 					generate_next_barcode=bool(cint(getattr(step, "generate_next_barcode", 0) or 0)),
 					generation_mode=(
-						(getattr(step, "generation_mode", "hybrid") or "hybrid").strip().lower()
-						or "hybrid"
+						(getattr(step, "generation_mode", "hybrid") or "hybrid").strip().lower() or "hybrid"
 					),
 					scan_action_key=step_key,
 				)

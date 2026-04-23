@@ -51,7 +51,11 @@ class TestRuntime(UnitTestCase):
 			patch("asn_module.barcode_process_flow.runtime._is_condition_satisfied", return_value=True),
 			patch(
 				"asn_module.barcode_process_flow.runtime.execute_step",
-				return_value={"doctype": "Purchase Invoice", "name": "PINV-0001", "url": "/app/purchase-invoice/PINV-0001"},
+				return_value={
+					"doctype": "Purchase Invoice",
+					"name": "PINV-0001",
+					"url": "/app/purchase-invoice/PINV-0001",
+				},
 			),
 		):
 			result, winners = dispatch_from_scan(scan_action_key="next", source_doc=source_doc)

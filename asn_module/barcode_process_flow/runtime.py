@@ -44,7 +44,9 @@ def dispatch_from_scan(*, scan_action_key: str, source_doc: Any) -> tuple[dict, 
 	return response, winners
 
 
-def resolve_eligible_steps(steps: list[repository.StepRecord], source_doc: Any) -> list[repository.StepRecord]:
+def resolve_eligible_steps(
+	steps: list[repository.StepRecord], source_doc: Any
+) -> list[repository.StepRecord]:
 	eligible = [step for step in steps if _is_condition_satisfied(step, source_doc)]
 	if not eligible:
 		return []
