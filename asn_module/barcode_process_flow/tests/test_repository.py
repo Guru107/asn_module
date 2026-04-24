@@ -256,6 +256,17 @@ class TestRepository(UnitTestCase):
 		):
 			self.assertIsNone(repository.get_step_by_name("STEP-4"))
 
+		legacy_step_without_is_active = SimpleNamespace(name="STEP-5", parent="FLOW-1")
+		with (
+			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
+			patch(
+				"asn_module.barcode_process_flow.repository.frappe.get_doc",
+				return_value=legacy_step_without_is_active,
+			),
+			patch("asn_module.barcode_process_flow.repository.frappe.db.get_value", return_value=1),
+		):
+			self.assertIs(repository.get_step_by_name("STEP-5"), legacy_step_without_is_active)
+
 	def test_build_context_and_flow_match_helpers(self):
 		self.assertEqual(
 			repository._build_context(SimpleNamespace(doctype="Purchase Receipt", company="TCPL")),

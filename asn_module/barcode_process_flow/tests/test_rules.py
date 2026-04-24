@@ -97,6 +97,28 @@ class TestRules(UnitTestCase):
 		self.assertTrue(rules.evaluate_rule(doc, max_rule))
 		self.assertTrue(rules.evaluate_rule(doc, avg_rule))
 
+	def test_items_aggregate_count_and_sum_reject_exists_operators(self):
+		doc_missing = SimpleNamespace(items=[SimpleNamespace(), SimpleNamespace()])
+		count_exists_rule = SimpleNamespace(
+			scope="items_aggregate",
+			aggregate_fn="count",
+			field_path="items[].qty",
+			operator="exists",
+			value="true",
+		)
+		with self.assertRaises(ValueError):
+			rules.evaluate_rule(doc_missing, count_exists_rule)
+
+		sum_is_set_rule = SimpleNamespace(
+			scope="items_aggregate",
+			aggregate_fn="sum",
+			field_path="items[].qty",
+			operator="is_set",
+			value="true",
+		)
+		with self.assertRaises(ValueError):
+			rules.evaluate_rule(doc_missing, sum_is_set_rule)
+
 	def test_items_aggregate_invalid_function_raises(self):
 		doc = SimpleNamespace(items=[SimpleNamespace(qty=1)])
 		rule = SimpleNamespace(

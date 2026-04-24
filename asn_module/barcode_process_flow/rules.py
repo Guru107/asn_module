@@ -57,11 +57,11 @@ def _evaluate_aggregate_rule(items: list[Any], rule: Any) -> bool:
 		raise ValueError(f"Unsupported aggregate function: {aggregate_fn}")
 
 	field_path = _normalize_field_path(_get_value(rule, "field_path"))
+	operator = str(_get_value(rule, "operator", "=") or "=").strip()
 	if aggregate_fn == "exists":
 		left_value = any(
 			_resolve_field_path(item, field_path, default=_MISSING) is not _MISSING for item in items
 		)
-		operator = str(_get_value(rule, "operator", "=") or "=").strip()
 		if operator in {"exists", "is_set"}:
 			operator = "="
 			right_value = bool(_normalize_literal(_get_value(rule, "value", "true")))
@@ -95,8 +95,14 @@ def _evaluate_aggregate_rule(items: list[Any], rule: Any) -> bool:
 		else:
 			aggregate_value = (sum(numbers) / len(numbers)) if numbers else None
 
+	if operator in {"exists", "is_set"} and aggregate_fn in {"count", "sum"}:
+		raise ValueError(
+			f"Unsupported operator '{operator}' for aggregate_fn='{aggregate_fn}'; "
+			"use '=' with boolean aggregate_fn='exists' or explicit numeric comparisons"
+		)
+
 	return _apply_operator(
-		operator=_get_value(rule, "operator"),
+		operator=operator,
 		left_value=aggregate_value,
 		right_value=_normalize_literal(_get_value(rule, "value")),
 	)

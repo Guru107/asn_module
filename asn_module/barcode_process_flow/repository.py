@@ -109,7 +109,7 @@ def get_step_by_name(step_name: str | None):
 	if not frappe.db.exists("Flow Step", name):
 		return None
 	step = frappe.get_doc("Flow Step", name)
-	if not cint(getattr(step, "is_active", 0)):
+	if cint(getattr(step, "is_active", 1)) != 1:
 		return None
 	flow_name = (getattr(step, "parent", "") or getattr(step, "flow", "") or "").strip()
 	if not flow_name:
