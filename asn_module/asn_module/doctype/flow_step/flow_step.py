@@ -8,7 +8,14 @@ class FlowStep(Document):
 		self.label = (self.label or "").strip()
 		self.from_doctype = (self.from_doctype or "").strip()
 		self.to_doctype = (self.to_doctype or "").strip()
-		self.execution_mode = (self.execution_mode or "Mapping").strip()
+		mode_key = (self.execution_mode or "Mapping").strip().lower()
+		mode_map = {
+			"mapping": "Mapping",
+			"server script": "Server Script",
+		}
+		if mode_key not in mode_map:
+			frappe.throw(_("Execution Mode must be Mapping or Server Script"))
+		self.execution_mode = mode_map[mode_key]
 		self.scan_action_key = (self.scan_action_key or "").strip()
 		self.generation_mode = (self.generation_mode or "hybrid").strip().lower()
 

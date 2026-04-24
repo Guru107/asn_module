@@ -176,7 +176,7 @@ def _is_version_supported(template: dict[str, Any], erp_major: int) -> bool:
 
 def _doc_matches_conditions(doc: Any, conditions: dict[str, list[str]]) -> bool:
 	for fieldname, expected_values in conditions.items():
-		actual = (getattr(doc, fieldname, "") or "").strip()
+		actual = str(getattr(doc, fieldname, "") or "").strip()
 		if actual not in expected_values:
 			return False
 	return True

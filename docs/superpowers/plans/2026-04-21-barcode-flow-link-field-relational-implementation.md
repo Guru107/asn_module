@@ -1,6 +1,8 @@
 # Barcode Flow Link-Field Relational Redesign Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Superseded by `docs/superpowers/plans/2026-04-22-barcode-process-flow-one-screen-hard-cut-implementation.md`.
+> This document is archived for historical context and intentionally contains pre-hard-cut `barcode_flow` paths.
 
 **Goal:** Replace key-based Barcode Flow child-table references with a link-first relational model so admins configure flows via `Link` fields with stronger integrity and less manual typing.
 

@@ -18,10 +18,6 @@ class ScanCodeNotFoundError(frappe.ValidationError):
 	pass
 
 
-class TransitionResolutionError(frappe.ValidationError):
-	pass
-
-
 def _get_failure_log_identity(source_doctype: str | None, source_name: str | None) -> tuple[str, str]:
 	try:
 		if source_doctype and source_name and frappe.db.exists("DocType", source_doctype):

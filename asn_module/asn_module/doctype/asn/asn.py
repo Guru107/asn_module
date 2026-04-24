@@ -291,8 +291,12 @@ class ASN(WebsiteGenerator):
 				if key:
 					return key
 		except Exception:
-			# Keep ASN submission resilient during flow bootstrap / partial configuration.
-			pass
+			# Keep ASN submission resilient during flow bootstrap / partial configuration,
+			# but retain diagnostics for operational debugging.
+			frappe.log_error(
+				title="ASN barcode flow bootstrap failed",
+				message=frappe.get_traceback(),
+			)
 
 		return legacy_fallback
 

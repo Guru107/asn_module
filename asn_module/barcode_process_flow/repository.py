@@ -104,7 +104,15 @@ def get_step_by_name(step_name: str | None):
 		return None
 	if not frappe.db.exists("Flow Step", name):
 		return None
-	return frappe.get_doc("Flow Step", name)
+	step = frappe.get_doc("Flow Step", name)
+	if not cint(getattr(step, "is_active", 0)):
+		return None
+	flow_name = (getattr(step, "flow", "") or "").strip()
+	if not flow_name:
+		return None
+	if not cint(frappe.db.get_value("Barcode Process Flow", flow_name, "is_active") or 0):
+		return None
+	return step
 
 
 def _step_scan_key(step: Any) -> str:

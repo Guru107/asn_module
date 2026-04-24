@@ -527,7 +527,7 @@ Example C: Dispatch -> Gate Pass (Gate Out) -> Mark Dispatched
 
 Run:
 ```bash
-cd /Users/gurudattkulkarni/Workspace/asn_module
+cd /home/ubuntu/frappe-bench/apps/asn_module
 ruff check asn_module/
 npx eslint asn_module/ --quiet
 ```
@@ -572,7 +572,7 @@ Expected: PASS for app tests.
 
 Run:
 ```bash
-cd /Users/gurudattkulkarni/Workspace/asn_module
+cd /home/ubuntu/frappe-bench/apps/asn_module
 pre-commit run --all-files
 ```
 Expected: PASS.

@@ -1,6 +1,8 @@
 from unittest.mock import patch
 
-from asn_module.qr_engine.generate import generate_barcode, generate_qr
+import frappe
+
+from asn_module.qr_engine.generate import build_scan_code_metadata, generate_barcode, generate_qr
 from asn_module.tests.compat import UnitTestCase
 
 
@@ -69,4 +71,23 @@ class TestGenerate(UnitTestCase):
 					source_doctype="ASN",
 					source_name="ASN-00001",
 				)
-			self.assertEqual(result["scan_code"], "FIXEDCODE123")
+				self.assertEqual(result["scan_code"], "FIXEDCODE123")
+
+	def test_build_scan_code_metadata_rejects_invalid_generation_mode(self):
+		with self.assertRaises(frappe.ValidationError):
+			build_scan_code_metadata(
+				action_key="create_purchase_receipt",
+				source_doctype="ASN",
+				source_name="ASN-00001",
+				generation_mode="later",
+			)
+
+	def test_build_scan_code_metadata_normalizes_generation_mode(self):
+		with patch("asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"):
+			result = build_scan_code_metadata(
+				action_key="create_purchase_receipt",
+				source_doctype="ASN",
+				source_name="ASN-00001",
+				generation_mode=" Hybrid ",
+			)
+		self.assertEqual(result["generation_mode"], "hybrid")

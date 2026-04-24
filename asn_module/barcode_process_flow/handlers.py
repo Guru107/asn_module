@@ -98,7 +98,14 @@ def create_subcontracting_receipt_from_asn(source_doctype: str, source_name: str
 def _insert_and_contract(doc: Any, fallback_doctype: str) -> dict:
 	if isinstance(doc, str):
 		return _doc_contract(fallback_doctype, doc)
-	if not getattr(doc, "name", None):
+	is_new_attr = getattr(doc, "is_new", None)
+	if callable(is_new_attr):
+		needs_insert = bool(is_new_attr())
+	elif isinstance(is_new_attr, bool):
+		needs_insert = is_new_attr
+	else:
+		needs_insert = not getattr(doc, "name", None)
+	if needs_insert:
 		doc.insert(ignore_permissions=True)
 	return _doc_contract(getattr(doc, "doctype", fallback_doctype), doc.name)
 

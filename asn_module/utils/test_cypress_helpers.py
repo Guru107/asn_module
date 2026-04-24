@@ -277,6 +277,14 @@ class TestCypressSeedHelpers(TestCase):
 		self.assertEqual(len(context["purchase_orders"]), 2)
 		self.assertEqual(large_context["purchase_order"]["name"], "PO-LARGE")
 		self.assertEqual(len(large_context["purchase_order"]["items"]), 100)
+		create_purchase_order.assert_any_call(qty=10, supplier="SUP-PORTAL")
+		create_purchase_order.assert_any_call(qty=5, supplier="SUP-PORTAL")
+		create_purchase_order.assert_any_call(
+			qty=1,
+			supplier="SUP-PORTAL",
+			item_count=100,
+			rate=10,
+		)
 
 	def test_seed_asn_with_items_happy_path(self):
 		asn = _FakeASN()

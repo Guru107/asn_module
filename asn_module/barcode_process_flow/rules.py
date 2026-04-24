@@ -194,6 +194,8 @@ def _normalize_field_path(field_path: Any) -> str:
 	path = str(field_path or "").strip()
 	if path.startswith("header."):
 		return path[7:]
+	if path.startswith("items."):
+		return path[6:]
 	if path.startswith("items[]."):
 		return path[8:]
 	return path

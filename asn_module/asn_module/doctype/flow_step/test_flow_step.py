@@ -44,12 +44,32 @@ class TestFlowStepValidation(TestCase):
 		with self.assertRaises(frappe.ValidationError):
 			FlowStep.validate(step)
 
-	def test_validate_requires_server_script_for_server_script_mode(self):
-		step = _build_step(execution_mode="Server Script", mapping_set="", server_script=" ")
-		with self.assertRaises(frappe.ValidationError):
-			FlowStep.validate(step)
+		def test_validate_requires_server_script_for_server_script_mode(self):
+			step = _build_step(execution_mode="Server Script", mapping_set="", server_script=" ")
+			with self.assertRaises(frappe.ValidationError):
+				FlowStep.validate(step)
 
-	def test_validate_rejects_invalid_generation_mode(self):
-		step = _build_step(generation_mode="later")
-		with self.assertRaises(frappe.ValidationError):
+		def test_validate_normalizes_execution_mode(self):
+			step = _build_step(execution_mode=" server script ", mapping_set="", server_script="SS-1")
 			FlowStep.validate(step)
+			self.assertEqual(step.execution_mode, "Server Script")
+
+		def test_validate_rejects_invalid_execution_mode(self):
+			step = _build_step(execution_mode="Client")
+			with self.assertRaises(frappe.ValidationError):
+				FlowStep.validate(step)
+
+		def test_validate_rejects_invalid_generation_mode(self):
+			step = _build_step(generation_mode="later")
+			with self.assertRaises(frappe.ValidationError):
+				FlowStep.validate(step)
+
+		def test_validate_accepts_immediate_generation_mode(self):
+			step = _build_step(generation_mode="immediate")
+			FlowStep.validate(step)
+			self.assertEqual(step.generation_mode, "immediate")
+
+		def test_validate_accepts_runtime_generation_mode(self):
+			step = _build_step(generation_mode="runtime")
+			FlowStep.validate(step)
+			self.assertEqual(step.generation_mode, "runtime")

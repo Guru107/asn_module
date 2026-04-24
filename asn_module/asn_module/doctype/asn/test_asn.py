@@ -500,6 +500,18 @@ class TestASN(FrappeTestCase):
 		generate_qr_mock.assert_called_once_with("asn_to_purchase_receipt", "ASN", asn.name)
 		generate_barcode_mock.assert_called_once_with("asn_to_purchase_receipt", "ASN", asn.name)
 
+	def test_resolve_initial_scan_action_key_logs_and_fallbacks_on_resolution_error(self):
+		asn = make_test_asn()
+		with (
+			patch(
+				"asn_module.barcode_process_flow.repository.get_active_steps_for_source",
+				side_effect=RuntimeError("broken flow"),
+			),
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.log_error") as log_error,
+		):
+			self.assertEqual(asn._resolve_initial_scan_action_key(), "create_purchase_receipt")
+		log_error.assert_called_once()
+
 	def test_submit_with_real_qr_and_barcode_attachments(self):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)

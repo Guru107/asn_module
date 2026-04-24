@@ -128,6 +128,7 @@ class TestRules(UnitTestCase):
 		self.assertEqual(rules._normalize_literal(1), 1)
 		self.assertEqual(rules._normalize_literal("not-json"), "not-json")
 		self.assertEqual(rules._normalize_field_path("header.status"), "status")
+		self.assertEqual(rules._normalize_field_path("items.qty"), "qty")
 		self.assertEqual(rules._normalize_field_path("items[].qty"), "qty")
 		self.assertEqual(rules._normalize_field_path("plain"), "plain")
 

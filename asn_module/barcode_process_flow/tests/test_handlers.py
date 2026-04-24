@@ -115,7 +115,11 @@ class TestFlowHandlers(UnitTestCase):
 			) as create_receipt,
 		):
 			result = handlers.create_subcontracting_receipt_from_asn("ASN", "ASN-1", {})
-		create_receipt.assert_called_once()
+		create_receipt.assert_called_once_with(
+			source_doctype="Subcontracting Order",
+			source_name="SCO-1",
+			payload={},
+		)
 		self.assertEqual(result["doctype"], "Subcontracting Receipt")
 
 		with patch(
@@ -125,10 +129,13 @@ class TestFlowHandlers(UnitTestCase):
 			with self.assertRaises(frappe.ValidationError):
 				handlers.create_subcontracting_receipt_from_asn("ASN", "ASN-1", {})
 
-	def test_internal_contract_helpers(self):
-		self.assertEqual(handlers._doc_contract("Purchase Order", "PO-1")["url"], "/app/purchase_order/PO-1")
-		doc = SimpleNamespace(name="", doctype="Purchase Order")
-		doc.insert = lambda **_: setattr(doc, "name", "PO-2")
-		contract = handlers._insert_and_contract(doc, "Purchase Order")
-		self.assertEqual(contract["name"], "PO-2")
-		self.assertEqual(handlers._insert_and_contract("PO-3", "Purchase Order")["name"], "PO-3")
+		def test_internal_contract_helpers(self):
+			self.assertEqual(
+				handlers._doc_contract("Purchase Order", "PO-1")["url"], "/app/purchase_order/PO-1"
+			)
+			doc = SimpleNamespace(name="", doctype="Purchase Order")
+			doc.is_new = lambda: True
+			doc.insert = lambda **_: setattr(doc, "name", "PO-2")
+			contract = handlers._insert_and_contract(doc, "Purchase Order")
+			self.assertEqual(contract["name"], "PO-2")
+			self.assertEqual(handlers._insert_and_contract("PO-3", "Purchase Order")["name"], "PO-3")

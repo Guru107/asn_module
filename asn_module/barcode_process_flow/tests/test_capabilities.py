@@ -37,10 +37,10 @@ class TestCapabilities(UnitTestCase):
 
 	def test_get_standard_handler_returns_none_when_conditions_fail(self):
 		with patch("asn_module.barcode_process_flow.capabilities.get_erp_major", return_value=16):
-			source_doc = SimpleNamespace(material_request_type="Purchase")
+			source_doc = SimpleNamespace(material_request_type="Material Transfer")
 			handler = capabilities.get_standard_handler(
 				from_doctype="Material Request",
-				to_doctype="Work Order",
+				to_doctype="Purchase Order",
 				source_doc=source_doc,
 			)
 		self.assertIsNone(handler)
@@ -49,6 +49,7 @@ class TestCapabilities(UnitTestCase):
 		self.assertTrue(capabilities._is_version_supported({"min_erp_major": 15, "max_erp_major": 16}, 16))
 		self.assertFalse(capabilities._is_version_supported({"min_erp_major": 17}, 16))
 		self.assertTrue(capabilities._doc_matches_conditions(SimpleNamespace(kind="A"), {"kind": ["A", "B"]}))
+		self.assertTrue(capabilities._doc_matches_conditions(SimpleNamespace(kind=7), {"kind": ["7"]}))
 		self.assertFalse(
 			capabilities._doc_matches_conditions(SimpleNamespace(kind="C"), {"kind": ["A", "B"]})
 		)

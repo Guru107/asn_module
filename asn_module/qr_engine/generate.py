@@ -22,6 +22,7 @@ _BARCODE_OPTIONS = {
 	"text_distance": 6.5,
 	"margin_bottom": 3.0,
 }
+_ALLOWED_GENERATION_MODES = {"immediate", "runtime", "hybrid"}
 
 
 def _build_dispatch_url(code: str) -> str:
@@ -44,13 +45,17 @@ def build_scan_code_metadata(
 	if not effective_action_key:
 		frappe.throw(_("action_key or flow_step is required to build scan code metadata"))
 
+	mode = (generation_mode or "").strip().lower()
+	if mode not in _ALLOWED_GENERATION_MODES:
+		frappe.throw(_("generation_mode must be one of: immediate, runtime, hybrid"))
+
 	scan_code = get_or_create_scan_code(effective_action_key, source_doctype, source_name)
 	return {
 		"action_key": effective_action_key,
 		"flow_step": step_key or None,
 		"scan_code": scan_code,
 		"human_readable": format_scan_code_for_display(scan_code),
-		"generation_mode": (generation_mode or "").strip().lower(),
+		"generation_mode": mode,
 	}
 
 

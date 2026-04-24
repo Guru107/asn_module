@@ -46,7 +46,7 @@ class TestRepository(UnitTestCase):
 		):
 			self.assertIs(repository.get_mapping_set("MAP-1"), mapping_set_active)
 
-	def test_flow_step_requires_from_to_doctype(self):
+	def test_flow_step_returns_rows_with_from_and_to_doctype(self):
 		source = SimpleNamespace(doctype="ASN", supplier="", company="")
 		flow = SimpleNamespace(
 			name="FLOW-1",
@@ -221,12 +221,37 @@ class TestRepository(UnitTestCase):
 		with patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=False):
 			self.assertIsNone(repository.get_step_by_name("STEP-1"))
 
-		step = SimpleNamespace(name="STEP-1")
+		step = SimpleNamespace(name="STEP-1", is_active=1, flow="FLOW-1")
 		with (
 			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
 			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=step),
+			patch("asn_module.barcode_process_flow.repository.frappe.db.get_value", return_value=1),
 		):
 			self.assertIs(repository.get_step_by_name("STEP-1"), step)
+
+		inactive_step = SimpleNamespace(name="STEP-2", is_active=0, flow="FLOW-1")
+		with (
+			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
+			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=inactive_step),
+		):
+			self.assertIsNone(repository.get_step_by_name("STEP-2"))
+
+		orphan_step = SimpleNamespace(name="STEP-3", is_active=1, flow="")
+		with (
+			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
+			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=orphan_step),
+		):
+			self.assertIsNone(repository.get_step_by_name("STEP-3"))
+
+		inactive_flow_step = SimpleNamespace(name="STEP-4", is_active=1, flow="FLOW-2")
+		with (
+			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
+			patch(
+				"asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=inactive_flow_step
+			),
+			patch("asn_module.barcode_process_flow.repository.frappe.db.get_value", return_value=0),
+		):
+			self.assertIsNone(repository.get_step_by_name("STEP-4"))
 
 	def test_build_context_and_flow_match_helpers(self):
 		self.assertEqual(

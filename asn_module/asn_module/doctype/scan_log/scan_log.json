@@ -54,7 +54,7 @@
 		{
 			"fieldname": "scope_resolution_key",
 			"fieldtype": "Data",
-			"label": "Flow Step Name",
+			"label": "Scope Resolution Key",
 			"read_only": 1
 		},
 		{

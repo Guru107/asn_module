@@ -96,8 +96,8 @@ Fields:
 
 Relationship to existing registry:
 - `QR Action Definition` becomes the source of truth for action metadata.
-- Existing `QR Action Registry` singleton remains as a compatibility projection while legacy callers are migrated.
-- `register_actions`/setup pipeline seeds and syncs registry from `QR Action Definition`, not the other way around.
+- `QR Action Registry` was removed in the hard-cut model and is no longer part of runtime or setup paths.
+- `register_actions` is now a legacy no-op compatibility shim.
 
 ### 6.5 Barcode Flow Action Binding
 Fields:
