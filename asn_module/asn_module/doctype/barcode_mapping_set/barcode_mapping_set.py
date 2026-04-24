@@ -59,7 +59,15 @@ class BarcodeMappingSet(Document):
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
-def search_mappable_docfields(doctype, txt, searchfield, start, page_len, filters):
+def search_mappable_docfields(
+	doctype: str,
+	txt: str,
+	searchfield: str,
+	start: int | str,
+	page_len: int | str,
+	filters: dict | None = None,
+) -> list[list[str]]:
+	del doctype, searchfield
 	filters = frappe._dict(filters or {})
 	parent_doctype = (filters.get("parent_doctype") or "").strip()
 	if not parent_doctype:
