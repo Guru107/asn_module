@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  review_status: true
+  review_details: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT REVIEW"
+  path_instructions:
+    - path: "asn_module/**/*.py"
+      instructions: |
+        - Validate Frappe patterns and permission checks.
+        - Flag non-translatable user-visible strings; Python UI text must use `_()`.
+        - Flag broad exception handling unless there is explicit logging and fallback intent.
+        - Highlight N+1 queries and non-sargable DB filters; suggest index-friendly query changes.
+    - path: "asn_module/**/*.js"
+      instructions: |
+        - Ensure every `frappe.call()` has an `error` callback with user-visible failure handling.
+        - Flag user-visible strings not wrapped in `__()`.
+        - For repeated triggers, check debounce/last-call-wins patterns to prevent request storms.
+    - path: "asn_module/**/tests/**/*.py"
+      instructions: |
+        - Prefer deterministic tests with clear setup/teardown and explicit assertions.
+        - Flag tests that weaken product requirements to make implementation easier.
+    - path: ".github/workflows/**/*.yml"
+      instructions: |
+        - Review CI safety: least-privilege permissions, pinned actions versions, and secure shell steps.
+
+chat:
+  auto_reply: true
+  art: false
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "docs/CodingConventions.md"
+      - "docs/ProjectOverview.md"
+  learnings:
+    scope: "local"
