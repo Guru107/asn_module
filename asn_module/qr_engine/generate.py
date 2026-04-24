@@ -6,6 +6,7 @@ import barcode
 import frappe
 import pyqrcode
 from barcode.writer import ImageWriter
+from frappe import _
 
 from asn_module.qr_engine.scan_codes import format_scan_code_for_display, get_or_create_scan_code
 
@@ -41,7 +42,7 @@ def build_scan_code_metadata(
 	step_key = (flow_step or "").strip()
 	effective_action_key = (action_key or "").strip() or step_key
 	if not effective_action_key:
-		frappe.throw("action_key or flow_step is required to build scan code metadata")
+		frappe.throw(_("action_key or flow_step is required to build scan code metadata"))
 
 	scan_code = get_or_create_scan_code(effective_action_key, source_doctype, source_name)
 	return {

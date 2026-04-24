@@ -43,6 +43,26 @@ Coverage must not drop below **95%**.
 
 ------------------------------
 
+## Python — Frappe Best Practices
+
+### i18n — Wrap User-Visible Strings in `_()`
+
+All user-facing text in Python must be translatable. This includes `frappe.throw`, `frappe.msgprint`, and any value rendered to users in responses or UI metadata.
+
+```python
+from frappe import _
+
+# CORRECT
+frappe.throw(_("Action key is required"))
+
+# WRONG
+frappe.throw("Action key is required")
+```
+
+Exceptions: internal log/debug text not shown to users, identifiers (DocType names used as keys), API paths, and machine-only constants.
+
+------------------------------
+
 ## JavaScript — Frappe Best Practices
 
 ### Every `frappe.call()` Must Have an `error:` Callback
@@ -249,7 +269,6 @@ WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01';
 ```
 
 Expert Tip: Use pt-query-digest from the Percona Toolkit to aggregate slow query logs and identify the highest-impact bottlenecks.
-
 
 
 
