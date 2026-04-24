@@ -3,6 +3,16 @@
 // eslint-disable-next-line import/no-unresolved
 require("../../../frappe/cypress/support/e2e.js");
 
+// Frappe login expects password as string; Cypress may coerce numeric env vars to number.
+Cypress.Commands.overwrite("login", (originalFn, email, password) => {
+	const resolvedPassword =
+		typeof password !== "undefined" && password !== null
+			? password
+			: Cypress.env("adminPassword");
+	const normalizedPassword = String(resolvedPassword ?? "");
+	return originalFn(email, normalizedPassword);
+});
+
 Cypress.Commands.add("call_api", (method, args = {}) => {
 	const hasArgs = Object.keys(args || {}).length > 0;
 	return cy

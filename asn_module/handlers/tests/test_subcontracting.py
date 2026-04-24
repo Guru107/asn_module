@@ -91,11 +91,22 @@ class TestSubcontractingHandlers(FrappeTestCase):
 		bom.submit()
 		return bom.name
 
-	def _make_integration_subcontracting_order(self):
-		company = frappe.db.get_value("Company", {}, "name")
+	def _make_integration_subcontracting_order(self, company: str | None = None):
+		po = create_purchase_order()
+		company = company or po.company
 		source_warehouse = self._ensure_warehouse("_Test Subcontract Source Warehouse", company)
 		supplier_warehouse = self._ensure_warehouse("_Test Subcontract Supplier Warehouse", company)
-		po = create_purchase_order(warehouse=source_warehouse)
+		for row in po.items:
+			if row.warehouse == source_warehouse:
+				continue
+			frappe.db.set_value(
+				"Purchase Order Item",
+				row.name,
+				"warehouse",
+				source_warehouse,
+				update_modified=False,
+			)
+		po.reload()
 		supplier = po.supplier
 		uom = po.items[0].uom
 
