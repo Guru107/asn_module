@@ -130,18 +130,56 @@ def _generate_followup_codes(result: dict[str, Any]) -> list[dict]:
 			continue
 		if step.generation_mode not in _GENERATE_NOW:
 			continue
-		from asn_module.qr_engine.generate import build_scan_code_metadata
+		from asn_module.qr_engine.generate import generate_barcode, generate_qr
 
+		qr_result = generate_qr(step.scan_action_key, target_doctype, target_name)
+		barcode_result = generate_barcode(step.scan_action_key, target_doctype, target_name)
+		key_fragment = _safe_file_segment(step.step_name or step.scan_action_key)
+		qr_file_url = _attach_followup_image(
+			doctype=target_doctype,
+			docname=target_name,
+			filename=f"{target_name}-{key_fragment}-qr.png",
+			image_base64=qr_result["image_base64"],
+		)
+		barcode_file_url = _attach_followup_image(
+			doctype=target_doctype,
+			docname=target_name,
+			filename=f"{target_name}-{key_fragment}-barcode.png",
+			image_base64=barcode_result["image_base64"],
+		)
 		generated.append(
-			build_scan_code_metadata(
-				action_key=step.scan_action_key,
-				source_doctype=target_doctype,
-				source_name=target_name,
-				generation_mode=step.generation_mode,
-				flow_step=step.step_name,
-			)
+			{
+				"action_key": step.scan_action_key,
+				"flow_step": step.step_name or None,
+				"scan_code": qr_result.get("scan_code") or barcode_result.get("scan_code"),
+				"human_readable": qr_result.get("human_readable")
+				or barcode_result.get("human_readable")
+				or "",
+				"generation_mode": step.generation_mode,
+				"qr_file_url": qr_file_url,
+				"barcode_file_url": barcode_file_url,
+			}
 		)
 	return generated
+
+
+def _attach_followup_image(*, doctype: str, docname: str, filename: str, image_base64: str) -> str:
+	from frappe.utils.file_manager import save_file
+
+	file_doc = save_file(
+		filename,
+		image_base64,
+		doctype,
+		docname,
+		is_private=0,
+		decode=True,
+	)
+	return file_doc.file_url
+
+
+def _safe_file_segment(value: str) -> str:
+	segment = (value or "").strip().replace("/", "-").replace("\\", "-")
+	return segment or "step"
 
 
 def _pick_winners(steps: list[repository.StepRecord]) -> list[repository.StepRecord]:

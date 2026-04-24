@@ -1,3 +1,4 @@
+import importlib
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
@@ -280,6 +281,64 @@ class TestGetOrCreateScanCodeCanonicalReuse(TestCase):
 		fake_frappe.db.get_value.assert_called_once()
 		fake_frappe.db.exists.assert_called_once_with("Scan Code", "ABCDEFGHJKLMNPQ2")
 		fake_frappe.get_doc.assert_called_once()
+
+	def test_retries_on_collision_then_creates(self):
+		doc = MagicMock()
+		doc.name = "ABCDEFGHJKLMNPQ3"
+		fake_frappe = MagicMock()
+		fake_frappe.ValidationError = Exception
+		fake_frappe.db.get_value.return_value = None
+		fake_frappe.db.exists.side_effect = [True, False]
+		fake_frappe.get_doc.return_value = doc
+
+		with (
+			patch("asn_module.qr_engine.scan_codes.frappe", fake_frappe),
+			patch(
+				"asn_module.qr_engine.scan_codes._random_scan_code_value",
+				side_effect=["ABCDEFGHJKLMNPQ2", "ABCDEFGHJKLMNPQ3"],
+			),
+		):
+			result = get_or_create_scan_code("create_purchase_receipt", "ASN", "ASN-003")
+
+		self.assertEqual(result, "ABCDEFGHJKLMNPQ3")
+		self.assertEqual(fake_frappe.db.exists.call_count, 2)
+
+	def test_raises_when_unique_code_not_available(self):
+		fake_frappe = MagicMock()
+		fake_frappe.ValidationError = Exception
+		fake_frappe.db.get_value.return_value = None
+		fake_frappe.db.exists.return_value = True
+		fake_frappe.throw.side_effect = RuntimeError("exhausted")
+
+		with (
+			patch("asn_module.qr_engine.scan_codes.frappe", fake_frappe),
+			patch("asn_module.qr_engine.scan_codes._random_scan_code_value", return_value="ABCDEFGHJKLMNPQ2"),
+			self.assertRaises(RuntimeError),
+		):
+			get_or_create_scan_code("create_purchase_receipt", "ASN", "ASN-004")
+
+
+class TestScanCodeModuleLevelCoverage(TestCase):
+	def test_get_scan_code_length_and_reload_module(self):
+		import asn_module.qr_engine.scan_codes as scan_codes_module
+
+		self.assertEqual(scan_codes_module.get_scan_code_length(), SCAN_CODE_LENGTH)
+		reloaded = importlib.reload(scan_codes_module)
+		self.assertEqual(reloaded.SCAN_CODE_ALPHABET, SCAN_CODE_ALPHABET)
+
+
+class TestValidateScanCodeRowExtraBranches(FrappeTestCase, _ScanCodeTestMixin):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls._create_real_asn()
+
+	def test_invalid_non_active_status_is_rejected(self):
+		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", name, "status", "Paused", update_modified=False)
+		doc = frappe.get_doc("Scan Code", name)
+		with self.assertRaises(frappe.ValidationError):
+			validate_scan_code_row(doc, "create_purchase_receipt")
 
 	def test_newly_created_scan_code_is_canonical_16_chars(self):
 		doc = MagicMock()

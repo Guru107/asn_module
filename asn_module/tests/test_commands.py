@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -53,6 +54,62 @@ class TestBarcodeProcessFlowCommands(FrappeTestCase):
 		self.assertIn("ok", result)
 		self.assertIn("active_flows", result)
 		self.assertIn("active_steps", result)
+
+	def test_verify_barcode_process_flow_reports_missing_doctype(self):
+		with (
+			patch("asn_module.commands.frappe.db.exists", return_value=False),
+			patch("asn_module.commands.frappe.msgprint") as msgprint,
+		):
+			result = verify_barcode_process_flow()
+
+		self.assertFalse(result["ok"])
+		self.assertEqual(result["active_flows"], 0)
+		self.assertEqual(result["active_steps"], 0)
+		msgprint.assert_called_once()
+
+	def test_verify_barcode_process_flow_requires_permission(self):
+		with (
+			patch("asn_module.commands.frappe.db.exists", return_value=True),
+			patch("asn_module.commands.frappe.has_permission", return_value=False),
+			self.assertRaises(frappe.PermissionError),
+		):
+			verify_barcode_process_flow()
+
+	def test_verify_barcode_process_flow_handles_no_active_flows(self):
+		with (
+			patch("asn_module.commands.frappe.db.exists", return_value=True),
+			patch("asn_module.commands.frappe.has_permission", return_value=True),
+			patch("asn_module.commands.frappe.get_all", return_value=[]),
+			patch("asn_module.commands.frappe.msgprint") as msgprint,
+		):
+			result = verify_barcode_process_flow()
+
+		self.assertFalse(result["ok"])
+		self.assertEqual(result["active_flows"], 0)
+		self.assertEqual(result["active_steps"], 0)
+		msgprint.assert_called_once()
+
+	def test_verify_scan_code_registry_all_valid_branch(self):
+		rows = [
+			SimpleNamespace(
+				name="SC-1",
+				scan_code="CODE-ONE",
+				source_doctype="ASN",
+				source_name="ASN-1",
+			)
+		]
+		with (
+			patch("asn_module.commands.frappe.has_permission", return_value=True),
+			patch("asn_module.commands.frappe.get_all", return_value=rows),
+			patch("asn_module.commands.frappe.get_doc", return_value=SimpleNamespace(name="SC-1")),
+			patch("asn_module.commands.verify_registry_row_points_to_existing_source", return_value=True),
+			patch("asn_module.commands.frappe.msgprint") as msgprint,
+		):
+			result = verify_scan_code_registry()
+
+		self.assertTrue(result["ok"])
+		self.assertEqual(result["orphan_count"], 0)
+		msgprint.assert_called_once()
 
 	def test_verify_qr_action_registry_is_deprecated(self):
 		result = verify_qr_action_registry()

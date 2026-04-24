@@ -1,3 +1,7 @@
+import json
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -60,3 +64,52 @@ class TestConfirmPutaway(FrappeTestCase):
 		missing_name = f"PR-MISSING-{frappe.generate_hash(length=10)}"
 		with self.assertRaises(frappe.ValidationError):
 			confirm_putaway("Purchase Receipt", missing_name, payload={})
+
+	def test_putaway_rejects_invalid_source_doctype(self):
+		with self.assertRaises(frappe.ValidationError):
+			confirm_putaway("DoesNotExistDocType", "DOC-001", payload={})
+
+	def test_putaway_emits_asn_item_transition_when_mapping_exists(self):
+		pr = SimpleNamespace(
+			name="MAT-PRE-TEST-0001",
+			asn="ASN-0001",
+			asn_items=json.dumps({"1": {"asn_item_name": "ASN-ITEM-0001"}}),
+			items=[SimpleNamespace(idx=1, item_code="ITEM-1")],
+		)
+		log_doc = SimpleNamespace(name="SLG-0001")
+		log_doc.insert = lambda **kwargs: log_doc
+
+		def fake_get_doc(arg1, arg2=None):
+			if arg1 == "Purchase Receipt":
+				return pr
+			if isinstance(arg1, dict) and arg1.get("doctype") == "Scan Log":
+				return log_doc
+			raise AssertionError(f"Unexpected get_doc call: {arg1}, {arg2}")
+
+		def fake_exists(doctype, name=None):
+			if doctype == "DocType" and name == "Purchase Receipt":
+				return True
+			if doctype == "Purchase Receipt" and name == "MAT-PRE-TEST-0001":
+				return True
+			return False
+
+		with (
+			patch("asn_module.handlers.putaway.frappe.db.exists", side_effect=fake_exists),
+			patch("asn_module.handlers.putaway.frappe.get_doc", side_effect=fake_get_doc),
+			patch("asn_module.handlers.putaway.emit_asn_item_transition") as emit_transition,
+		):
+			confirm_putaway(
+				source_doctype="Purchase Receipt",
+				source_name="MAT-PRE-TEST-0001",
+				payload={},
+			)
+
+		emit_transition.assert_called_once_with(
+			asn="ASN-0001",
+			asn_item="ASN-ITEM-0001",
+			item_code="ITEM-1",
+			state="PUTAWAY_CONFIRMED",
+			transition_status="OK",
+			ref_doctype="Purchase Receipt",
+			ref_name="MAT-PRE-TEST-0001",
+		)

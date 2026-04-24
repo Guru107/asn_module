@@ -13,6 +13,8 @@ from asn_module.supplier_asn_portal import (
 
 class TestSupplierAsnPortal(FrappeTestCase):
 	def test_purchase_receipt_exists_for_asn(self):
+		self.assertFalse(purchase_receipt_exists_for_asn(""))
+
 		with patch("frappe.db.has_column", return_value=False):
 			self.assertFalse(purchase_receipt_exists_for_asn("ASN-0001"))
 		with (
@@ -24,6 +26,11 @@ class TestSupplierAsnPortal(FrappeTestCase):
 			self.assertFalse(purchase_receipt_exists_for_asn("ASN-0001"))
 
 	def test_purchase_receipt_linked_to_asn(self):
+		self.assertFalse(purchase_receipt_linked_to_asn(""))
+
+		with patch("frappe.db.has_column", return_value=False):
+			self.assertFalse(purchase_receipt_linked_to_asn("ASN-0001"))
+
 		with (
 			patch("frappe.db.has_column", return_value=True),
 			patch("frappe.db.exists", return_value="PR-0001"),
