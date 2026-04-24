@@ -59,6 +59,25 @@ class TestRules(UnitTestCase):
 		)
 		self.assertTrue(rules.evaluate_rule(doc, rule))
 
+		doc_missing = SimpleNamespace(items=[SimpleNamespace(), SimpleNamespace()])
+		rule_exists_op = SimpleNamespace(
+			scope="items_aggregate",
+			aggregate_fn="exists",
+			field_path="items[].qty",
+			operator="exists",
+			value="true",
+		)
+		self.assertFalse(rules.evaluate_rule(doc_missing, rule_exists_op))
+
+		rule_is_set_op = SimpleNamespace(
+			scope="items_aggregate",
+			aggregate_fn="exists",
+			field_path="items[].qty",
+			operator="is_set",
+			value="true",
+		)
+		self.assertFalse(rules.evaluate_rule(doc_missing, rule_is_set_op))
+
 	def test_items_aggregate_numeric_functions(self):
 		doc = SimpleNamespace(items=[SimpleNamespace(qty=2), SimpleNamespace(qty=4)])
 		sum_rule = SimpleNamespace(
@@ -127,6 +146,7 @@ class TestRules(UnitTestCase):
 		self.assertEqual(rules._normalize_literal("1"), 1)
 		self.assertEqual(rules._normalize_literal(1), 1)
 		self.assertEqual(rules._normalize_literal("not-json"), "not-json")
+		self.assertEqual(rules._normalize_literal("  not-json  "), "not-json")
 		self.assertEqual(rules._normalize_field_path("header.status"), "status")
 		self.assertEqual(rules._normalize_field_path("items.qty"), "qty")
 		self.assertEqual(rules._normalize_field_path("items[].qty"), "qty")

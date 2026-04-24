@@ -53,6 +53,7 @@ def get_active_steps_for_source(source_doc: Any, *, action_key: str | None = Non
 	source_doctype = (getattr(source_doc, "doctype", "") or "").strip()
 	if not source_doctype:
 		return []
+	normalized_action_key = (action_key or "").strip()
 
 	context = _build_context(source_doc)
 	flow_names = frappe.get_all("Barcode Process Flow", filters={"is_active": 1}, pluck="name")
@@ -68,7 +69,10 @@ def get_active_steps_for_source(source_doc: Any, *, action_key: str | None = Non
 				continue
 
 			step_key = _step_scan_key(step)
-			if action_key and action_key not in {step_key, (getattr(step, "name", "") or "").strip()}:
+			if normalized_action_key and normalized_action_key not in {
+				step_key,
+				(getattr(step, "name", "") or "").strip(),
+			}:
 				continue
 
 			rows.append(
@@ -107,7 +111,7 @@ def get_step_by_name(step_name: str | None):
 	step = frappe.get_doc("Flow Step", name)
 	if not cint(getattr(step, "is_active", 0)):
 		return None
-	flow_name = (getattr(step, "flow", "") or "").strip()
+	flow_name = (getattr(step, "parent", "") or getattr(step, "flow", "") or "").strip()
 	if not flow_name:
 		return None
 	if not cint(frappe.db.get_value("Barcode Process Flow", flow_name, "is_active") or 0):

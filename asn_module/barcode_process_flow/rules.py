@@ -61,10 +61,16 @@ def _evaluate_aggregate_rule(items: list[Any], rule: Any) -> bool:
 		left_value = any(
 			_resolve_field_path(item, field_path, default=_MISSING) is not _MISSING for item in items
 		)
+		operator = str(_get_value(rule, "operator", "=") or "=").strip()
+		if operator in {"exists", "is_set"}:
+			operator = "="
+			right_value = bool(_normalize_literal(_get_value(rule, "value", "true")))
+		else:
+			right_value = _normalize_literal(_get_value(rule, "value", "true"))
 		return _apply_operator(
-			operator=_get_value(rule, "operator", "="),
+			operator=operator,
 			left_value=left_value,
-			right_value=_normalize_literal(_get_value(rule, "value", "true")),
+			right_value=right_value,
 		)
 
 	values = [
@@ -187,7 +193,7 @@ def _normalize_literal(value: Any) -> Any:
 	try:
 		return json.loads(trimmed)
 	except json.JSONDecodeError:
-		return value
+		return trimmed
 
 
 def _normalize_field_path(field_path: Any) -> str:

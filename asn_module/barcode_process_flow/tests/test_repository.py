@@ -181,6 +181,7 @@ class TestRepository(UnitTestCase):
 		):
 			all_rows = repository.get_active_steps_for_source(source)
 			filtered_rows = repository.get_active_steps_for_source(source, action_key="STEP-1")
+			filtered_rows_padded = repository.get_active_steps_for_source(source, action_key=" STEP-1 ")
 			filtered_by_scan_key = repository.get_active_steps_for_source(
 				source, action_key="asn_to_subcontracting_receipt"
 			)
@@ -189,6 +190,8 @@ class TestRepository(UnitTestCase):
 		self.assertEqual(all_rows[0].scan_action_key, "STEP-1")
 		self.assertEqual(len(filtered_rows), 1)
 		self.assertEqual(filtered_rows[0].step_name, "STEP-1")
+		self.assertEqual(len(filtered_rows_padded), 1)
+		self.assertEqual(filtered_rows_padded[0].step_name, "STEP-1")
 		self.assertEqual(len(filtered_by_scan_key), 1)
 		self.assertEqual(filtered_by_scan_key[0].step_name, "STEP-2")
 
@@ -221,7 +224,7 @@ class TestRepository(UnitTestCase):
 		with patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=False):
 			self.assertIsNone(repository.get_step_by_name("STEP-1"))
 
-		step = SimpleNamespace(name="STEP-1", is_active=1, flow="FLOW-1")
+		step = SimpleNamespace(name="STEP-1", is_active=1, parent="FLOW-1")
 		with (
 			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
 			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=step),
@@ -229,21 +232,21 @@ class TestRepository(UnitTestCase):
 		):
 			self.assertIs(repository.get_step_by_name("STEP-1"), step)
 
-		inactive_step = SimpleNamespace(name="STEP-2", is_active=0, flow="FLOW-1")
+		inactive_step = SimpleNamespace(name="STEP-2", is_active=0, parent="FLOW-1")
 		with (
 			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
 			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=inactive_step),
 		):
 			self.assertIsNone(repository.get_step_by_name("STEP-2"))
 
-		orphan_step = SimpleNamespace(name="STEP-3", is_active=1, flow="")
+		orphan_step = SimpleNamespace(name="STEP-3", is_active=1, parent="")
 		with (
 			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
 			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=orphan_step),
 		):
 			self.assertIsNone(repository.get_step_by_name("STEP-3"))
 
-		inactive_flow_step = SimpleNamespace(name="STEP-4", is_active=1, flow="FLOW-2")
+		inactive_flow_step = SimpleNamespace(name="STEP-4", is_active=1, parent="FLOW-2")
 		with (
 			patch("asn_module.barcode_process_flow.repository.frappe.db.exists", return_value=True),
 			patch(
