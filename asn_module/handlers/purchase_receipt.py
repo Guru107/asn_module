@@ -84,54 +84,52 @@ def on_purchase_receipt_submit(doc, method):
 	"""Update ASN receipt tracking and attach follow-up QR codes on submit."""
 	del method
 
-	if not doc.asn:
-		return
+	if doc.asn:
+		asn = frappe.get_doc("ASN", doc.asn)
+		asn_items_map = json.loads(doc.asn_items or "{}")
+		received_qty_by_asn_item = {}
 
-	asn = frappe.get_doc("ASN", doc.asn)
-	asn_items_map = json.loads(doc.asn_items or "{}")
-	received_qty_by_asn_item = {}
+		for pr_item in doc.items:
+			mapping = asn_items_map.get(str(pr_item.idx))
+			if not mapping:
+				continue
 
-	for pr_item in doc.items:
-		mapping = asn_items_map.get(str(pr_item.idx))
-		if not mapping:
-			continue
+			asn_item_name = mapping.get("asn_item_name")
+			if not asn_item_name:
+				continue
+			received_qty_by_asn_item[asn_item_name] = received_qty_by_asn_item.get(asn_item_name, 0) + flt(
+				pr_item.qty
+			)
 
-		asn_item_name = mapping.get("asn_item_name")
-		if not asn_item_name:
-			continue
-		received_qty_by_asn_item[asn_item_name] = received_qty_by_asn_item.get(asn_item_name, 0) + flt(
-			pr_item.qty
-		)
+		for asn_item_name, qty_delta in received_qty_by_asn_item.items():
+			frappe.db.sql(
+				"""
+				UPDATE `tabASN Item`
+				SET received_qty = COALESCE(received_qty, 0) + %s
+				WHERE name = %s
+				""",
+				(qty_delta, asn_item_name),
+			)
 
-	for asn_item_name, qty_delta in received_qty_by_asn_item.items():
-		frappe.db.sql(
-			"""
-			UPDATE `tabASN Item`
-			SET received_qty = COALESCE(received_qty, 0) + %s
-			WHERE name = %s
-			""",
-			(qty_delta, asn_item_name),
-		)
+		asn.reload()
+		asn.update_receipt_status()
 
-	asn.reload()
-	asn.update_receipt_status()
+		asn_item_codes = {
+			row.name: row.item_code
+			for row in frappe.get_all(
+				"ASN Item",
+				filters={"name": ["in", list(received_qty_by_asn_item)]},
+				fields=["name", "item_code"],
+			)
+		}
 
-	asn_item_codes = {
-		row.name: row.item_code
-		for row in frappe.get_all(
-			"ASN Item",
-			filters={"name": ["in", list(received_qty_by_asn_item)]},
-			fields=["name", "item_code"],
-		)
-	}
-
-	for asn_item_name in received_qty_by_asn_item:
-		emit_asn_item_transition(
-			asn=asn.name,
-			asn_item=asn_item_name,
-			item_code=asn_item_codes.get(asn_item_name),
-			state="PR_SUBMITTED",
-			transition_status="OK",
-			ref_doctype="Purchase Receipt",
-			ref_name=doc.name,
-		)
+		for asn_item_name in received_qty_by_asn_item:
+			emit_asn_item_transition(
+				asn=asn.name,
+				asn_item=asn_item_name,
+				item_code=asn_item_codes.get(asn_item_name),
+				state="PR_SUBMITTED",
+				transition_status="OK",
+				ref_doctype="Purchase Receipt",
+				ref_name=doc.name,
+			)

@@ -158,8 +158,22 @@ def get_standard_handler(
 	from_doctype: str,
 	to_doctype: str,
 	source_doc: Any | None = None,
+	action_key: str | None = None,
 ) -> str | None:
-	for row in get_supported_templates(from_doctype=from_doctype):
+	templates = get_supported_templates(from_doctype=from_doctype)
+	normalized_action_key = (action_key or "").strip()
+
+	if normalized_action_key:
+		for row in templates:
+			if (row.get("key") or "") != normalized_action_key:
+				continue
+			if row.get("to_doctype") != to_doctype:
+				continue
+			if source_doc and not _doc_matches_conditions(source_doc, row.get("doc_conditions") or {}):
+				continue
+			return str(row.get("handler") or "") or None
+
+	for row in templates:
 		if row.get("to_doctype") != to_doctype:
 			continue
 		if source_doc and not _doc_matches_conditions(source_doc, row.get("doc_conditions") or {}):

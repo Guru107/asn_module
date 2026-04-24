@@ -53,6 +53,16 @@ def resolve_eligible_steps(
 	return _pick_winners(eligible)
 
 
+def generate_codes_for_source_doc(*, source_doc: Any, conditioned_only: bool = False) -> list[dict]:
+	steps = repository.get_active_steps_for_source(source_doc)
+	if conditioned_only:
+		steps = [step for step in steps if (step.condition or "").strip()]
+	winners = resolve_eligible_steps(steps, source_doc)
+	if not winners:
+		return []
+	return _generate_codes_for_steps(source_doc=source_doc, steps=winners)
+
+
 def execute_step(*, step: repository.StepRecord, source_doc: Any) -> dict:
 	execution_mode = (step.execution_mode or "Mapping").strip()
 	if execution_mode == "Server Script":
@@ -78,6 +88,7 @@ def _execute_mapping(*, step: repository.StepRecord, source_doc: Any) -> dict:
 		from_doctype=step.from_doctype,
 		to_doctype=step.to_doctype,
 		source_doc=source_doc,
+		action_key=step.scan_action_key,
 	)
 	if handler_path:
 		handler = frappe.get_attr(handler_path)
@@ -123,9 +134,20 @@ def _generate_followup_codes(result: dict[str, Any]) -> list[dict]:
 	target_doc = frappe.get_doc(target_doctype, target_name)
 	next_steps = repository.get_active_steps_for_source(target_doc)
 	winners = resolve_eligible_steps(next_steps, target_doc)
+	if not winners:
+		return []
+
+	return _generate_codes_for_steps(source_doc=target_doc, steps=winners)
+
+
+def _generate_codes_for_steps(*, source_doc: Any, steps: list[repository.StepRecord]) -> list[dict]:
+	target_doctype = (getattr(source_doc, "doctype", "") or "").strip()
+	target_name = (getattr(source_doc, "name", "") or "").strip()
+	if not target_doctype or not target_name:
+		return []
 
 	generated: list[dict] = []
-	for step in winners:
+	for step in steps:
 		if not step.generate_next_barcode:
 			continue
 		if step.generation_mode not in _GENERATE_NOW:

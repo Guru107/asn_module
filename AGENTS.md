@@ -1,5 +1,11 @@
 # Read CLAUDE.md
 
+## Bench Scope Guardrail
+
+- `asn_module` is installed **only** on bench15 and bench16 servers.
+- Do **not** run bench/test/migrate/build commands on any other bench.
+- If bench context is unclear, stop and ask before running bench commands.
+
 ## Cursor Cloud specific instructions
 
 ### Environment layout

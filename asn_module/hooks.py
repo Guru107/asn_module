@@ -48,6 +48,7 @@ app_include_js = [
 # include js in doctype views
 doctype_js = {
 	"Barcode Process Flow": "public/js/doctype/barcode_process_flow.js",
+	"Barcode Mapping Set": "public/js/doctype/barcode_mapping_set.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -159,6 +160,9 @@ after_install = "asn_module.setup.after_install"
 # 	}
 # }
 doc_events = {
+	"*": {
+		"on_submit": "asn_module.barcode_process_flow.submit_hooks.on_any_submit",
+	},
 	"Purchase Receipt": {
 		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
 	},

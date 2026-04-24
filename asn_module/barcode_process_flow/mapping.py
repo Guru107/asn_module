@@ -3,25 +3,31 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+from frappe import _
 
 
 def build_target_doc(source_doc: Any, mapping_rows: list[Any], target_doctype: str):
 	payload: dict[str, Any] = {"doctype": target_doctype}
-	header_rows: list[Any] = []
-	item_rows: list[Any] = []
+	source_doctype = (getattr(source_doc, "doctype", "") or "").strip()
+	selector_cache: dict[tuple[str, str, str], str] = {}
+	prepared_rows = _prepare_mapping_rows(
+		source_doctype=source_doctype,
+		target_doctype=target_doctype,
+		mapping_rows=mapping_rows,
+		selector_cache=selector_cache,
+	)
 
-	for row in mapping_rows or []:
-		target = (_get_value(row, "target_selector") or "").strip()
-		if not target:
-			continue
-		if target.startswith("items[]."):
-			item_rows.append(row)
-		else:
-			header_rows.append(row)
+	header_rows = [row for row in prepared_rows if not row["target_selector"].startswith("items[].")]
+	item_rows = [row for row in prepared_rows if row["target_selector"].startswith("items[].")]
 
-	for row in header_rows:
-		target_path = _normalize_target_selector(_get_value(row, "target_selector"))
-		value = _resolve_row_value(row=row, source_doc=source_doc, source_item=None)
+	for prepared in header_rows:
+		target_path = _normalize_target_selector(prepared["target_selector"])
+		value = _resolve_row_value(
+			row=prepared["row"],
+			source_doc=source_doc,
+			source_item=None,
+			source_selector=prepared.get("source_selector", ""),
+		)
 		_set_dotted(payload, target_path, value)
 
 	if item_rows:
@@ -30,7 +36,55 @@ def build_target_doc(source_doc: Any, mapping_rows: list[Any], target_doctype: s
 	return frappe.get_doc(payload)
 
 
-def _build_target_items(*, source_doc: Any, item_rows: list[Any]) -> list[dict[str, Any]]:
+def _prepare_mapping_rows(
+	*,
+	source_doctype: str,
+	target_doctype: str,
+	mapping_rows: list[Any],
+	selector_cache: dict[tuple[str, str, str], str],
+) -> list[dict[str, Any]]:
+	prepared: list[dict[str, Any]] = []
+	for row in mapping_rows or []:
+		target_selector = _selector_from_docfield_reference(
+			docfield_reference=_get_value(row, "target_field"),
+			parent_doctype=target_doctype,
+			side="target",
+			selector_cache=selector_cache,
+		)
+		if not target_selector:
+			raise frappe.ValidationError(
+				_("Target Field is required and must belong to {0} or its items table").format(
+					target_doctype or _("Target DocType"),
+				)
+			)
+
+		mapping_type = (_get_value(row, "mapping_type") or "source").strip().lower()
+		source_selector = ""
+		if mapping_type == "source":
+			source_selector = _selector_from_docfield_reference(
+				docfield_reference=_get_value(row, "source_field"),
+				parent_doctype=source_doctype,
+				side="source",
+				selector_cache=selector_cache,
+			)
+			if not source_selector:
+				raise frappe.ValidationError(
+					_("Source Field is required and must belong to {0} or its items table").format(
+						source_doctype or _("Source DocType"),
+					)
+				)
+
+		prepared.append(
+			{
+				"row": row,
+				"target_selector": target_selector,
+				"source_selector": source_selector,
+			}
+		)
+	return prepared
+
+
+def _build_target_items(*, source_doc: Any, item_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 	source_items = list(_get_value(source_doc, "items", []) or [])
 	if not source_items:
 		return []
@@ -38,22 +92,32 @@ def _build_target_items(*, source_doc: Any, item_rows: list[Any]) -> list[dict[s
 	target_items: list[dict[str, Any]] = []
 	for source_item in source_items:
 		target_item: dict[str, Any] = {}
-		for row in item_rows:
-			target_path = _normalize_target_selector(_get_value(row, "target_selector"))
+		for prepared in item_rows:
+			target_path = _normalize_target_selector(prepared["target_selector"])
 			target_path = target_path[8:] if target_path.startswith("items[].") else target_path
-			value = _resolve_row_value(row=row, source_doc=source_doc, source_item=source_item)
+			value = _resolve_row_value(
+				row=prepared["row"],
+				source_doc=source_doc,
+				source_item=source_item,
+				source_selector=prepared.get("source_selector", ""),
+			)
 			_set_dotted(target_item, target_path, value)
 		if target_item:
 			target_items.append(target_item)
 	return target_items
 
 
-def _resolve_row_value(*, row: Any, source_doc: Any, source_item: Any = None) -> Any:
+def _resolve_row_value(
+	*,
+	row: Any,
+	source_doc: Any,
+	source_item: Any = None,
+	source_selector: str = "",
+) -> Any:
 	mapping_type = (_get_value(row, "mapping_type") or "source").strip().lower()
 	if mapping_type == "constant":
 		value = _get_value(row, "constant_value")
 	else:
-		source_selector = (_get_value(row, "source_selector") or "").strip()
 		value = _resolve_source_selector(
 			source_doc=source_doc, source_item=source_item, selector=source_selector
 		)
@@ -79,6 +143,72 @@ def _normalize_target_selector(target_selector: str | None) -> str:
 	if target.startswith("target."):
 		return target[7:]
 	return target
+
+
+def _selector_from_docfield_reference(
+	*,
+	docfield_reference: Any,
+	parent_doctype: str,
+	side: str,
+	selector_cache: dict[tuple[str, str, str], str],
+) -> str:
+	docfield_key = str(docfield_reference or "").strip()
+	normalized_parent = (parent_doctype or "").strip()
+	normalized_side = (side or "").strip().lower()
+	if not docfield_key or not normalized_parent or normalized_side not in {"source", "target"}:
+		return ""
+
+	cache_key = (docfield_key, normalized_parent, normalized_side)
+	if cache_key in selector_cache:
+		return selector_cache[cache_key]
+
+	field_parent, fieldname = _resolve_docfield_reference(docfield_key)
+	if not field_parent or not fieldname:
+		selector_cache[cache_key] = ""
+		return ""
+
+	if field_parent == normalized_parent:
+		selector = f"header.{fieldname}" if normalized_side == "source" else fieldname
+		selector_cache[cache_key] = selector
+		return selector
+
+	items_doctype = _get_items_child_doctype(normalized_parent)
+	if items_doctype and field_parent == items_doctype:
+		selector_cache[cache_key] = f"items[].{fieldname}"
+		return selector_cache[cache_key]
+
+	selector_cache[cache_key] = ""
+	return ""
+
+
+def _resolve_docfield_reference(reference: str) -> tuple[str, str]:
+	reference = (reference or "").strip()
+	if not reference:
+		return "", ""
+	if "." in reference:
+		field_parent, fieldname = [part.strip() for part in reference.split(".", 1)]
+		return field_parent, fieldname
+
+	row = frappe.db.get_value("DocField", reference, ["parent", "fieldname"], as_dict=True)
+	if not row:
+		return "", ""
+	return (row.get("parent") or "").strip(), (row.get("fieldname") or "").strip()
+
+
+def _get_items_child_doctype(parent_doctype: str) -> str:
+	parent_doctype = (parent_doctype or "").strip()
+	if not parent_doctype:
+		return ""
+
+	meta = frappe.get_meta(parent_doctype)
+	for field in list(meta.fields or []):
+		fieldtype = (field.fieldtype or "").strip()
+		if fieldtype not in {"Table", "Table MultiSelect"}:
+			continue
+		if (field.fieldname or "").strip() != "items":
+			continue
+		return (field.options or "").strip()
+	return ""
 
 
 def _apply_transform(value: Any, transform: str) -> Any:

@@ -5,6 +5,8 @@ from frappe.model.document import Document
 _ALLOWED_SCOPES = {"header", "items_any", "items_all", "items_aggregate"}
 _ALLOWED_OPERATORS = {"=", "!=", ">", ">=", "<", "<=", "in", "not_in", "contains", "is_set", "exists"}
 _ALLOWED_AGG_FUNCS = {"", "exists", "count", "sum", "min", "max", "avg"}
+_INVALID_AGG_EXISTS_OPS = {"exists", "is_set"}
+_NUMERIC_AGG_FUNCS = {"count", "sum", "min", "max", "avg"}
 
 
 class BarcodeRule(Document):
@@ -29,5 +31,19 @@ class BarcodeRule(Document):
 			frappe.throw(_("Unsupported Operator: {0}").format(self.operator))
 		if self.aggregate_fn not in _ALLOWED_AGG_FUNCS:
 			frappe.throw(_("Unsupported Aggregate Function: {0}").format(self.aggregate_fn))
+		if not self.field_path:
+			frappe.throw(_("Field Path is required"))
 		if self.scope == "items_aggregate" and not self.aggregate_fn:
 			frappe.throw(_("Aggregate Function is required for items_aggregate scope"))
+		if self.scope != "items_aggregate" and self.aggregate_fn:
+			frappe.throw(_("Aggregate Function is only allowed for items_aggregate scope"))
+		if (
+			self.scope == "items_aggregate"
+			and self.aggregate_fn in _NUMERIC_AGG_FUNCS
+			and self.operator in _INVALID_AGG_EXISTS_OPS
+		):
+			frappe.throw(
+				_(
+					"Operator {0} is not supported with aggregate function {1}; use numeric comparisons."
+				).format(self.operator, self.aggregate_fn)
+			)

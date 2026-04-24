@@ -35,6 +35,20 @@ class TestCapabilities(UnitTestCase):
 			"asn_module.barcode_process_flow.handlers.material_request_to_purchase_order",
 		)
 
+	def test_get_standard_handler_prefers_action_key_for_same_pair(self):
+		with patch("asn_module.barcode_process_flow.capabilities.get_erp_major", return_value=16):
+			source_doc = SimpleNamespace(material_request_type="Material Transfer")
+			handler = capabilities.get_standard_handler(
+				from_doctype="Material Request",
+				to_doctype="Stock Entry",
+				source_doc=source_doc,
+				action_key="mr_transfer_to_in_transit_stock_entry",
+			)
+		self.assertEqual(
+			handler,
+			"asn_module.barcode_process_flow.handlers.material_request_to_in_transit_stock_entry",
+		)
+
 	def test_get_standard_handler_returns_none_when_conditions_fail(self):
 		with patch("asn_module.barcode_process_flow.capabilities.get_erp_major", return_value=16):
 			source_doc = SimpleNamespace(material_request_type="Material Transfer")

@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import frappe
+
 from asn_module.barcode_process_flow import mapping
 from asn_module.tests.compat import UnitTestCase
 
@@ -8,6 +10,7 @@ from asn_module.tests.compat import UnitTestCase
 class TestMapping(UnitTestCase):
 	def test_mapping_set_copies_item_rows_from_asn_to_pr(self):
 		source = SimpleNamespace(
+			doctype="ASN",
 			supplier="SUP-0001",
 			items=[
 				SimpleNamespace(item_code="ITEM-001", qty=2),
@@ -16,24 +19,36 @@ class TestMapping(UnitTestCase):
 		)
 		rows = [
 			SimpleNamespace(
-				mapping_type="source", source_selector="supplier", target_selector="supplier", transform=""
-			),
-			SimpleNamespace(
 				mapping_type="source",
-				source_selector="items[].item_code",
-				target_selector="items[].item_code",
+				source_field="ASN.supplier",
+				target_field="Purchase Receipt.supplier",
 				transform="",
 			),
 			SimpleNamespace(
 				mapping_type="source",
-				source_selector="items[].qty",
-				target_selector="items[].qty",
+				source_field="ASN Item.item_code",
+				target_field="Purchase Receipt Item.item_code",
+				transform="",
+			),
+			SimpleNamespace(
+				mapping_type="source",
+				source_field="ASN Item.qty",
+				target_field="Purchase Receipt Item.qty",
 				transform="",
 			),
 		]
 
-		with patch(
-			"asn_module.barcode_process_flow.mapping.frappe.get_doc", side_effect=lambda payload: payload
+		with (
+			patch(
+				"asn_module.barcode_process_flow.mapping._get_items_child_doctype",
+				side_effect=lambda doctype: {
+					"ASN": "ASN Item",
+					"Purchase Receipt": "Purchase Receipt Item",
+				}.get(doctype, ""),
+			),
+			patch(
+				"asn_module.barcode_process_flow.mapping.frappe.get_doc", side_effect=lambda payload: payload
+			),
 		):
 			target = mapping.build_target_doc(
 				source_doc=source, mapping_rows=rows, target_doctype="Purchase Receipt"
@@ -45,30 +60,27 @@ class TestMapping(UnitTestCase):
 		self.assertEqual(target["items"][0]["item_code"], "ITEM-001")
 		self.assertEqual(target["items"][1]["qty"], 4)
 
-	def test_build_target_doc_skips_empty_target_selector(self):
-		source = SimpleNamespace(supplier="SUP-0001", items=[])
+	def test_build_target_doc_raises_when_target_field_is_invalid(self):
+		source = SimpleNamespace(doctype="ASN", supplier="SUP-0001", items=[])
 		rows = [
 			SimpleNamespace(
-				mapping_type="source", source_selector="supplier", target_selector="", transform=""
+				mapping_type="source",
+				source_field="ASN.supplier",
+				target_field="",
+				transform="",
 			)
 		]
-		with patch(
-			"asn_module.barcode_process_flow.mapping.frappe.get_doc", side_effect=lambda payload: payload
-		):
-			target = mapping.build_target_doc(
-				source_doc=source, mapping_rows=rows, target_doctype="Purchase Receipt"
-			)
-		self.assertEqual(target, {"doctype": "Purchase Receipt"})
+		with self.assertRaises(frappe.ValidationError):
+			mapping.build_target_doc(source_doc=source, mapping_rows=rows, target_doctype="Purchase Receipt")
 
 	def test_build_target_items_returns_empty_when_source_has_no_items(self):
 		source = SimpleNamespace(items=[])
 		rows = [
-			SimpleNamespace(
-				mapping_type="source",
-				source_selector="items[].item_code",
-				target_selector="items[].item_code",
-				transform="",
-			)
+			{
+				"row": SimpleNamespace(mapping_type="source", transform=""),
+				"source_selector": "items[].item_code",
+				"target_selector": "items[].item_code",
+			}
 		]
 		self.assertEqual(mapping._build_target_items(source_doc=source, item_rows=rows), [])
 
@@ -109,6 +121,82 @@ class TestMapping(UnitTestCase):
 	def test_normalize_target_selector(self):
 		self.assertEqual(mapping._normalize_target_selector("target.company"), "company")
 		self.assertEqual(mapping._normalize_target_selector("items[].qty"), "items[].qty")
+
+	def test_selector_from_docfield_reference_resolves_header_and_items(self):
+		selector_cache = {}
+		with (
+			patch(
+				"asn_module.barcode_process_flow.mapping._get_items_child_doctype",
+				side_effect=lambda doctype: {
+					"ASN": "ASN Item",
+					"Purchase Receipt": "Purchase Receipt Item",
+				}.get(doctype, ""),
+			),
+		):
+			self.assertEqual(
+				mapping._selector_from_docfield_reference(
+					docfield_reference="ASN.supplier",
+					parent_doctype="ASN",
+					side="source",
+					selector_cache=selector_cache,
+				),
+				"header.supplier",
+			)
+			self.assertEqual(
+				mapping._selector_from_docfield_reference(
+					docfield_reference="ASN Item.item_code",
+					parent_doctype="ASN",
+					side="source",
+					selector_cache=selector_cache,
+				),
+				"items[].item_code",
+			)
+			self.assertEqual(
+				mapping._selector_from_docfield_reference(
+					docfield_reference="Purchase Receipt.supplier",
+					parent_doctype="Purchase Receipt",
+					side="target",
+					selector_cache=selector_cache,
+				),
+				"supplier",
+			)
+
+	def test_selector_from_docfield_reference_returns_empty_for_mismatch(self):
+		selector_cache = {}
+		with patch(
+			"asn_module.barcode_process_flow.mapping._get_items_child_doctype",
+			return_value="Purchase Receipt Item",
+		):
+			self.assertEqual(
+				mapping._selector_from_docfield_reference(
+					docfield_reference="Stock Entry.warehouse",
+					parent_doctype="Purchase Receipt",
+					side="target",
+					selector_cache=selector_cache,
+				),
+				"",
+			)
+
+	def test_selector_from_docfield_reference_accepts_legacy_docfield_name(self):
+		selector_cache = {}
+		with (
+			patch(
+				"asn_module.barcode_process_flow.mapping.frappe.db.get_value",
+				return_value={"parent": "ASN", "fieldname": "supplier"},
+			),
+			patch(
+				"asn_module.barcode_process_flow.mapping._get_items_child_doctype", return_value="ASN Item"
+			),
+		):
+			self.assertEqual(
+				mapping._selector_from_docfield_reference(
+					docfield_reference="DOCFIELD-ROW-ID",
+					parent_doctype="ASN",
+					side="source",
+					selector_cache=selector_cache,
+				),
+				"header.supplier",
+			)
 
 	def test_resolve_dotted_for_dict_object_and_getter(self):
 		self.assertEqual(mapping._resolve_dotted({"a": {"b": 1}}, "a.b"), 1)

@@ -117,6 +117,48 @@ class TestRuntime(UnitTestCase):
 		with patch("asn_module.barcode_process_flow.runtime._is_condition_satisfied", return_value=False):
 			self.assertEqual(runtime.resolve_eligible_steps([step], source_doc=SimpleNamespace()), [])
 
+	def test_generate_codes_for_source_doc_uses_eligible_winners(self):
+		source_doc = SimpleNamespace(doctype="Purchase Receipt", name="PR-0001")
+		winners = [SimpleNamespace(step_name="STEP-1")]
+		with (
+			patch(
+				"asn_module.barcode_process_flow.runtime.repository.get_active_steps_for_source",
+				return_value=[SimpleNamespace(step_name="STEP-1")],
+			),
+			patch("asn_module.barcode_process_flow.runtime.resolve_eligible_steps", return_value=winners),
+			patch(
+				"asn_module.barcode_process_flow.runtime._generate_codes_for_steps",
+				return_value=[{"action_key": "purchase_receipt_to_purchase_invoice"}],
+			) as generate_mock,
+		):
+			result = runtime.generate_codes_for_source_doc(source_doc=source_doc)
+
+		self.assertEqual(result, [{"action_key": "purchase_receipt_to_purchase_invoice"}])
+		generate_mock.assert_called_once_with(source_doc=source_doc, steps=winners)
+
+	def test_generate_codes_for_source_doc_conditioned_only_filters_unconditional_steps(self):
+		source_doc = SimpleNamespace(doctype="Purchase Receipt", name="PR-0001")
+		steps = [SimpleNamespace(condition=""), SimpleNamespace(condition="PR Submitted")]
+		with (
+			patch(
+				"asn_module.barcode_process_flow.runtime.repository.get_active_steps_for_source",
+				return_value=steps,
+			),
+			patch(
+				"asn_module.barcode_process_flow.runtime.resolve_eligible_steps",
+				side_effect=lambda rows, _doc: rows,
+			),
+			patch(
+				"asn_module.barcode_process_flow.runtime._generate_codes_for_steps",
+				return_value=[{"action_key": "purchase_receipt_to_purchase_invoice"}],
+			) as generate_mock,
+		):
+			runtime.generate_codes_for_source_doc(source_doc=source_doc, conditioned_only=True)
+
+		filtered_steps = generate_mock.call_args.kwargs["steps"]
+		self.assertEqual(len(filtered_steps), 1)
+		self.assertEqual(filtered_steps[0].condition, "PR Submitted")
+
 	def test_execute_step_server_script_and_mapping_paths(self):
 		step_server = SimpleNamespace(
 			execution_mode="Server Script",
@@ -180,13 +222,18 @@ class TestRuntime(UnitTestCase):
 
 	def test_execute_mapping_uses_handler_and_fallback_mapping_set(self):
 		step = SimpleNamespace(
-			from_doctype="ASN", to_doctype="Purchase Receipt", mapping_set="MAP-1", label="L"
+			from_doctype="ASN",
+			to_doctype="Purchase Receipt",
+			mapping_set="MAP-1",
+			label="L",
+			scan_action_key="asn_to_purchase_receipt",
 		)
+		source_doc = SimpleNamespace(name="ASN-1")
 		with (
 			patch(
 				"asn_module.barcode_process_flow.runtime.capabilities.get_standard_handler",
 				return_value="x.y.z",
-			),
+			) as get_handler,
 			patch(
 				"asn_module.barcode_process_flow.runtime.frappe.get_attr",
 				return_value=lambda *_: {
@@ -196,11 +243,21 @@ class TestRuntime(UnitTestCase):
 				},
 			),
 		):
-			result = runtime._execute_mapping(step=step, source_doc=SimpleNamespace(name="ASN-1"))
+			result = runtime._execute_mapping(step=step, source_doc=source_doc)
+		get_handler.assert_called_once_with(
+			from_doctype="ASN",
+			to_doctype="Purchase Receipt",
+			source_doc=source_doc,
+			action_key="asn_to_purchase_receipt",
+		)
 		self.assertEqual(result["name"], "PR-1")
 
 		step_no_map = SimpleNamespace(
-			from_doctype="ASN", to_doctype="Purchase Receipt", mapping_set="", label="L"
+			from_doctype="ASN",
+			to_doctype="Purchase Receipt",
+			mapping_set="",
+			label="L",
+			scan_action_key="asn_to_purchase_receipt",
 		)
 		with (
 			patch(

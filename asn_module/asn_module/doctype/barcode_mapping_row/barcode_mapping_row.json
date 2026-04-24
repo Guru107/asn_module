@@ -4,9 +4,9 @@
 	"engine": "InnoDB",
 	"field_order": [
 		"mapping_type",
-		"source_selector",
+		"source_field",
 		"constant_value",
-		"target_selector",
+		"target_field",
 		"transform"
 	],
 	"fields": [
@@ -21,10 +21,12 @@
 		},
 		{
 			"depends_on": "eval:doc.mapping_type=='source'",
-			"fieldname": "source_selector",
-			"fieldtype": "Data",
+			"fieldname": "source_field",
+			"fieldtype": "Select",
 			"in_list_view": 1,
-			"label": "Source Selector"
+			"label": "Source Field",
+			"mandatory_depends_on": "eval:doc.mapping_type=='source'",
+			"options": ""
 		},
 		{
 			"depends_on": "eval:doc.mapping_type=='constant'",
@@ -33,11 +35,12 @@
 			"label": "Constant Value"
 		},
 		{
-			"fieldname": "target_selector",
-			"fieldtype": "Data",
+			"fieldname": "target_field",
+			"fieldtype": "Select",
 			"in_list_view": 1,
-			"label": "Target Selector",
-			"reqd": 1
+			"label": "Target Field",
+			"reqd": 1,
+			"options": ""
 		},
 		{
 			"fieldname": "transform",
