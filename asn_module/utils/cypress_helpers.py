@@ -287,9 +287,7 @@ def seed_standard_handler_dispatch_matrix() -> dict[str, Any]:
 	missing_source_keys = sorted([key for key in template_keys if key not in source_docs])
 	if missing_source_keys:
 		frappe.throw(
-			_("Missing E2E source docs for standard handler keys: {0}").format(
-				", ".join(missing_source_keys)
-			)
+			_("Missing E2E source docs for standard handler keys: {0}").format(", ".join(missing_source_keys))
 		)
 
 	flow = frappe.get_doc(
@@ -450,9 +448,8 @@ def _prepare_standard_handler_source_docs(
 	company = base_po.company
 	item_code = base_po.items[0].item_code
 	supplier = (base_po.supplier or "").strip()
-	target_warehouse = (
-		(base_po.items[0].warehouse or "").strip()
-		or _ensure_warehouse(f"_Test E2E Target Warehouse {run_id}", company)
+	target_warehouse = (base_po.items[0].warehouse or "").strip() or _ensure_warehouse(
+		f"_Test E2E Target Warehouse {run_id}", company
 	)
 	_ensure_purchase_order_item_warehouse(base_po, target_warehouse)
 	cost_center = _get_company_cost_center(company)
@@ -869,13 +866,17 @@ def _ensure_warehouse(warehouse_name: str, company: str) -> str:
 	)
 	if existing_name:
 		return existing_name
-	return frappe.get_doc(
-		{
-			"doctype": "Warehouse",
-			"warehouse_name": warehouse_name,
-			"company": company,
-		}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Warehouse",
+				"warehouse_name": warehouse_name,
+				"company": company,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _ensure_customer(*, run_id: str) -> str:
@@ -885,15 +886,19 @@ def _ensure_customer(*, run_id: str) -> str:
 		return existing
 	customer_group = frappe.db.get_value("Customer Group", {}, "name") or "All Customer Groups"
 	territory = frappe.db.get_value("Territory", {}, "name") or "All Territories"
-	return frappe.get_doc(
-		{
-			"doctype": "Customer",
-			"customer_name": customer_name,
-			"customer_group": customer_group,
-			"territory": territory,
-			"customer_type": "Company",
-		}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Customer",
+				"customer_name": customer_name,
+				"customer_group": customer_group,
+				"territory": territory,
+				"customer_type": "Company",
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _ensure_item(
@@ -910,23 +915,27 @@ def _ensure_item(
 
 	uom = frappe.db.get_value("UOM", {}, "name") or "Nos"
 	item_group = frappe.db.get_value("Item Group", {}, "name") or "All Item Groups"
-	return frappe.get_doc(
-		{
-			"doctype": "Item",
-			"item_code": item_code,
-			"item_name": item_code,
-			"item_group": item_group,
-			"stock_uom": uom,
-			"is_stock_item": is_stock_item,
-			"is_sub_contracted_item": is_sub_contracted_item if is_stock_item else 0,
-			"item_defaults": [
-				{
-					"company": company,
-					"default_warehouse": warehouse,
-				}
-			],
-		}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Item",
+				"item_code": item_code,
+				"item_name": item_code,
+				"item_group": item_group,
+				"stock_uom": uom,
+				"is_stock_item": is_stock_item,
+				"is_sub_contracted_item": is_sub_contracted_item if is_stock_item else 0,
+				"item_defaults": [
+					{
+						"company": company,
+						"default_warehouse": warehouse,
+					}
+				],
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _ensure_item_default_supplier(*, item_code: str, company: str, supplier: str) -> None:
@@ -943,16 +952,20 @@ def _ensure_item_default_supplier(*, item_code: str, company: str, supplier: str
 		"name",
 	)
 	if not row_name:
-		row_name = frappe.get_doc(
-			{
-				"doctype": "Item Default",
-				"parent": item_code,
-				"parenttype": "Item",
-				"parentfield": "item_defaults",
-				"company": company,
-				"default_supplier": supplier,
-			}
-		).insert(ignore_permissions=True).name
+		row_name = (
+			frappe.get_doc(
+				{
+					"doctype": "Item Default",
+					"parent": item_code,
+					"parenttype": "Item",
+					"parentfield": "item_defaults",
+					"company": company,
+					"default_supplier": supplier,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 	else:
 		frappe.db.set_value(
 			"Item Default",
@@ -1012,19 +1025,23 @@ def _ensure_subcontracting_bom(
 
 	fg_uom = frappe.db.get_value("Item", fg_item, "stock_uom") or "Nos"
 	service_uom = frappe.db.get_value("Item", service_item, "stock_uom") or fg_uom
-	return frappe.get_doc(
-		{
-			"doctype": "Subcontracting BOM",
-			"is_active": 1,
-			"finished_good": fg_item,
-			"finished_good_qty": 1,
-			"finished_good_uom": fg_uom,
-			"finished_good_bom": finished_good_bom,
-			"service_item": service_item,
-			"service_item_qty": 1,
-			"service_item_uom": service_uom,
-		}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Subcontracting BOM",
+				"is_active": 1,
+				"finished_good": fg_item,
+				"finished_good_qty": 1,
+				"finished_good_uom": fg_uom,
+				"finished_good_bom": finished_good_bom,
+				"service_item": service_item,
+				"service_item_qty": 1,
+				"service_item_uom": service_uom,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _ensure_default_bom(
@@ -1123,14 +1140,18 @@ def _ensure_transit_warehouse(*, company: str, run_id: str) -> str:
 		"name",
 	)
 	if not transit_warehouse:
-		transit_warehouse = frappe.get_doc(
-			{
-				"doctype": "Warehouse",
-				"warehouse_name": f"Transit {run_id}",
-				"warehouse_type": "Transit",
-				"company": company,
-			}
-		).insert(ignore_permissions=True).name
+		transit_warehouse = (
+			frappe.get_doc(
+				{
+					"doctype": "Warehouse",
+					"warehouse_name": f"Transit {run_id}",
+					"warehouse_type": "Transit",
+					"company": company,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	if not frappe.db.get_value("Company", company, "default_in_transit_warehouse"):
 		frappe.db.set_value(

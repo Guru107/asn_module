@@ -37,7 +37,8 @@ def material_request_to_rfq(source_doctype: str, source_name: str, payload: dict
 	doc = make_request_for_quotation(source_name)
 	if supplier:
 		existing_suppliers = {
-			(str(getattr(row, "supplier", "") or "")).strip() for row in list(getattr(doc, "suppliers", []) or [])
+			(str(getattr(row, "supplier", "") or "")).strip()
+			for row in list(getattr(doc, "suppliers", []) or [])
 		}
 		if supplier not in existing_suppliers and hasattr(doc, "append"):
 			doc.append("suppliers", {"supplier": supplier})
@@ -209,8 +210,7 @@ def _resolve_material_request_supplier(material_request: str) -> str:
 	if len(suppliers) > 1:
 		frappe.throw(
 			_(
-				"Material Request {0} resolves to multiple suppliers ({1}). "
-				"Provide supplier in payload."
+				"Material Request {0} resolves to multiple suppliers ({1}). Provide supplier in payload."
 			).format(material_request, ", ".join(sorted(suppliers)))
 		)
 

@@ -2,11 +2,11 @@ context("Barcode Process Flow nightly — standard handler coverage", () => {
 	let matrix;
 
 	before(() => {
-		cy.seed_context("asn_module.utils.cypress_helpers.seed_standard_handler_dispatch_matrix").then(
-			(result) => {
-				matrix = result;
-			}
-		);
+		cy.seed_context(
+			"asn_module.utils.cypress_helpers.seed_standard_handler_dispatch_matrix"
+		).then((result) => {
+			matrix = result;
+		});
 	});
 
 	it("executes all supported standard handlers through scan dispatch", () => {
@@ -49,7 +49,9 @@ context("Barcode Process Flow nightly — standard handler coverage", () => {
 			device_info: "Cypress",
 		}).then((payload) => {
 			expect(payload.ok).to.eq(false);
-			expect(payload.error).to.include("No eligible Barcode Process Flow step matched scan action");
+			expect(payload.error).to.include(
+				"No eligible Barcode Process Flow step matched scan action"
+			);
 		});
 	});
 });

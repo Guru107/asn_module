@@ -286,23 +286,27 @@ class TestFlowHandlers(UnitTestCase):
 		)
 		self.assertEqual(result["doctype"], "Subcontracting Receipt")
 
-		with patch(
-			"asn_module.barcode_process_flow.handlers.frappe.get_doc",
-			return_value=SimpleNamespace(
-				subcontracting_order="",
-				items=[SimpleNamespace(purchase_order="PO-1")],
+		with (
+			patch(
+				"asn_module.barcode_process_flow.handlers.frappe.get_doc",
+				return_value=SimpleNamespace(
+					subcontracting_order="",
+					items=[SimpleNamespace(purchase_order="PO-1")],
+				),
 			),
-		), patch(
-			"asn_module.barcode_process_flow.handlers.frappe.get_all",
-			return_value=[{"name": "SCO-2"}],
-		), patch(
-			"asn_module.handlers.subcontracting.create_receipt_from_subcontracting_order",
-			return_value={
-				"doctype": "Subcontracting Receipt",
-				"name": "SCR-2",
-				"url": "/app/subcontracting-receipt/SCR-2",
-			},
-		) as create_receipt_from_po:
+			patch(
+				"asn_module.barcode_process_flow.handlers.frappe.get_all",
+				return_value=[{"name": "SCO-2"}],
+			),
+			patch(
+				"asn_module.handlers.subcontracting.create_receipt_from_subcontracting_order",
+				return_value={
+					"doctype": "Subcontracting Receipt",
+					"name": "SCR-2",
+					"url": "/app/subcontracting-receipt/SCR-2",
+				},
+			) as create_receipt_from_po,
+		):
 			fallback_result = handlers.create_subcontracting_receipt_from_asn("ASN", "ASN-2", {})
 		create_receipt_from_po.assert_called_once_with(
 			source_doctype="Subcontracting Order",
@@ -352,9 +356,7 @@ class TestFlowHandlers(UnitTestCase):
 				handlers._resolve_material_request_supplier("MR-1")
 
 	def test_internal_contract_helpers(self):
-		self.assertEqual(
-			handlers._doc_contract("Purchase Order", "PO-1")["url"], "/app/purchase_order/PO-1"
-		)
+		self.assertEqual(handlers._doc_contract("Purchase Order", "PO-1")["url"], "/app/purchase_order/PO-1")
 		doc = SimpleNamespace(name="", doctype="Purchase Order")
 		doc.is_new = lambda: True
 		doc.insert = lambda **_: setattr(doc, "name", "PO-2")
