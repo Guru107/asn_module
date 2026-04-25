@@ -445,7 +445,9 @@ class TestRuntime(UnitTestCase):
 			),
 			patch("asn_module.barcode_process_flow.runtime.rules.evaluate_rule", return_value=False),
 		):
-			self.assertFalse(runtime._is_condition_satisfied(SimpleNamespace(condition="R1"), SimpleNamespace()))
+			self.assertFalse(
+				runtime._is_condition_satisfied(SimpleNamespace(condition="R1"), SimpleNamespace())
+			)
 
 		self.assertEqual(
 			runtime._doc_contract(SimpleNamespace(doctype="Purchase Receipt", name="PR-1"))["url"],

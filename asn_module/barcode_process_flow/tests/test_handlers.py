@@ -240,7 +240,9 @@ class TestFlowHandlers(UnitTestCase):
 				return_value=doc_transit,
 			) as make_transit_single,
 		):
-			result_transit = handlers.material_request_to_in_transit_stock_entry("Material Request", "MR-1", {})
+			result_transit = handlers.material_request_to_in_transit_stock_entry(
+				"Material Request", "MR-1", {}
+			)
 		make_transit_single.assert_called_once_with("MR-1", "Transit - TCPL")
 		self.assertEqual(result_transit["name"], "STE-4")
 
@@ -382,7 +384,7 @@ class TestFlowHandlers(UnitTestCase):
 					items=[SimpleNamespace(item_code="ITEM-1"), SimpleNamespace(item_code="ITEM-2")],
 				),
 			),
-				patch(
+			patch(
 				"asn_module.barcode_process_flow.handlers.frappe.get_all",
 				side_effect=[
 					[],

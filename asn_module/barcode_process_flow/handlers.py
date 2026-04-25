@@ -242,10 +242,9 @@ def _resolve_material_request_supplier(material_request: str) -> str:
 		default_suppliers = default_suppliers_by_item.get(item_code, set())
 		if len(default_suppliers) > 1:
 			frappe.throw(
-				_(
-					"Item {0} has multiple Item Default suppliers ({1}). "
-					"Provide supplier in payload."
-				).format(item_code, ", ".join(sorted(default_suppliers)))
+				_("Item {0} has multiple Item Default suppliers ({1}). Provide supplier in payload.").format(
+					item_code, ", ".join(sorted(default_suppliers))
+				)
 			)
 		if len(default_suppliers) == 1:
 			suppliers.add(next(iter(default_suppliers)))

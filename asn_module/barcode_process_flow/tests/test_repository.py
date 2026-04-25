@@ -82,6 +82,7 @@ class TestRepository(UnitTestCase):
 
 	def test_asn_resolves_company_from_linked_purchase_order_for_flow_scope(self):
 		source = SimpleNamespace(doctype="ASN", name="ASN-0001", supplier="", company="")
+
 		def _mock_get_all(doctype, *args, **kwargs):
 			if doctype == "ASN Item":
 				return [{"purchase_order": "PO-0001"}]
@@ -122,6 +123,7 @@ class TestRepository(UnitTestCase):
 
 	def test_asn_company_scope_mismatch_skips_flow(self):
 		source = SimpleNamespace(doctype="ASN", name="ASN-0001", supplier="", company="")
+
 		def _mock_get_all(doctype, *args, **kwargs):
 			if doctype == "ASN Item":
 				return [{"purchase_order": "PO-0001"}]

@@ -119,16 +119,12 @@ def get_active_steps_for_source(source_doc: Any, *, action_key: str | None = Non
 		rows.append(
 			StepRecord(
 				flow_name=flow_name,
-				flow_label=(
-					(_field_value(flow, "flow_name") or _field_value(flow, "name") or "").strip()
-				),
+				flow_label=((_field_value(flow, "flow_name") or _field_value(flow, "name") or "").strip()),
 				step_name=step_name,
 				label=((_field_value(step, "label") or "").strip() or f"{from_doctype} -> {to_doctype}"),
 				from_doctype=from_doctype,
 				to_doctype=to_doctype,
-				execution_mode=(
-					(_field_value(step, "execution_mode") or "Mapping").strip() or "Mapping"
-				),
+				execution_mode=((_field_value(step, "execution_mode") or "Mapping").strip() or "Mapping"),
 				mapping_set=(_field_value(step, "mapping_set") or "").strip() or None,
 				server_script=(_field_value(step, "server_script") or "").strip() or None,
 				condition=(_field_value(step, "condition") or "").strip() or None,
