@@ -89,14 +89,26 @@ def material_request_to_in_transit_stock_entry(source_doctype: str, source_name:
 			frappe.db.get_value("Company", mr.company, "default_in_transit_warehouse") or ""
 		).strip()
 	if not in_transit_warehouse:
-		in_transit_warehouse = (
-			frappe.db.get_value(
-				"Warehouse",
-				{"company": mr.company, "warehouse_type": "Transit"},
-				"name",
+		transit_warehouses = frappe.get_all(
+			"Warehouse",
+			filters={
+				"company": mr.company,
+				"warehouse_type": "Transit",
+				"is_group": 0,
+			},
+			pluck="name",
+			order_by="name asc",
+			limit_page_length=2,
+		)
+		if len(transit_warehouses) == 1:
+			in_transit_warehouse = (transit_warehouses[0] or "").strip()
+		elif len(transit_warehouses) > 1:
+			frappe.throw(
+				_(
+					"Multiple Transit warehouses found for company {0}. "
+					"Set default In Transit Warehouse on Company or pass in_transit_warehouse in payload."
+				).format(mr.company)
 			)
-			or ""
-		).strip()
 	if not in_transit_warehouse:
 		frappe.throw(_("In Transit Warehouse is required for in-transit stock entry"))
 	doc = make_in_transit_stock_entry(source_name, in_transit_warehouse)
@@ -189,23 +201,65 @@ def _resolve_material_request_supplier(material_request: str) -> str:
 	if not item_codes:
 		return ""
 
-	suppliers = set()
+	item_defaults = frappe.get_all(
+		"Item Default",
+		filters={
+			"parenttype": "Item",
+			"parent": ["in", item_codes],
+			"company": mr.company,
+			"default_supplier": ["!=", ""],
+		},
+		fields=["parent", "default_supplier"],
+		order_by="parent asc, default_supplier asc",
+	)
+	default_suppliers_by_item: dict[str, set[str]] = {}
+	for row in item_defaults:
+		item_code = (row.get("parent") or "").strip()
+		supplier = (row.get("default_supplier") or "").strip()
+		if not item_code or not supplier:
+			continue
+		default_suppliers_by_item.setdefault(item_code, set()).add(supplier)
+
+	item_supplier_rows = frappe.get_all(
+		"Item Supplier",
+		filters={
+			"parent": ["in", item_codes],
+			"supplier": ["!=", ""],
+		},
+		fields=["parent", "supplier"],
+		order_by="parent asc, supplier asc",
+	)
+	item_suppliers_by_item: dict[str, set[str]] = {}
+	for row in item_supplier_rows:
+		item_code = (row.get("parent") or "").strip()
+		supplier = (row.get("supplier") or "").strip()
+		if not item_code or not supplier:
+			continue
+		item_suppliers_by_item.setdefault(item_code, set()).add(supplier)
+
+	suppliers: set[str] = set()
 	for item_code in item_codes:
-		supplier = (
-			frappe.db.get_value(
-				"Item Default",
-				{
-					"parent": item_code,
-					"parenttype": "Item",
-					"company": mr.company,
-				},
-				"default_supplier",
+		default_suppliers = default_suppliers_by_item.get(item_code, set())
+		if len(default_suppliers) > 1:
+			frappe.throw(
+				_(
+					"Item {0} has multiple Item Default suppliers ({1}). "
+					"Provide supplier in payload."
+				).format(item_code, ", ".join(sorted(default_suppliers)))
 			)
-			or frappe.db.get_value("Item Supplier", {"parent": item_code}, "supplier")
-			or ""
-		).strip()
-		if supplier:
-			suppliers.add(supplier)
+		if len(default_suppliers) == 1:
+			suppliers.add(next(iter(default_suppliers)))
+			continue
+
+		item_suppliers = item_suppliers_by_item.get(item_code, set())
+		if len(item_suppliers) > 1:
+			frappe.throw(
+				_(
+					"Item {0} has multiple suppliers ({1}). Provide supplier in payload or Item Default."
+				).format(item_code, ", ".join(sorted(item_suppliers)))
+			)
+		if len(item_suppliers) == 1:
+			suppliers.add(next(iter(item_suppliers)))
 
 	if len(suppliers) > 1:
 		frappe.throw(

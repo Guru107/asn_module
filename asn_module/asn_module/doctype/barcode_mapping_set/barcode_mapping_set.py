@@ -79,7 +79,7 @@ def search_mappable_docfields(
 		start=start,
 		page_len=page_len,
 	)
-	return [[row[2], row[1]] for row in rows]
+	return [[row[0], row[1]] for row in rows]
 
 
 @frappe.whitelist()

@@ -214,14 +214,18 @@ def _pick_winners(steps: list[repository.StepRecord]) -> list[repository.StepRec
 
 
 def _is_condition_satisfied(step: repository.StepRecord, source_doc: Any) -> bool:
-	rule = repository.get_rule(step.condition)
-	if not rule:
+	condition_name = (step.condition or "").strip()
+	if not condition_name:
 		return True
+
+	rule = repository.get_rule(condition_name)
+	if not rule:
+		return False
 	return rules.evaluate_rule(source_doc, rule)
 
 
 def _doc_contract(doc: Any) -> dict:
-	route = frappe.scrub(doc.doctype)
+	route = frappe.scrub(doc.doctype).replace("_", "-")
 	return {
 		"doctype": doc.doctype,
 		"name": doc.name,

@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 import frappe
 from frappe import _
@@ -28,7 +29,7 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 			"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
 		}
 
-	asn_items_map = {}
+	pr_asn_item_rows: list[dict[str, Any]] = []
 	pr = frappe.new_doc("Purchase Receipt")
 	pr.supplier = asn.supplier
 	pr.asn = asn.name
@@ -53,13 +54,28 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 				"purchase_order_item": asn_item.purchase_order_item,
 			},
 		)
-		asn_items_map[str(pr_item.idx)] = {
-			"asn_item_name": asn_item.name,
-			"original_qty": asn_item.qty,
-		}
+		pr_asn_item_rows.append(
+			{
+				"pr_row": pr_item,
+				"asn_item_name": asn_item.name,
+				"original_qty": asn_item.qty,
+			}
+		)
 
-	pr.asn_items = json.dumps(asn_items_map)
 	pr.insert(ignore_permissions=True)
+
+	asn_items_map: dict[str, dict[str, Any]] = {}
+	for row in pr_asn_item_rows:
+		pr_item = row.get("pr_row")
+		pr_item_name = (getattr(pr_item, "name", "") or "").strip()
+		if not pr_item_name:
+			continue
+		asn_items_map[pr_item_name] = {
+			"asn_item_name": row.get("asn_item_name"),
+			"original_qty": row.get("original_qty"),
+		}
+	pr.asn_items = json.dumps(asn_items_map)
+	pr.db_set("asn_items", pr.asn_items, update_modified=False)
 
 	for asn_item in asn.items:
 		emit_asn_item_transition(
@@ -90,7 +106,8 @@ def on_purchase_receipt_submit(doc, method):
 		received_qty_by_asn_item = {}
 
 		for pr_item in doc.items:
-			mapping = asn_items_map.get(str(pr_item.idx))
+			pr_item_name = (getattr(pr_item, "name", "") or "").strip()
+			mapping = asn_items_map.get(pr_item_name)
 			if not mapping:
 				continue
 

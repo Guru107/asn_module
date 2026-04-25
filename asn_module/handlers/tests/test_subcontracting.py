@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 import frappe
+from frappe.model.document import Document
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import nowdate
 
@@ -91,9 +92,9 @@ class TestSubcontractingHandlers(FrappeTestCase):
 		bom.submit()
 		return bom.name
 
-	def _make_integration_subcontracting_order(self, company: str | None = None):
-		po = create_purchase_order()
-		company = company or po.company
+	def _make_integration_subcontracting_order(self, company: str | None = None) -> Document:
+		po = create_purchase_order(company=company)
+		company = po.company
 		source_warehouse = self._ensure_warehouse("_Test Subcontract Source Warehouse", company)
 		supplier_warehouse = self._ensure_warehouse("_Test Subcontract Supplier Warehouse", company)
 		for row in po.items:

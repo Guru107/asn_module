@@ -38,18 +38,25 @@ async function refresh_row_field_options(frm) {
 	const sourceAllowed = new Set(sourceOptions);
 	const targetAllowed = new Set(targetOptions);
 	let changed = false;
+	let clearedCount = 0;
 	for (const row of frm.doc.rows || []) {
 		if (row.source_field && !sourceAllowed.has(row.source_field)) {
 			row.source_field = "";
 			changed = true;
+			clearedCount += 1;
 		}
 		if (row.target_field && !targetAllowed.has(row.target_field)) {
 			row.target_field = "";
 			changed = true;
+			clearedCount += 1;
 		}
 	}
 	if (changed) {
 		frm.dirty();
+		frappe.show_alert({
+			message: __("Cleared {0} invalid mapping field value(s).", [clearedCount]),
+			indicator: "orange",
+		});
 	}
 	frm.refresh_field("rows");
 }

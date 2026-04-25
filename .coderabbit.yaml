@@ -36,6 +36,9 @@ reviews:
     - path: ".github/workflows/**/*.yml"
       instructions: |
         - Review CI safety: least-privilege permissions, pinned actions versions, and secure shell steps.
+    - path: ".github/workflows/**/*.yaml"
+      instructions: |
+        - Review CI safety: least-privilege permissions, pinned actions versions, and secure shell steps.
 
 chat:
   auto_reply: true

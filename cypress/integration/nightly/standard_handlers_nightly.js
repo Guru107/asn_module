@@ -44,7 +44,7 @@ context("Barcode Process Flow nightly — standard handler coverage", () => {
 		expect(matrix.negative_cases).to.be.an("array").and.have.length.greaterThan(0);
 		const negativeCase = matrix.negative_cases[0];
 
-		cy.seed_context("asn_module.utils.cypress_helpers.dispatch_scan_for_test", {
+		cy.call("asn_module.utils.cypress_helpers.dispatch_scan_for_test", {
 			code: negativeCase.scan_code,
 			device_info: "Cypress",
 		}).then((payload) => {

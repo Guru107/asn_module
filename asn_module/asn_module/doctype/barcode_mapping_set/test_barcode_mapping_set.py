@@ -23,17 +23,17 @@ class TestBarcodeMappingSetHelpers(TestCase):
 				"asn_module.asn_module.doctype.barcode_mapping_set.barcode_mapping_set.frappe.db.sql",
 				return_value=[["ASN.supplier", "Header :: supplier — Supplier", "DOCFIELD-1"]],
 			) as sql,
-		):
-			rows = barcode_mapping_set.search_mappable_docfields(
+			):
+				rows = barcode_mapping_set.search_mappable_docfields(
 				"DocField",
 				"supp",
 				"fieldname",
 				0,
 				20,
 				filters={"parent_doctype": "ASN"},
-			)
+				)
 
-		self.assertEqual(rows, [["DOCFIELD-1", "Header :: supplier — Supplier"]])
+		self.assertEqual(rows, [["ASN.supplier", "Header :: supplier — Supplier"]])
 		params = sql.call_args.args[1]
 		self.assertEqual(params["parents"], ("ASN", "ASN Item"))
 		self.assertEqual(params["parent_doctype"], "ASN")

@@ -56,47 +56,90 @@ def get_active_steps_for_source(source_doc: Any, *, action_key: str | None = Non
 	normalized_action_key = (action_key or "").strip()
 
 	context = _build_context(source_doc)
-	flow_names = frappe.get_all("Barcode Process Flow", filters={"is_active": 1}, pluck="name")
+	flows = frappe.get_all(
+		"Barcode Process Flow",
+		filters={"is_active": 1},
+		fields=["name", "flow_name", "company"],
+	)
+	if not flows:
+		return []
+
+	active_flows = [flow for flow in flows if _flow_matches_context(flow, context)]
+	if not active_flows:
+		return []
+
+	flow_by_name = {
+		(_field_value(flow, "name") or "").strip(): flow
+		for flow in active_flows
+		if (_field_value(flow, "name") or "").strip()
+	}
+	if not flow_by_name:
+		return []
+
+	step_rows = frappe.get_all(
+		"Flow Step",
+		filters={
+			"parenttype": "Barcode Process Flow",
+			"parent": ["in", sorted(flow_by_name)],
+			"is_active": 1,
+			"from_doctype": source_doctype,
+		},
+		fields=[
+			"name",
+			"parent",
+			"label",
+			"from_doctype",
+			"to_doctype",
+			"execution_mode",
+			"mapping_set",
+			"server_script",
+			"condition",
+			"priority",
+			"generate_next_barcode",
+			"generation_mode",
+			"scan_action_key",
+		],
+		order_by="parent asc, idx asc",
+	)
+
 	rows: list[StepRecord] = []
-	for flow_name in flow_names:
-		flow = frappe.get_doc("Barcode Process Flow", flow_name)
-		if not _flow_matches_context(flow, context):
+	for step in step_rows:
+		flow_name = (_field_value(step, "parent") or "").strip()
+		flow = flow_by_name.get(flow_name)
+		if not flow:
 			continue
-		for step in flow.steps or []:
-			if cint(getattr(step, "is_active", 1)) != 1:
-				continue
-			if (getattr(step, "from_doctype", "") or "").strip() != source_doctype:
-				continue
 
-			step_key = _step_scan_key(step)
-			if normalized_action_key and normalized_action_key not in {
-				step_key,
-				(getattr(step, "name", "") or "").strip(),
-			}:
-				continue
+		step_key = _step_scan_key(step)
+		step_name = (_field_value(step, "name") or "").strip()
+		if normalized_action_key and normalized_action_key not in {step_key, step_name}:
+			continue
 
-			rows.append(
-				StepRecord(
-					flow_name=flow.name,
-					flow_label=(flow.flow_name or flow.name),
-					step_name=(step.name or "").strip(),
-					label=((step.label or "").strip() or f"{step.from_doctype} -> {step.to_doctype}"),
-					from_doctype=(step.from_doctype or "").strip(),
-					to_doctype=(step.to_doctype or "").strip(),
-					execution_mode=(
-						(getattr(step, "execution_mode", "Mapping") or "Mapping").strip() or "Mapping"
-					),
-					mapping_set=(getattr(step, "mapping_set", "") or "").strip() or None,
-					server_script=(getattr(step, "server_script", "") or "").strip() or None,
-					condition=(getattr(step, "condition", "") or "").strip() or None,
-					priority=cint(getattr(step, "priority", 0) or 0),
-					generate_next_barcode=bool(cint(getattr(step, "generate_next_barcode", 0) or 0)),
-					generation_mode=(
-						(getattr(step, "generation_mode", "hybrid") or "hybrid").strip().lower() or "hybrid"
-					),
-					scan_action_key=step_key,
-				)
+		from_doctype = (_field_value(step, "from_doctype") or "").strip()
+		to_doctype = (_field_value(step, "to_doctype") or "").strip()
+		rows.append(
+			StepRecord(
+				flow_name=flow_name,
+				flow_label=(
+					(_field_value(flow, "flow_name") or _field_value(flow, "name") or "").strip()
+				),
+				step_name=step_name,
+				label=((_field_value(step, "label") or "").strip() or f"{from_doctype} -> {to_doctype}"),
+				from_doctype=from_doctype,
+				to_doctype=to_doctype,
+				execution_mode=(
+					(_field_value(step, "execution_mode") or "Mapping").strip() or "Mapping"
+				),
+				mapping_set=(_field_value(step, "mapping_set") or "").strip() or None,
+				server_script=(_field_value(step, "server_script") or "").strip() or None,
+				condition=(_field_value(step, "condition") or "").strip() or None,
+				priority=cint(_field_value(step, "priority") or 0),
+				generate_next_barcode=bool(cint(_field_value(step, "generate_next_barcode") or 0)),
+				generation_mode=(
+					(_field_value(step, "generation_mode") or "hybrid").strip().lower() or "hybrid"
+				),
+				scan_action_key=step_key,
 			)
+		)
 
 	rows.sort(key=lambda row: (-row.priority, row.flow_name, row.label, row.step_name))
 	return rows
@@ -119,11 +162,35 @@ def get_step_by_name(step_name: str | None):
 	return step
 
 
+def has_conditioned_step_for_source_doctype(source_doctype: str | None) -> bool:
+	doctype = (source_doctype or "").strip()
+	if not doctype:
+		return False
+
+	active_flow_names = frappe.get_all("Barcode Process Flow", filters={"is_active": 1}, pluck="name")
+	if not active_flow_names:
+		return False
+
+	rows = frappe.get_all(
+		"Flow Step",
+		filters={
+			"parenttype": "Barcode Process Flow",
+			"parent": ["in", active_flow_names],
+			"is_active": 1,
+			"from_doctype": doctype,
+			"condition": ["!=", ""],
+		},
+		fields=["name"],
+		limit_page_length=1,
+	)
+	return bool(rows)
+
+
 def _step_scan_key(step: Any) -> str:
-	key = (getattr(step, "scan_action_key", "") or "").strip()
+	key = (_field_value(step, "scan_action_key") or "").strip()
 	if key:
 		return key
-	return (getattr(step, "name", "") or "").strip()
+	return (_field_value(step, "name") or "").strip()
 
 
 def _build_context(doc: Any) -> dict[str, str | None]:
@@ -171,9 +238,15 @@ def _first_linked_purchase_order(doc: Any, docname: str) -> str | None:
 
 def _flow_matches_context(flow: Any, context: dict[str, str | None]) -> bool:
 	for fieldname in ("company",):
-		flow_value = (getattr(flow, fieldname, "") or "").strip()
+		flow_value = (_field_value(flow, fieldname) or "").strip()
 		if not flow_value:
 			continue
 		if flow_value != (context.get(fieldname) or ""):
 			return False
 	return True
+
+
+def _field_value(source: Any, fieldname: str) -> Any:
+	if isinstance(source, dict):
+		return source.get(fieldname)
+	return getattr(source, fieldname, None)

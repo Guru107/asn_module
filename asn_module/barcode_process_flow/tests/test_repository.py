@@ -48,19 +48,32 @@ class TestRepository(UnitTestCase):
 
 	def test_flow_step_returns_rows_with_from_and_to_doctype(self):
 		source = SimpleNamespace(doctype="ASN", supplier="", company="")
-		flow = SimpleNamespace(
-			name="FLOW-1",
-			flow_name="Inbound",
-			company="",
-			steps=[
-				SimpleNamespace(
-					name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label=""
-				)
-			],
-		)
+
+		def _mock_get_all(doctype, *args, **kwargs):
+			if doctype == "Barcode Process Flow":
+				return [{"name": "FLOW-1", "flow_name": "Inbound", "company": ""}]
+			if doctype == "Flow Step":
+				return [
+					{
+						"name": "STEP-1",
+						"parent": "FLOW-1",
+						"label": "",
+						"from_doctype": "ASN",
+						"to_doctype": "Purchase Receipt",
+						"execution_mode": "Mapping",
+						"mapping_set": "MAP-1",
+						"server_script": "",
+						"condition": "",
+						"priority": 0,
+						"generate_next_barcode": 0,
+						"generation_mode": "hybrid",
+						"scan_action_key": "",
+					}
+				]
+			return []
+
 		with (
-			patch("asn_module.barcode_process_flow.repository.frappe.get_all", return_value=["FLOW-1"]),
-			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=flow),
+			patch("asn_module.barcode_process_flow.repository.frappe.get_all", side_effect=_mock_get_all),
 		):
 			rows = repository.get_active_steps_for_source(source)
 		self.assertEqual(len(rows), 1)
@@ -69,27 +82,33 @@ class TestRepository(UnitTestCase):
 
 	def test_asn_resolves_company_from_linked_purchase_order_for_flow_scope(self):
 		source = SimpleNamespace(doctype="ASN", name="ASN-0001", supplier="", company="")
-		flow = SimpleNamespace(
-			name="FLOW-1",
-			flow_name="Inbound",
-			company="TCPL",
-			steps=[
-				SimpleNamespace(
-					name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label=""
-				)
-			],
-		)
-
 		def _mock_get_all(doctype, *args, **kwargs):
 			if doctype == "ASN Item":
 				return [{"purchase_order": "PO-0001"}]
 			if doctype == "Barcode Process Flow":
-				return ["FLOW-1"]
+				return [{"name": "FLOW-1", "flow_name": "Inbound", "company": "TCPL"}]
+			if doctype == "Flow Step":
+				return [
+					{
+						"name": "STEP-1",
+						"parent": "FLOW-1",
+						"label": "",
+						"from_doctype": "ASN",
+						"to_doctype": "Purchase Receipt",
+						"execution_mode": "Mapping",
+						"mapping_set": "",
+						"server_script": "",
+						"condition": "",
+						"priority": 0,
+						"generate_next_barcode": 0,
+						"generation_mode": "hybrid",
+						"scan_action_key": "",
+					}
+				]
 			return []
 
 		with (
 			patch("asn_module.barcode_process_flow.repository.frappe.get_all", side_effect=_mock_get_all),
-			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=flow),
 			patch(
 				"asn_module.barcode_process_flow.repository.frappe.db.get_value",
 				return_value="TCPL",
@@ -103,27 +122,33 @@ class TestRepository(UnitTestCase):
 
 	def test_asn_company_scope_mismatch_skips_flow(self):
 		source = SimpleNamespace(doctype="ASN", name="ASN-0001", supplier="", company="")
-		flow = SimpleNamespace(
-			name="FLOW-1",
-			flow_name="Inbound",
-			company="TCPL",
-			steps=[
-				SimpleNamespace(
-					name="STEP-1", is_active=1, from_doctype="ASN", to_doctype="Purchase Receipt", label=""
-				)
-			],
-		)
-
 		def _mock_get_all(doctype, *args, **kwargs):
 			if doctype == "ASN Item":
 				return [{"purchase_order": "PO-0001"}]
 			if doctype == "Barcode Process Flow":
-				return ["FLOW-1"]
+				return [{"name": "FLOW-1", "flow_name": "Inbound", "company": "TCPL"}]
+			if doctype == "Flow Step":
+				return [
+					{
+						"name": "STEP-1",
+						"parent": "FLOW-1",
+						"label": "",
+						"from_doctype": "ASN",
+						"to_doctype": "Purchase Receipt",
+						"execution_mode": "Mapping",
+						"mapping_set": "",
+						"server_script": "",
+						"condition": "",
+						"priority": 0,
+						"generate_next_barcode": 0,
+						"generation_mode": "hybrid",
+						"scan_action_key": "",
+					}
+				]
 			return []
 
 		with (
 			patch("asn_module.barcode_process_flow.repository.frappe.get_all", side_effect=_mock_get_all),
-			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=flow),
 			patch(
 				"asn_module.barcode_process_flow.repository.frappe.db.get_value",
 				return_value="OTHER-COMPANY",
@@ -135,46 +160,49 @@ class TestRepository(UnitTestCase):
 
 	def test_get_active_steps_filters_by_action_key_and_defaults_scan_key(self):
 		source = SimpleNamespace(doctype="ASN", name="ASN-1", company="")
-		flow = SimpleNamespace(
-			name="FLOW",
-			flow_name="Inbound",
-			company="",
-			steps=[
-				SimpleNamespace(
-					name="STEP-1",
-					is_active=1,
-					from_doctype="ASN",
-					to_doctype="Purchase Receipt",
-					label="",
-					scan_action_key="",
-					execution_mode="Mapping",
-					mapping_set="MAP-1",
-					server_script="",
-					condition="",
-					priority=100,
-					generate_next_barcode=1,
-					generation_mode="hybrid",
-				),
-				SimpleNamespace(
-					name="STEP-2",
-					is_active=1,
-					from_doctype="ASN",
-					to_doctype="Subcontracting Receipt",
-					label="",
-					scan_action_key="asn_to_subcontracting_receipt",
-					execution_mode="Mapping",
-					mapping_set="MAP-1",
-					server_script="",
-					condition="",
-					priority=50,
-					generate_next_barcode=1,
-					generation_mode="runtime",
-				),
-			],
-		)
+		flow_rows = [{"name": "FLOW", "flow_name": "Inbound", "company": ""}]
+		step_rows = [
+			{
+				"name": "STEP-1",
+				"parent": "FLOW",
+				"label": "",
+				"from_doctype": "ASN",
+				"to_doctype": "Purchase Receipt",
+				"scan_action_key": "",
+				"execution_mode": "Mapping",
+				"mapping_set": "MAP-1",
+				"server_script": "",
+				"condition": "",
+				"priority": 100,
+				"generate_next_barcode": 1,
+				"generation_mode": "hybrid",
+			},
+			{
+				"name": "STEP-2",
+				"parent": "FLOW",
+				"label": "",
+				"from_doctype": "ASN",
+				"to_doctype": "Subcontracting Receipt",
+				"scan_action_key": "asn_to_subcontracting_receipt",
+				"execution_mode": "Mapping",
+				"mapping_set": "MAP-1",
+				"server_script": "",
+				"condition": "",
+				"priority": 50,
+				"generate_next_barcode": 1,
+				"generation_mode": "runtime",
+			},
+		]
+
+		def _mock_get_all(doctype, *args, **kwargs):
+			if doctype == "Barcode Process Flow":
+				return flow_rows
+			if doctype == "Flow Step":
+				return step_rows
+			return []
+
 		with (
-			patch("asn_module.barcode_process_flow.repository.frappe.get_all", return_value=["FLOW"]),
-			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=flow),
+			patch("asn_module.barcode_process_flow.repository.frappe.get_all", side_effect=_mock_get_all),
 			patch(
 				"asn_module.barcode_process_flow.repository._build_context", return_value={"company": None}
 			),
@@ -198,26 +226,23 @@ class TestRepository(UnitTestCase):
 	def test_get_active_steps_returns_empty_when_source_doctype_missing(self):
 		self.assertEqual(repository.get_active_steps_for_source(SimpleNamespace(doctype="")), [])
 
-	def test_get_active_steps_skips_inactive_step_rows(self):
+	def test_get_active_steps_queries_only_active_step_rows(self):
 		source = SimpleNamespace(doctype="ASN", name="ASN-1", company="")
-		flow = SimpleNamespace(
-			name="FLOW",
-			flow_name="Inbound",
-			company="",
-			steps=[
-				SimpleNamespace(
-					name="STEP-INACTIVE", is_active=0, from_doctype="ASN", to_doctype="Purchase Receipt"
-				),
-			],
-		)
+		get_all = patch("asn_module.barcode_process_flow.repository.frappe.get_all")
 		with (
-			patch("asn_module.barcode_process_flow.repository.frappe.get_all", return_value=["FLOW"]),
-			patch("asn_module.barcode_process_flow.repository.frappe.get_doc", return_value=flow),
+			get_all as get_all_mock,
 			patch(
 				"asn_module.barcode_process_flow.repository._build_context", return_value={"company": None}
 			),
 		):
+			get_all_mock.side_effect = [
+				[{"name": "FLOW", "flow_name": "Inbound", "company": ""}],
+				[],
+			]
 			self.assertEqual(repository.get_active_steps_for_source(source), [])
+		step_call = get_all_mock.call_args_list[1]
+		self.assertEqual(step_call.args[0], "Flow Step")
+		self.assertEqual(step_call.kwargs["filters"]["is_active"], 1)
 
 	def test_get_step_by_name_paths(self):
 		self.assertIsNone(repository.get_step_by_name(""))
@@ -266,6 +291,19 @@ class TestRepository(UnitTestCase):
 			patch("asn_module.barcode_process_flow.repository.frappe.db.get_value", return_value=1),
 		):
 			self.assertIs(repository.get_step_by_name("STEP-5"), legacy_step_without_is_active)
+
+	def test_has_conditioned_step_for_source_doctype(self):
+		with patch("asn_module.barcode_process_flow.repository.frappe.get_all", return_value=[]):
+			self.assertFalse(repository.has_conditioned_step_for_source_doctype("Purchase Receipt"))
+
+		with patch(
+			"asn_module.barcode_process_flow.repository.frappe.get_all",
+			side_effect=[
+				["FLOW-1"],
+				[{"name": "STEP-1"}],
+			],
+		):
+			self.assertTrue(repository.has_conditioned_step_for_source_doctype("Purchase Receipt"))
 
 	def test_build_context_and_flow_match_helpers(self):
 		self.assertEqual(

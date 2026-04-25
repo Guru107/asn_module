@@ -2,7 +2,7 @@ import sys
 from contextlib import nullcontext
 from types import ModuleType, SimpleNamespace
 from unittest import TestCase
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import frappe
 
@@ -351,3 +351,20 @@ class TestCypressSeedHelpers(TestCase):
 		self.assertEqual(result["pr_name"], "PR-0001")
 		self.assertEqual(result["qi_accepted"], "QI-1")
 		self.assertEqual(result["qi_rejected"], "QI-2")
+
+	def test_deactivate_previous_e2e_standard_handler_flows(self):
+		with (
+			patch(
+				"asn_module.utils.cypress_helpers.frappe.get_all",
+				return_value=[{"name": "FLOW-OLD-1"}, {"name": "FLOW-OLD-2"}],
+			),
+			patch("asn_module.utils.cypress_helpers.frappe.db.set_value") as set_value,
+		):
+			cypress_helpers._deactivate_previous_e2e_standard_handler_flows()
+
+		set_value.assert_has_calls(
+			[
+				call("Barcode Process Flow", "FLOW-OLD-1", "is_active", 0, update_modified=False),
+				call("Barcode Process Flow", "FLOW-OLD-2", "is_active", 0, update_modified=False),
+			]
+		)

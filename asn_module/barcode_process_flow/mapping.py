@@ -44,12 +44,14 @@ def _prepare_mapping_rows(
 	selector_cache: dict[tuple[str, str, str], str],
 ) -> list[dict[str, Any]]:
 	prepared: list[dict[str, Any]] = []
+	docfield_cache = _build_docfield_reference_cache(mapping_rows)
 	for row in mapping_rows or []:
 		target_selector = _selector_from_docfield_reference(
 			docfield_reference=_get_value(row, "target_field"),
 			parent_doctype=target_doctype,
 			side="target",
 			selector_cache=selector_cache,
+			docfield_cache=docfield_cache,
 		)
 		if not target_selector:
 			raise frappe.ValidationError(
@@ -66,6 +68,7 @@ def _prepare_mapping_rows(
 				parent_doctype=source_doctype,
 				side="source",
 				selector_cache=selector_cache,
+				docfield_cache=docfield_cache,
 			)
 			if not source_selector:
 				raise frappe.ValidationError(
@@ -82,6 +85,34 @@ def _prepare_mapping_rows(
 			}
 		)
 	return prepared
+
+
+def _build_docfield_reference_cache(mapping_rows: list[Any]) -> dict[str, tuple[str, str]]:
+	references: set[str] = set()
+	for row in mapping_rows or []:
+		for fieldname in ("source_field", "target_field"):
+			reference = (_get_value(row, fieldname) or "").strip()
+			if not reference or "." in reference:
+				continue
+			references.add(reference)
+
+	if not references:
+		return {}
+
+	rows = frappe.get_all(
+		"DocField",
+		filters={"name": ["in", sorted(references)]},
+		fields=["name", "parent", "fieldname"],
+	)
+	cache: dict[str, tuple[str, str]] = {}
+	for row in rows:
+		name = (row.get("name") or "").strip()
+		parent = (row.get("parent") or "").strip()
+		fieldname = (row.get("fieldname") or "").strip()
+		if not name or not parent or not fieldname:
+			continue
+		cache[name] = (parent, fieldname)
+	return cache
 
 
 def _build_target_items(*, source_doc: Any, item_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -151,6 +182,7 @@ def _selector_from_docfield_reference(
 	parent_doctype: str,
 	side: str,
 	selector_cache: dict[tuple[str, str, str], str],
+	docfield_cache: dict[str, tuple[str, str]] | None = None,
 ) -> str:
 	docfield_key = str(docfield_reference or "").strip()
 	normalized_parent = (parent_doctype or "").strip()
@@ -162,7 +194,10 @@ def _selector_from_docfield_reference(
 	if cache_key in selector_cache:
 		return selector_cache[cache_key]
 
-	field_parent, fieldname = _resolve_docfield_reference(docfield_key)
+	field_parent, fieldname = _resolve_docfield_reference(
+		docfield_key,
+		docfield_cache=docfield_cache,
+	)
 	if not field_parent or not fieldname:
 		selector_cache[cache_key] = ""
 		return ""
@@ -181,13 +216,18 @@ def _selector_from_docfield_reference(
 	return ""
 
 
-def _resolve_docfield_reference(reference: str) -> tuple[str, str]:
+def _resolve_docfield_reference(
+	reference: str, *, docfield_cache: dict[str, tuple[str, str]] | None = None
+) -> tuple[str, str]:
 	reference = (reference or "").strip()
 	if not reference:
 		return "", ""
 	if "." in reference:
 		field_parent, fieldname = [part.strip() for part in reference.split(".", 1)]
 		return field_parent, fieldname
+
+	if docfield_cache and reference in docfield_cache:
+		return docfield_cache[reference]
 
 	row = frappe.db.get_value("DocField", reference, ["parent", "fieldname"], as_dict=True)
 	if not row:

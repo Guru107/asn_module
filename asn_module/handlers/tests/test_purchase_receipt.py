@@ -77,6 +77,25 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			1,
 		)
 
+	def test_stores_asn_item_mapping_by_pr_row_name(self):
+		purchase_order = create_purchase_order_with_fiscal_dates(qty=10)
+		asn = make_test_asn_with_two_items(purchase_order=purchase_order, qty=5)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		result = create_from_asn(
+			source_doctype="ASN",
+			source_name=asn.name,
+			payload={"action": "create_purchase_receipt"},
+		)
+		pr = frappe.get_doc("Purchase Receipt", result["name"])
+		mapping = frappe.parse_json(pr.asn_items or "{}")
+
+		self.assertEqual(set(mapping), {row.name for row in pr.items})
+		mapped_asn_items = {entry.get("asn_item_name") for entry in mapping.values()}
+		self.assertEqual(mapped_asn_items, {row.name for row in asn.items})
+
 	def test_rejects_asn_with_status_received(self):
 		asn = self._make_submitted_asn()
 		frappe.db.set_value("ASN", asn.name, "status", "Received", update_modified=False)

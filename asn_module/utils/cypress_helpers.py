@@ -290,6 +290,8 @@ def seed_standard_handler_dispatch_matrix() -> dict[str, Any]:
 			_("Missing E2E source docs for standard handler keys: {0}").format(", ".join(missing_source_keys))
 		)
 
+	_deactivate_previous_e2e_standard_handler_flows()
+
 	flow = frappe.get_doc(
 		{
 			"doctype": "Barcode Process Flow",
@@ -429,6 +431,22 @@ def dispatch_scan_for_test(code: str, device_info: str = "Cypress") -> dict[str,
 			"ok": False,
 			"error": str(exc),
 		}
+
+
+def _deactivate_previous_e2e_standard_handler_flows() -> None:
+	rows = frappe.get_all(
+		"Barcode Process Flow",
+		filters={
+			"is_active": 1,
+			"flow_name": ["like", "E2E::StandardHandlers::%"],
+		},
+		fields=["name"],
+	)
+	for row in rows:
+		name = (row.get("name") or "").strip()
+		if not name:
+			continue
+		frappe.db.set_value("Barcode Process Flow", name, "is_active", 0, update_modified=False)
 
 
 def _prepare_standard_handler_source_docs(

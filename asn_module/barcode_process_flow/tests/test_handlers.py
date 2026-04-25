@@ -179,6 +179,7 @@ class TestFlowHandlers(UnitTestCase):
 				return_value=SimpleNamespace(company="TCPL"),
 			),
 			patch("asn_module.barcode_process_flow.handlers.frappe.db.get_value", return_value=""),
+			patch("asn_module.barcode_process_flow.handlers.frappe.get_all", return_value=[]),
 		):
 			with self.assertRaises(frappe.ValidationError):
 				handlers.material_request_to_in_transit_stock_entry("Material Request", "MR-1", {})
@@ -210,7 +211,7 @@ class TestFlowHandlers(UnitTestCase):
 			),
 			patch(
 				"asn_module.barcode_process_flow.handlers.frappe.db.get_value",
-				side_effect=["Transit - TCPL", "Transit - TCPL"],
+				return_value="Transit - TCPL",
 			),
 			patch(
 				"erpnext.stock.doctype.material_request.material_request.make_in_transit_stock_entry",
@@ -225,6 +226,37 @@ class TestFlowHandlers(UnitTestCase):
 
 		make_in_transit_fallback.assert_called_once_with("MR-1", "Transit - TCPL")
 		self.assertEqual(result_fallback["name"], "STE-3")
+
+		doc_transit = SimpleNamespace(name="STE-4", doctype="Stock Entry", insert=lambda **_: None)
+		with (
+			patch(
+				"asn_module.barcode_process_flow.handlers.frappe.get_doc",
+				return_value=SimpleNamespace(company="TCPL"),
+			),
+			patch("asn_module.barcode_process_flow.handlers.frappe.db.get_value", return_value=""),
+			patch("asn_module.barcode_process_flow.handlers.frappe.get_all", return_value=["Transit - TCPL"]),
+			patch(
+				"erpnext.stock.doctype.material_request.material_request.make_in_transit_stock_entry",
+				return_value=doc_transit,
+			) as make_transit_single,
+		):
+			result_transit = handlers.material_request_to_in_transit_stock_entry("Material Request", "MR-1", {})
+		make_transit_single.assert_called_once_with("MR-1", "Transit - TCPL")
+		self.assertEqual(result_transit["name"], "STE-4")
+
+		with (
+			patch(
+				"asn_module.barcode_process_flow.handlers.frappe.get_doc",
+				return_value=SimpleNamespace(company="TCPL"),
+			),
+			patch("asn_module.barcode_process_flow.handlers.frappe.db.get_value", return_value=""),
+			patch(
+				"asn_module.barcode_process_flow.handlers.frappe.get_all",
+				return_value=["Transit A - TCPL", "Transit B - TCPL"],
+			),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				handlers.material_request_to_in_transit_stock_entry("Material Request", "MR-1", {})
 
 	def test_material_request_to_work_order(self):
 		with (
@@ -332,8 +364,11 @@ class TestFlowHandlers(UnitTestCase):
 				),
 			),
 			patch(
-				"asn_module.barcode_process_flow.handlers.frappe.db.get_value",
-				return_value="Supp-1",
+				"asn_module.barcode_process_flow.handlers.frappe.get_all",
+				side_effect=[
+					[{"parent": "ITEM-1", "default_supplier": "Supp-1"}],
+					[],
+				],
 			),
 		):
 			self.assertEqual(handlers._resolve_material_request_supplier("MR-1"), "Supp-1")
@@ -347,9 +382,38 @@ class TestFlowHandlers(UnitTestCase):
 					items=[SimpleNamespace(item_code="ITEM-1"), SimpleNamespace(item_code="ITEM-2")],
 				),
 			),
+				patch(
+				"asn_module.barcode_process_flow.handlers.frappe.get_all",
+				side_effect=[
+					[],
+					[
+						{"parent": "ITEM-1", "supplier": "Supp-1"},
+						{"parent": "ITEM-2", "supplier": "Supp-2"},
+					],
+				],
+			),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				handlers._resolve_material_request_supplier("MR-1")
+
+	def test_resolve_material_request_supplier_rejects_multi_supplier_item(self):
+		with (
 			patch(
-				"asn_module.barcode_process_flow.handlers.frappe.db.get_value",
-				side_effect=["Supp-1", "Supp-2"],
+				"asn_module.barcode_process_flow.handlers.frappe.get_doc",
+				return_value=SimpleNamespace(
+					company="TCPL",
+					items=[SimpleNamespace(item_code="ITEM-1")],
+				),
+			),
+			patch(
+				"asn_module.barcode_process_flow.handlers.frappe.get_all",
+				side_effect=[
+					[],
+					[
+						{"parent": "ITEM-1", "supplier": "Supp-1"},
+						{"parent": "ITEM-1", "supplier": "Supp-2"},
+					],
+				],
 			),
 		):
 			with self.assertRaises(frappe.ValidationError):

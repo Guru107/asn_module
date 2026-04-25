@@ -29,6 +29,7 @@ class TestCapabilities(UnitTestCase):
 				from_doctype="Material Request",
 				to_doctype="Purchase Order",
 				source_doc=source_doc,
+				action_key="mr_subcontracting_to_po",
 			)
 		self.assertEqual(
 			handler,
