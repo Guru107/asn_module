@@ -12,8 +12,8 @@
 - Follow best coding practices of the language being used in the project.
 - In case of database operations or query generation always look for the most optimum query plan. Use indexes where available or create new one if it is the most used read path.
 
+---
 
-------------------------------
 ## Testing Approach
 
 ### Unit Tests (Python)
@@ -36,12 +36,14 @@
 ### Coverage
 
 Run the full suite and check coverage before every PR:
+
 ```bash
 bench --site development.localhost run-tests --app asn_module --with-coverage
 ```
+
 Coverage must not drop below **95%**.
 
-------------------------------
+---
 
 ## JavaScript — Frappe Best Practices
 
@@ -159,46 +161,47 @@ const row = `
 	</tr>`;
 ```
 
-------------------------------
+---
+
 ## Technical Specification: DSA Engineering & Problem Solving
 
 ### 1. Algorithmic Mindset
 
-* The "Identify First" Rule: Before writing a single line of code, explicitly understand the problem category (e.g., Divide & Conquer, Greedy, Backtracking with Pruning, or Monotonic Queue).
-* Bottleneck Analysis: Identify the current complexity bottleneck. If the solution is $O(N^2)$, explain why $O(N \log N)$ or $O(N)$ is required based on typical competitive programming constraints ($N = 10^5$).
-* Space-Time Tradeoffs: Always prefer a hash map ($O(N)$ space) to save time ($O(1)$ lookup) unless memory is the primary constraint.
+- The "Identify First" Rule: Before writing a single line of code, explicitly understand the problem category (e.g., Divide & Conquer, Greedy, Backtracking with Pruning, or Monotonic Queue).
+- Bottleneck Analysis: Identify the current complexity bottleneck. If the solution is $O(N^2)$, explain why $O(N \log N)$ or $O(N)$ is required based on typical competitive programming constraints ($N = 10^5$).
+- Space-Time Tradeoffs: Always prefer a hash map ($O(N)$ space) to save time ($O(1)$ lookup) unless memory is the primary constraint.
 
 ### 2. Coding Standards
 
-* Idiomatic Efficiency: Use language-specific optimizations (e.g., collections.deque for $O(1)$ pops in Python, or std::vector::reserve() in C++ to avoid reallocations).
-* Modular Logic: Separate the "Core Algorithm" from "Helper Functions" (like a custom Comparator or Union-Find class) to maintain readability.
-* In-Place Operations: When possible, perform transformations in-place to achieve $O(1)$ auxiliary space.
-
+- Idiomatic Efficiency: Use language-specific optimizations (e.g., collections.deque for $O(1)$ pops in Python, or std::vector::reserve() in C++ to avoid reallocations).
+- Modular Logic: Separate the "Core Algorithm" from "Helper Functions" (like a custom Comparator or Union-Find class) to maintain readability.
+- In-Place Operations: When possible, perform transformations in-place to achieve $O(1)$ auxiliary space.
 
 ## MariaDB Best Practices
 
-------------------------------
+---
+
 ### Core Optimization Principles
 
-   1. I/O Minimization: The fastest query is the one that touches the fewest data pages.
-   2. Leftmost Index Rule: Composite indexes must be utilized from left to right to be effective.
-   3. Sargability: Always write predicates that allow the optimizer to use indexes (e.g., avoid functions on columns in WHERE clauses).
-   4. Buffer Pool Priority: Ensure the working set fits in memory to avoid costly disk reads.
+1. I/O Minimization: The fastest query is the one that touches the fewest data pages.
+2. Leftmost Index Rule: Composite indexes must be utilized from left to right to be effective.
+3. Sargability: Always write predicates that allow the optimizer to use indexes (e.g., avoid functions on columns in WHERE clauses).
+4. Buffer Pool Priority: Ensure the working set fits in memory to avoid costly disk reads.
 
 ### 1. Advanced Indexing Patterns
 
-* Covering Indexes: Include all columns requested in the SELECT to avoid a "Bookmark Lookup" or "Row ID Scan".
-  - Example: ```INDEX(user_id, status, last_login) for SELECT last_login FROM users WHERE user_id = ? AND status = ?```.
-*
-* Prefix Indexing: Use for long VARCHAR or TEXT columns to save space while maintaining selectivity.
-  - Example: ```CREATE INDEX idx_url ON links (url(20));```.
-* Invisible/Ignored Indexes: Test the impact of removing an index without actually dropping it.
-  - Syntax: ```ALTER TABLE t1 ALTER INDEX idx_name INVISIBLE;```.
+- Covering Indexes: Include all columns requested in the SELECT to avoid a "Bookmark Lookup" or "Row ID Scan".
+  - Example: `INDEX(user_id, status, last_login) for SELECT last_login FROM users WHERE user_id = ? AND status = ?`.
+- 
+- Prefix Indexing: Use for long VARCHAR or TEXT columns to save space while maintaining selectivity.
+  - Example: `CREATE INDEX idx_url ON links (url(20));`.
+- Invisible/Ignored Indexes: Test the impact of removing an index without actually dropping it.
+  - Syntax: `ALTER TABLE t1 ALTER INDEX idx_name INVISIBLE;`.
 
 ### 2. Query Execution Analysis
 
-* EXPLAIN ANALYZE: Available in MariaDB 10.9+, this provides actual execution times and row counts vs. estimates.
-* Query Profiling: Use
+- EXPLAIN ANALYZE: Available in MariaDB 10.9+, this provides actual execution times and row counts vs. estimates.
+- Query Profiling: Use
   ```sql
   SET profiling = 1;
   ```
@@ -207,10 +210,8 @@ const row = `
   SHOW PROFILE FOR QUERY N;
   ```
   to see detailed CPU and I/O breakdowns.
-
-* Slow Query Log:
-  * Configure to catch "time bombs"—fast queries that don't use indexes.
-
+- Slow Query Log:
+  - Configure to catch "time bombs"—fast queries that don't use indexes.
     ```sql
     SET GLOBAL slow_query_log = 'ON';
     SET GLOBAL long_query_time = 0.5; -- Catch anything > 500ms
@@ -219,21 +220,23 @@ const row = `
 
 ### 3. Optimizer Control & Hints
 
-* Condition Pushdown: MariaDB excels at pushing conditions into derived tables and even through window functions in newer versions.
-* New-Style Hints: Use expanded hints introduced in MariaDB 10.x for more granular control over join orders and index selection.
-* Example: ```SELECT /*+ BKA(t1) NO_BKA(t2) */ ...``` to control Batched Key Access.
+- Condition Pushdown: MariaDB excels at pushing conditions into derived tables and even through window functions in newer versions.
+- New-Style Hints: Use expanded hints introduced in MariaDB 10.x for more granular control over join orders and index selection.
+- Example: `SELECT /*+ BKA(t1) NO_BKA(t2) */ ...` to control Batched Key Access.
 
 ### 4. System Tuning for Performance
 
-* InnoDB Buffer Pool: Set innodb_buffer_pool_size to 70-80% of system RAM for dedicated DB servers.
-* Thread Pool: Enable for high-concurrency OLTP workloads to reduce context-switching overhead.
-* Config: thread_handling = pool-of-threads.
-* I/O Capacity: Adjust innodb_io_capacity based on storage type (e.g., 200 for HDD, 2000+ for SSD).
+- InnoDB Buffer Pool: Set innodb_buffer_pool_size to 70-80% of system RAM for dedicated DB servers.
+- Thread Pool: Enable for high-concurrency OLTP workloads to reduce context-switching overhead.
+- Config: thread_handling = pool-of-threads.
+- I/O Capacity: Adjust innodb_io_capacity based on storage type (e.g., 200 for HDD, 2000+ for SSD).
 
-------------------------------
+---
+
 ## Example Optimization: From Full Scan to Index Scan
 
 Sub-optimal Query:
+
 ```sql
 -- Bad: Function on indexed column 'created_at' prevents index usage
 SELECT id, amount FROM orders WHERE YEAR(created_at) = 2024;
@@ -249,7 +252,3 @@ WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01';
 ```
 
 Expert Tip: Use pt-query-digest from the Percona Toolkit to aggregate slow query logs and identify the highest-impact bottlenecks.
-
-
-
-
