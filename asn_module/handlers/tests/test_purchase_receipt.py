@@ -155,11 +155,23 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 		class _FakePurchaseReceipt(SimpleNamespace):
 			def __init__(self):
-				super().__init__(items=[], name="PR-UNIT-002")
-
-			def append(self, fieldname, values):
-				self.items.append((fieldname, values))
-				return SimpleNamespace(idx=len(self.items))
+				super().__init__(
+					items=[
+						SimpleNamespace(
+							idx=1,
+							item_code="ITEM-001",
+							purchase_order="PO-001",
+							purchase_order_item="POI-001",
+							warehouse="Stores - TCPL",
+							rate=25,
+							conversion_factor=1,
+						)
+					],
+					name="PR-UNIT-002",
+					company="TCPL",
+					currency="INR",
+					conversion_rate=1,
+				)
 
 			def insert(self, **kwargs):
 				self.insert_kwargs = kwargs
@@ -168,14 +180,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
 			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value=None),
-			patch(
-				"asn_module.handlers.purchase_receipt.frappe.get_all",
-				side_effect=[
-					[SimpleNamespace(name="POI-001", parent="PO-001", warehouse="Stores - TCPL")],
-					[SimpleNamespace(name="PO-001", company="TCPL")],
-				],
-			),
-			patch("asn_module.handlers.purchase_receipt.frappe.new_doc", return_value=pr),
+			patch("asn_module.handlers.purchase_receipt.make_purchase_receipt", return_value=pr) as make_pr,
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
 		):
 			result = create_from_asn("ASN", "ASN-UNIT-002", payload={})
@@ -183,11 +188,15 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(result["name"], "PR-UNIT-002")
 		self.assertEqual(pr.supplier, "Supp-001")
 		self.assertEqual(pr.company, "TCPL")
+		self.assertEqual(pr.currency, "INR")
 		self.assertEqual(pr.supplier_delivery_note, "INV-UNIT-002")
-		self.assertEqual(pr.items[0][1]["purchase_order_item"], "POI-001")
-		self.assertEqual(pr.items[0][1]["warehouse"], "Stores - TCPL")
+		self.assertEqual(pr.items[0].purchase_order_item, "POI-001")
+		self.assertEqual(pr.items[0].warehouse, "Stores - TCPL")
+		self.assertEqual(pr.items[0].qty, 3)
+		self.assertEqual(pr.items[0].amount, 75)
 		self.assertEqual(pr.asn_items, '{"1": {"asn_item_name": "ASN-ITEM-001", "original_qty": 3}}')
 		self.assertEqual(pr.insert_kwargs, {"ignore_permissions": True})
+		make_pr.assert_called_once_with("PO-001", args={"filtered_children": ["POI-001"]})
 		emit.assert_called_once()
 
 	def test_on_purchase_receipt_submit_returns_when_not_linked_to_asn(self):

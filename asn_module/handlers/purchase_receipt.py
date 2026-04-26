@@ -1,6 +1,7 @@
 import json
 
 import frappe
+from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_receipt
 from frappe import _
 from frappe.utils import flt
 
@@ -29,48 +30,10 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 			"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
 		}
 
-	asn_items_map = {}
-	pr = frappe.new_doc("Purchase Receipt")
-	pr.supplier = asn.supplier
-	pr.asn = asn.name
-	# Prefill supplier-facing transport/invoice references on PR draft.
-	pr.supplier_delivery_note = asn.supplier_invoice_no
-	pr.transporter_name = asn.transporter_name
-	pr.lr_no = asn.lr_no
-	pr.lr_date = asn.lr_date
+	purchase_order, purchase_order_items = _get_single_purchase_order(asn)
+	pr = make_purchase_receipt(purchase_order, args={"filtered_children": purchase_order_items})
+	_apply_asn_fields(pr, asn)
 
-	po_item_details = _get_po_item_details(
-		[asn_item.purchase_order_item for asn_item in asn.items if asn_item.purchase_order_item]
-	)
-	po_companies = {details["company"] for details in po_item_details.values() if details.get("company")}
-	if len(po_companies) > 1:
-		frappe.throw(_("ASN {0} contains Purchase Orders from multiple companies").format(source_name))
-	if po_companies:
-		pr.company = po_companies.pop()
-
-	for asn_item in asn.items:
-		po_item_detail = po_item_details.get(asn_item.purchase_order_item, {})
-		pr_item = pr.append(
-			"items",
-			{
-				"item_code": asn_item.item_code,
-				"item_name": asn_item.item_name,
-				"qty": asn_item.qty,
-				"uom": asn_item.uom,
-				"rate": asn_item.rate,
-				"batch_no": asn_item.batch_no,
-				"serial_no": asn_item.serial_nos,
-				"purchase_order": asn_item.purchase_order,
-				"purchase_order_item": asn_item.purchase_order_item,
-				"warehouse": po_item_detail.get("warehouse"),
-			},
-		)
-		asn_items_map[str(pr_item.idx)] = {
-			"asn_item_name": asn_item.name,
-			"original_qty": asn_item.qty,
-		}
-
-	pr.asn_items = json.dumps(asn_items_map)
 	pr.insert(ignore_permissions=True)
 
 	for asn_item in asn.items:
@@ -92,34 +55,104 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	}
 
 
-def _get_po_item_details(purchase_order_items: list[str]) -> dict[str, dict[str, str | None]]:
-	if not purchase_order_items:
-		return {}
+def _get_single_purchase_order(asn) -> tuple[str, list[str]]:
+	purchase_orders = {asn_item.purchase_order for asn_item in asn.items if asn_item.purchase_order}
+	if not purchase_orders:
+		frappe.throw(_("ASN {0} must reference a Purchase Order").format(asn.name))
+	if len(purchase_orders) > 1:
+		frappe.throw(_("ASN {0} can reference only one Purchase Order").format(asn.name))
 
-	po_items = frappe.get_all(
-		"Purchase Order Item",
-		filters={"name": ["in", purchase_order_items]},
-		fields=["name", "parent", "warehouse"],
+	purchase_order_items = _unique(
+		[asn_item.purchase_order_item for asn_item in asn.items if asn_item.purchase_order_item]
 	)
-	purchase_orders = sorted({row.parent for row in po_items if row.parent})
-	po_companies = {}
-	if purchase_orders:
-		po_companies = {
-			row.name: row.company
-			for row in frappe.get_all(
-				"Purchase Order",
-				filters={"name": ["in", purchase_orders]},
-				fields=["name", "company"],
-			)
+	if not purchase_order_items:
+		frappe.throw(_("ASN {0} must reference Purchase Order Items").format(asn.name))
+
+	return purchase_orders.pop(), purchase_order_items
+
+
+def _unique(values: list[str]) -> list[str]:
+	return list(dict.fromkeys(values))
+
+
+def _apply_asn_fields(pr, asn) -> None:
+	pr.supplier = asn.supplier
+	pr.asn = asn.name
+	# ASN owns supplier-facing transport/invoice references.
+	pr.supplier_delivery_note = asn.supplier_invoice_no
+	pr.transporter_name = asn.transporter_name
+	pr.lr_no = asn.lr_no
+	pr.lr_date = asn.lr_date
+
+	_preserve_asn_item_rows(pr, asn.items)
+	asn_items_by_po_item = {}
+	for asn_item in asn.items:
+		asn_items_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
+
+	asn_items_map = {}
+	for pr_item in pr.items:
+		matching_asn_items = asn_items_by_po_item.get(pr_item.purchase_order_item) or []
+		asn_item = matching_asn_items.pop(0) if matching_asn_items else None
+		if not asn_item:
+			continue
+
+		pr_item.qty = flt(asn_item.qty)
+		pr_item.stock_qty = flt(asn_item.qty) * flt(pr_item.conversion_factor or 1)
+		pr_item.batch_no = asn_item.batch_no
+		pr_item.serial_no = asn_item.serial_nos
+		_set_amounts_from_qty(pr, pr_item)
+		asn_items_map[str(pr_item.idx)] = {
+			"asn_item_name": asn_item.name,
+			"original_qty": asn_item.qty,
 		}
 
-	return {
-		row.name: {
-			"warehouse": row.warehouse,
-			"company": po_companies.get(row.parent),
-		}
-		for row in po_items
+	pr.asn_items = json.dumps(asn_items_map)
+
+
+def _preserve_asn_item_rows(pr, asn_items) -> None:
+	if len(pr.items) == len(asn_items):
+		return
+
+	item_templates = {
+		pr_item.purchase_order_item: _as_child_row_dict(pr_item)
+		for pr_item in pr.items
+		if pr_item.purchase_order_item
 	}
+	pr.set("items", [])
+	for asn_item in asn_items:
+		template = item_templates.get(asn_item.purchase_order_item)
+		if template:
+			pr.append("items", template)
+
+
+def _as_child_row_dict(row) -> dict:
+	values = row.as_dict() if hasattr(row, "as_dict") else vars(row).copy()
+	for fieldname in (
+		"name",
+		"parent",
+		"parentfield",
+		"parenttype",
+		"idx",
+		"doctype",
+		"owner",
+		"creation",
+		"modified",
+		"modified_by",
+		"docstatus",
+	):
+		values.pop(fieldname, None)
+	return values
+
+
+def _set_amounts_from_qty(pr, pr_item) -> None:
+	amount = flt(pr_item.qty) * flt(pr_item.rate)
+	base_amount = amount * flt(pr.conversion_rate or 1)
+	pr_item.amount = amount
+	pr_item.base_amount = base_amount
+	if hasattr(pr_item, "net_amount"):
+		pr_item.net_amount = amount
+	if hasattr(pr_item, "base_net_amount"):
+		pr_item.base_net_amount = base_amount
 
 
 def on_purchase_receipt_submit(doc, method):
