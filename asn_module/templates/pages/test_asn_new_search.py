@@ -13,6 +13,16 @@ def _test_dates():
 
 
 class TestASNNewSearch(FrappeTestCase):
+	def test_normalize_paging_falls_back_for_invalid_values(self):
+		start, page_len = asn_new_search._normalize_paging("not-a-number", None)
+		self.assertEqual(start, 0)
+		self.assertEqual(page_len, 20)
+
+	def test_normalize_paging_clamps_negative_and_zero_values(self):
+		start, page_len = asn_new_search._normalize_paging("-10", "0")
+		self.assertEqual(start, 0)
+		self.assertEqual(page_len, 1)
+
 	def test_search_open_purchase_orders_returns_supplier_open_pos(self):
 		with (
 			patch(

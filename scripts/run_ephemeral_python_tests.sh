@@ -40,26 +40,18 @@ cleanup() {
 				cp "$coverage_xml_source" "$coverage_xml_target"
 			fi
 
-			if [ ! -f "$coverage_xml_target" ]; then
-				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
-					coverage_data_source="$BENCH_ROOT/sites/.coverage"
-				fi
-				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
-					coverage_data_source="$BENCH_ROOT/.coverage"
-				fi
-				if [ -f "$coverage_data_source" ] && [ -x "$BENCH_ROOT/env/bin/python" ]; then
-					mkdir -p "$(dirname "$coverage_xml_target")"
-					COVERAGE_FILE="$coverage_data_source" "$BENCH_ROOT/env/bin/python" -m coverage xml -o "$coverage_xml_target" >/dev/null 2>&1
-				fi
+			if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
+				coverage_data_source="$BENCH_ROOT/sites/.coverage"
+			fi
+			if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
+				coverage_data_source="$BENCH_ROOT/.coverage"
+			fi
+			if [ -f "$coverage_data_source" ] && [ -x "$BENCH_ROOT/env/bin/python" ]; then
+				mkdir -p "$(dirname "$coverage_xml_target")"
+				COVERAGE_FILE="$coverage_data_source" COVERAGE_RCFILE="$APP_ROOT/pyproject.toml" "$BENCH_ROOT/env/bin/python" -m coverage xml -o "$coverage_xml_target" >/dev/null 2>&1
 			fi
 
 			if [ -n "$coverage_data_target" ]; then
-				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
-					coverage_data_source="$BENCH_ROOT/sites/.coverage"
-				fi
-				if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
-					coverage_data_source="$BENCH_ROOT/.coverage"
-				fi
 				if [ -f "$coverage_data_source" ]; then
 					mkdir -p "$(dirname "$coverage_data_target")"
 					cp "$coverage_data_source" "$coverage_data_target"
@@ -112,5 +104,17 @@ set -e
 
 if [ $test_exit -ne 0 ]; then
 	echo "Tests failed with exit code $test_exit" >&2
+elif [ "${CI:-}" = "true" ]; then
+	coverage_data_source="$BENCH_ROOT/sites/$SITE_NAME/.coverage"
+	if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
+		coverage_data_source="$BENCH_ROOT/sites/.coverage"
+	fi
+	if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
+		coverage_data_source="$BENCH_ROOT/.coverage"
+	fi
+	if [ -f "$coverage_data_source" ] && [ -x "$BENCH_ROOT/env/bin/python" ]; then
+		COVERAGE_FILE="$coverage_data_source" COVERAGE_RCFILE="$APP_ROOT/pyproject.toml" "$BENCH_ROOT/env/bin/python" -m coverage report
+		test_exit=$?
+	fi
 fi
 exit $test_exit

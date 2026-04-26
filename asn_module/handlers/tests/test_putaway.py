@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -60,3 +62,27 @@ class TestConfirmPutaway(FrappeTestCase):
 		missing_name = f"PR-MISSING-{frappe.generate_hash(length=10)}"
 		with self.assertRaises(frappe.ValidationError):
 			confirm_putaway("Purchase Receipt", missing_name, payload={})
+
+	def test_putaway_rejects_invalid_source_doctype(self):
+		with self.assertRaises(frappe.ValidationError):
+			confirm_putaway("Not A Real DocType", "DOC-001", payload={})
+
+	def test_putaway_emits_transition_for_mapped_asn_items(self):
+		pr = self._make_draft_purchase_receipt()
+		frappe.db.set_value(
+			"Purchase Receipt",
+			pr.name,
+			{
+				"asn": "ASN-001",
+				"asn_items": '{"1": {"asn_item_name": "ASN-ITEM-001"}}',
+			},
+			update_modified=False,
+		)
+		pr.reload()
+
+		with patch("asn_module.handlers.putaway.emit_asn_item_transition") as emit:
+			confirm_putaway("Purchase Receipt", pr.name, payload={})
+
+		emit.assert_called_once()
+		self.assertEqual(emit.call_args.kwargs["asn"], "ASN-001")
+		self.assertEqual(emit.call_args.kwargs["asn_item"], "ASN-ITEM-001")

@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -112,6 +113,109 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				source_name=asn.name,
 				payload={"action": "create_purchase_receipt"},
 			)
+
+	def test_create_from_asn_returns_existing_draft_without_creating_new_doc(self):
+		asn = SimpleNamespace(docstatus=1, status="Submitted", name="ASN-UNIT-001")
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
+			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value="PR-DRAFT-001"),
+			patch("asn_module.handlers.purchase_receipt.frappe.new_doc") as new_doc,
+		):
+			result = create_from_asn("ASN", "ASN-UNIT-001", payload={})
+
+		self.assertEqual(result["name"], "PR-DRAFT-001")
+		self.assertIn("/app/purchase-receipt/PR-DRAFT-001", result["url"])
+		new_doc.assert_not_called()
+
+	def test_create_from_asn_builds_purchase_receipt_and_transition_logs(self):
+		asn_item = SimpleNamespace(
+			idx=1,
+			name="ASN-ITEM-001",
+			item_code="ITEM-001",
+			item_name="Item 001",
+			qty=3,
+			uom="Nos",
+			rate=25,
+			batch_no=None,
+			serial_nos=None,
+			purchase_order="PO-001",
+			purchase_order_item="POI-001",
+		)
+		asn = SimpleNamespace(
+			docstatus=1,
+			status="Submitted",
+			name="ASN-UNIT-002",
+			supplier="Supp-001",
+			supplier_invoice_no="INV-UNIT-002",
+			transporter_name="Carrier",
+			lr_no="LR-UNIT",
+			lr_date="2026-04-26",
+			items=[asn_item],
+		)
+
+		class _FakePurchaseReceipt(SimpleNamespace):
+			def __init__(self):
+				super().__init__(items=[], name="PR-UNIT-002")
+
+			def append(self, fieldname, values):
+				self.items.append((fieldname, values))
+				return SimpleNamespace(idx=len(self.items))
+
+			def insert(self, **kwargs):
+				self.insert_kwargs = kwargs
+
+		pr = _FakePurchaseReceipt()
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
+			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value=None),
+			patch("asn_module.handlers.purchase_receipt.frappe.new_doc", return_value=pr),
+			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
+		):
+			result = create_from_asn("ASN", "ASN-UNIT-002", payload={})
+
+		self.assertEqual(result["name"], "PR-UNIT-002")
+		self.assertEqual(pr.supplier, "Supp-001")
+		self.assertEqual(pr.supplier_delivery_note, "INV-UNIT-002")
+		self.assertEqual(pr.items[0][1]["purchase_order_item"], "POI-001")
+		self.assertEqual(pr.asn_items, '{"1": {"asn_item_name": "ASN-ITEM-001", "original_qty": 3}}')
+		self.assertEqual(pr.insert_kwargs, {"ignore_permissions": True})
+		emit.assert_called_once()
+
+	def test_on_purchase_receipt_submit_returns_when_not_linked_to_asn(self):
+		with patch("asn_module.handlers.purchase_receipt.frappe.get_doc") as get_doc:
+			on_purchase_receipt_submit(SimpleNamespace(asn=None), "on_submit")
+
+		get_doc.assert_not_called()
+
+	def test_on_purchase_receipt_submit_skips_unmapped_pr_rows(self):
+		asn = SimpleNamespace(name="ASN-UNIT-003", reload=lambda: None, update_receipt_status=lambda: None)
+		doc = SimpleNamespace(
+			asn="ASN-UNIT-003",
+			asn_items='{"1": {}, "2": {"asn_item_name": "ASN-ITEM-002"}}',
+			items=[
+				SimpleNamespace(idx=1, qty=1, item_code="ITEM-001"),
+				SimpleNamespace(idx=2, qty=2, item_code="ITEM-002"),
+				SimpleNamespace(idx=3, qty=3, item_code="ITEM-003"),
+			],
+			name="PR-UNIT-003",
+		)
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
+			patch("asn_module.handlers.purchase_receipt.frappe.db.sql") as sql,
+			patch(
+				"asn_module.handlers.purchase_receipt.frappe.get_all",
+				return_value=[SimpleNamespace(name="ASN-ITEM-002", item_code="ITEM-002")],
+			),
+			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
+		):
+			on_purchase_receipt_submit(doc, "on_submit")
+
+		sql.assert_called_once()
+		emit.assert_called_once()
+		self.assertEqual(emit.call_args.kwargs["asn_item"], "ASN-ITEM-002")
 
 	@patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc")
 	@patch("asn_module.qr_engine.generate.generate_qr")

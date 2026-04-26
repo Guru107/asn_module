@@ -12,6 +12,7 @@ from asn_module.qr_engine.scan_codes import (
 	format_scan_code_for_display,
 	get_or_create_scan_code,
 	get_scan_code_doc,
+	get_scan_code_length,
 	normalize_scan_code,
 	record_successful_scan,
 	validate_scan_code_row,
@@ -51,6 +52,14 @@ class _ScanCodeTestMixin:
 
 
 class TestFormatScanCodeForDisplay(FrappeTestCase):
+	def test_get_scan_code_length_returns_canonical_length(self):
+		self.assertEqual(get_scan_code_length(), SCAN_CODE_LENGTH)
+
+	def test_random_scan_code_value_uses_canonical_alphabet_and_length(self):
+		value = _random_scan_code_value()
+		self.assertEqual(len(value), SCAN_CODE_LENGTH)
+		self.assertTrue(all(ch in SCAN_CODE_ALPHABET for ch in value))
+
 	def test_empty_code_returns_empty(self):
 		self.assertEqual(format_scan_code_for_display(""), "")
 
@@ -208,6 +217,13 @@ class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 		with self.assertRaises(frappe.ValidationError):
 			validate_scan_code_row(doc, "create_purchase_receipt")
 
+	def test_unknown_status_blocked(self):
+		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", name, "status", "Suspended", update_modified=False)
+		doc = frappe.get_doc("Scan Code", name)
+		with self.assertRaises(frappe.ValidationError):
+			validate_scan_code_row(doc, "create_purchase_receipt")
+
 
 class TestVerifyRegistryRowPointsToExistingSource(FrappeTestCase, _ScanCodeTestMixin):
 	@classmethod
@@ -306,3 +322,45 @@ class TestGetOrCreateScanCodeCanonicalReuse(TestCase):
 		fake_frappe.db.get_value.assert_called_once()
 		fake_frappe.db.exists.assert_called_once_with("Scan Code", "ABCDEFGHJKLMNPQ2")
 		fake_frappe.get_doc.assert_called_once()
+
+	def test_collision_retries_until_unique_code_is_available(self):
+		doc = MagicMock()
+		doc.name = "BBBBBBBBBBBBBBBB"
+		fake_frappe = MagicMock()
+		fake_frappe.ValidationError = Exception
+		fake_frappe.db.get_value.return_value = None
+		fake_frappe.db.exists.side_effect = [True, False]
+		fake_frappe.get_doc.return_value = doc
+
+		with (
+			patch("asn_module.qr_engine.scan_codes.frappe", fake_frappe),
+			patch(
+				"asn_module.qr_engine.scan_codes._random_scan_code_value",
+				side_effect=["AAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBB"],
+			),
+		):
+			result = get_or_create_scan_code("create_purchase_receipt", "ASN", "ASN-003")
+
+		self.assertEqual(result, "BBBBBBBBBBBBBBBB")
+		self.assertEqual(fake_frappe.db.exists.call_count, 2)
+		fake_frappe.get_doc.assert_called_once()
+
+	def test_unique_code_allocation_failure_throws(self):
+		fake_frappe = MagicMock()
+		fake_frappe.ValidationError = Exception
+		fake_frappe.db.get_value.return_value = None
+		fake_frappe.db.exists.return_value = True
+		fake_frappe.throw.side_effect = Exception("Could not allocate")
+
+		with (
+			patch("asn_module.qr_engine.scan_codes.frappe", fake_frappe),
+			patch(
+				"asn_module.qr_engine.scan_codes._random_scan_code_value",
+				return_value="AAAAAAAAAAAAAAAA",
+			),
+			self.assertRaises(Exception),
+		):
+			get_or_create_scan_code("create_purchase_receipt", "ASN", "ASN-004")
+
+		fake_frappe.throw.assert_called_once()
+		fake_frappe.get_doc.assert_not_called()
