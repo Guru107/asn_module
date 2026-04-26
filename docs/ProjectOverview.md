@@ -1,12 +1,13 @@
 # Project Overview
 
-This is a **Frappe framework** custom app called `asn_module`. It follows standard Frappe app conventions and is managed via the `bench` CLI. The app targets Python 3.14 and Frappe v16.
+This is a **Frappe framework** custom app called `asn_module`. It follows standard Frappe app conventions and is managed via the `bench` CLI. The app supports both Frappe/ERPNext v15 and v16. Keep implementation and tests compatible with both stacks unless a task explicitly narrows the supported version.
 
 ## Bench server setups
 
 ### Frappe Version 16 and ERPNext Version 16
     Path: /Users/gurudattkulkarni/Workspace/bench16
     site_name: frappe16.localhost
+    Python: 3.14+
     Run
     ```bash
     nvm use
@@ -15,6 +16,7 @@ This is a **Frappe framework** custom app called `asn_module`. It follows standa
 ### Frappe Version 15 and ERPNext Version 15
     Path: /Users/gurudattkulkarni/Workspace/bench15
     site_name: development.localhost
+    Python: use the bench-managed environment for v15
 
     Run
     ```bash
@@ -24,7 +26,7 @@ This is a **Frappe framework** custom app called `asn_module`. It follows standa
 
 ## Application Setup
 
-This application is installed in both the bench directories using a sym-linked approach using below command
+This application is installed in both bench directories using a symlinked approach. Validate compatibility against both benches when changing Frappe/ERPNext APIs, DocTypes, hooks, permissions, or integration workflows.
 
  ```bash
     bench get-app --soft-link /Users/gurudattkulkarni/Workspace/asn_module
@@ -32,6 +34,8 @@ This application is installed in both the bench directories using a sym-linked a
 ```
 
 ### Running Tests
+Run tests against the relevant supported stack. For compatibility-sensitive changes, run both v15 and v16 or use the CI ephemeral matrix.
+
 ```bash
 bench --site <site_name> run-tests --app asn_module
 # Single test module:
@@ -64,6 +68,7 @@ HYPOTHESIS_PROFILE=ci bench --site frappe16.localhost run-tests \
 ```
 
 Notes:
+- Prefer ephemeral-site test runs for final verification. The CI matrix covers Frappe/ERPNext v15 and v16.
 - `bench --site frappe16.localhost run-tests --module asn_module.property_tests --lightmode` returns no tests ran in this repo; run each property module explicitly.
 - The CI job uses the `ci` profile. Local debugging can use `local` to increase examples.
 
