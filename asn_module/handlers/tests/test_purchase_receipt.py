@@ -170,7 +170,10 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value=None),
 			patch(
 				"asn_module.handlers.purchase_receipt.frappe.get_all",
-				return_value=[SimpleNamespace(name="POI-001", warehouse="Stores - TCPL")],
+				side_effect=[
+					[SimpleNamespace(name="POI-001", parent="PO-001", warehouse="Stores - TCPL")],
+					[SimpleNamespace(name="PO-001", company="TCPL")],
+				],
 			),
 			patch("asn_module.handlers.purchase_receipt.frappe.new_doc", return_value=pr),
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
@@ -179,6 +182,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 		self.assertEqual(result["name"], "PR-UNIT-002")
 		self.assertEqual(pr.supplier, "Supp-001")
+		self.assertEqual(pr.company, "TCPL")
 		self.assertEqual(pr.supplier_delivery_note, "INV-UNIT-002")
 		self.assertEqual(pr.items[0][1]["purchase_order_item"], "POI-001")
 		self.assertEqual(pr.items[0][1]["warehouse"], "Stores - TCPL")

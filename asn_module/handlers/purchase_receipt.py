@@ -39,11 +39,17 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	pr.lr_no = asn.lr_no
 	pr.lr_date = asn.lr_date
 
-	po_item_warehouses = _get_po_item_warehouses(
+	po_item_details = _get_po_item_details(
 		[asn_item.purchase_order_item for asn_item in asn.items if asn_item.purchase_order_item]
 	)
+	po_companies = {details["company"] for details in po_item_details.values() if details.get("company")}
+	if len(po_companies) > 1:
+		frappe.throw(_("ASN {0} contains Purchase Orders from multiple companies").format(source_name))
+	if po_companies:
+		pr.company = po_companies.pop()
 
 	for asn_item in asn.items:
+		po_item_detail = po_item_details.get(asn_item.purchase_order_item, {})
 		pr_item = pr.append(
 			"items",
 			{
@@ -56,7 +62,7 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 				"serial_no": asn_item.serial_nos,
 				"purchase_order": asn_item.purchase_order,
 				"purchase_order_item": asn_item.purchase_order_item,
-				"warehouse": po_item_warehouses.get(asn_item.purchase_order_item),
+				"warehouse": po_item_detail.get("warehouse"),
 			},
 		)
 		asn_items_map[str(pr_item.idx)] = {
@@ -86,16 +92,34 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	}
 
 
-def _get_po_item_warehouses(purchase_order_items: list[str]) -> dict[str, str]:
+def _get_po_item_details(purchase_order_items: list[str]) -> dict[str, dict[str, str | None]]:
 	if not purchase_order_items:
 		return {}
 
-	rows = frappe.get_all(
+	po_items = frappe.get_all(
 		"Purchase Order Item",
 		filters={"name": ["in", purchase_order_items]},
-		fields=["name", "warehouse"],
+		fields=["name", "parent", "warehouse"],
 	)
-	return {row.name: row.warehouse for row in rows if row.warehouse}
+	purchase_orders = sorted({row.parent for row in po_items if row.parent})
+	po_companies = {}
+	if purchase_orders:
+		po_companies = {
+			row.name: row.company
+			for row in frappe.get_all(
+				"Purchase Order",
+				filters={"name": ["in", purchase_orders]},
+				fields=["name", "company"],
+			)
+		}
+
+	return {
+		row.name: {
+			"warehouse": row.warehouse,
+			"company": po_companies.get(row.parent),
+		}
+		for row in po_items
+	}
 
 
 def on_purchase_receipt_submit(doc, method):
