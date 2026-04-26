@@ -368,3 +368,39 @@ class TestCypressSeedHelpers(TestCase):
 				call("Barcode Process Flow", "FLOW-OLD-2", "is_active", 0, update_modified=False),
 			]
 		)
+
+	def test_seed_default_standard_handler_submit_context(self):
+		with (
+			patch.dict("asn_module.utils.cypress_helpers.frappe.conf", {"allow_tests": True}),
+			patch("asn_module.utils.cypress_helpers.frappe.only_for"),
+			patch(
+				"asn_module.barcode_process_flow.capabilities.get_supported_templates",
+				return_value=[{"key": "mr_purchase_to_po"}],
+			),
+			patch(
+				"asn_module.setup_actions.ensure_default_standard_handler_flow",
+			) as ensure_flow,
+			patch("asn_module.utils.cypress_helpers._deactivate_previous_e2e_standard_handler_flows"),
+			patch(
+				"asn_module.utils.cypress_helpers._prepare_standard_handler_source_docs",
+				return_value={"mr_purchase_to_po": {"name": "MAT-MR-TEST-0001"}},
+			),
+			patch("asn_module.utils.cypress_helpers.frappe.generate_hash", return_value="HASH1234"),
+			patch(
+				"asn_module.utils.cypress_helpers.frappe.get_all",
+				return_value=[
+					{
+						"name": "SC-1",
+						"action_key": "mr_purchase_to_po",
+						"scan_code": "ABCD1234EFGH5678",
+						"status": "Active",
+					}
+				],
+			),
+		):
+			result = cypress_helpers.seed_default_standard_handler_submit_context()
+
+		ensure_flow.assert_called_once()
+		self.assertEqual(result["material_request"], "MAT-MR-TEST-0001")
+		self.assertEqual(result["action_keys"], ["mr_purchase_to_po"])
+		self.assertEqual(result["flow_name"], "System::Default::StandardHandlers")

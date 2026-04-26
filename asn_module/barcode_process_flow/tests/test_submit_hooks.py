@@ -6,43 +6,28 @@ from asn_module.tests.compat import UnitTestCase
 
 
 class TestSubmitHooks(UnitTestCase):
-	def test_on_any_submit_generates_codes_with_conditioned_only(self):
+	def test_on_any_submit_generates_codes_for_all_eligible_steps(self):
 		doc = SimpleNamespace(doctype="Purchase Receipt", name="PR-1")
 		with (
-			patch(
-				"asn_module.barcode_process_flow.submit_hooks.repository.has_conditioned_step_for_source_doctype",
-				return_value=True,
-			),
 			patch(
 				"asn_module.barcode_process_flow.submit_hooks.runtime.generate_codes_for_source_doc",
 				return_value=[],
 			) as generate_mock,
 		):
 			submit_hooks.on_any_submit(doc, "on_submit")
-		generate_mock.assert_called_once_with(source_doc=doc, conditioned_only=True)
+		generate_mock.assert_called_once_with(source_doc=doc, conditioned_only=False)
 
-	def test_on_any_submit_skips_doctype_without_conditioned_steps(self):
-		doc = SimpleNamespace(doctype="Sales Invoice", name="SINV-1")
-		with (
-			patch(
-				"asn_module.barcode_process_flow.submit_hooks.repository.has_conditioned_step_for_source_doctype",
-				return_value=False,
-			) as has_steps,
-			patch(
-				"asn_module.barcode_process_flow.submit_hooks.runtime.generate_codes_for_source_doc",
-			) as generate_mock,
-		):
+	def test_on_any_submit_skips_blank_doctype(self):
+		doc = SimpleNamespace(doctype="", name="DOC-1")
+		with patch(
+			"asn_module.barcode_process_flow.submit_hooks.runtime.generate_codes_for_source_doc",
+		) as generate_mock:
 			submit_hooks.on_any_submit(doc, "on_submit")
-		has_steps.assert_called_once_with("Sales Invoice")
 		generate_mock.assert_not_called()
 
 	def test_on_any_submit_logs_and_does_not_raise(self):
 		doc = SimpleNamespace(doctype="Purchase Receipt", name="PR-1")
 		with (
-			patch(
-				"asn_module.barcode_process_flow.submit_hooks.repository.has_conditioned_step_for_source_doctype",
-				return_value=True,
-			),
 			patch(
 				"asn_module.barcode_process_flow.submit_hooks.runtime.generate_codes_for_source_doc",
 				side_effect=RuntimeError("boom"),

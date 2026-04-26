@@ -433,6 +433,50 @@ def dispatch_scan_for_test(code: str, device_info: str = "Cypress") -> dict[str,
 		}
 
 
+@frappe.whitelist()
+def seed_default_standard_handler_submit_context() -> dict[str, Any]:
+	"""Prepare docs and verify submit-time generation through System default flow."""
+	_require_e2e_seed_context()
+
+	from asn_module.barcode_process_flow import capabilities
+	from asn_module.setup_actions import DEFAULT_STANDARD_FLOW_NAME, ensure_default_standard_handler_flow
+
+	ensure_default_standard_handler_flow()
+	_deactivate_previous_e2e_standard_handler_flows()
+
+	run_id = frappe.generate_hash(length=8)
+	template_keys = {
+		str(row.get("key") or "").strip()
+		for row in capabilities.get_supported_templates()
+		if row.get("key")
+	}
+	source_docs = _prepare_standard_handler_source_docs(run_id=run_id, template_keys=template_keys)
+	mr_purchase = source_docs.get("mr_purchase_to_po") or {}
+	mr_name = (mr_purchase.get("name") or "").strip()
+
+	action_rows = []
+	if mr_name:
+		action_rows = frappe.get_all(
+			"Scan Code",
+			filters={"source_doctype": "Material Request", "source_name": mr_name},
+			fields=["name", "action_key", "scan_code", "status"],
+			order_by="creation asc",
+		)
+
+	return {
+		"flow_name": DEFAULT_STANDARD_FLOW_NAME,
+		"material_request": mr_name,
+		"action_keys": sorted(
+			{
+				(str(row.get("action_key") or "").strip())
+				for row in action_rows
+				if str(row.get("action_key") or "").strip()
+			}
+		),
+		"scan_codes": action_rows,
+	}
+
+
 def _deactivate_previous_e2e_standard_handler_flows() -> None:
 	rows = frappe.get_all(
 		"Barcode Process Flow",
