@@ -104,7 +104,7 @@ set -e
 
 if [ $test_exit -ne 0 ]; then
 	echo "Tests failed with exit code $test_exit" >&2
-elif [ "${CI:-}" = "true" ]; then
+elif [ "${CI:-}" = "true" ] && [ "$#" -eq 0 ]; then
 	coverage_data_source="$BENCH_ROOT/sites/$SITE_NAME/.coverage"
 	if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/sites/.coverage" ]; then
 		coverage_data_source="$BENCH_ROOT/sites/.coverage"
