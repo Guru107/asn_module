@@ -39,6 +39,10 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	pr.lr_no = asn.lr_no
 	pr.lr_date = asn.lr_date
 
+	po_item_warehouses = _get_po_item_warehouses(
+		[asn_item.purchase_order_item for asn_item in asn.items if asn_item.purchase_order_item]
+	)
+
 	for asn_item in asn.items:
 		pr_item = pr.append(
 			"items",
@@ -52,6 +56,7 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 				"serial_no": asn_item.serial_nos,
 				"purchase_order": asn_item.purchase_order,
 				"purchase_order_item": asn_item.purchase_order_item,
+				"warehouse": po_item_warehouses.get(asn_item.purchase_order_item),
 			},
 		)
 		asn_items_map[str(pr_item.idx)] = {
@@ -79,6 +84,18 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 		"url": f"/app/purchase-receipt/{pr.name}",
 		"message": _("Purchase Receipt {0} created from ASN {1}").format(pr.name, source_name),
 	}
+
+
+def _get_po_item_warehouses(purchase_order_items: list[str]) -> dict[str, str]:
+	if not purchase_order_items:
+		return {}
+
+	rows = frappe.get_all(
+		"Purchase Order Item",
+		filters={"name": ["in", purchase_order_items]},
+		fields=["name", "warehouse"],
+	)
+	return {row.name: row.warehouse for row in rows if row.warehouse}
 
 
 def on_purchase_receipt_submit(doc, method):
