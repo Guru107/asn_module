@@ -31,6 +31,10 @@ def _bulk_csv_content(row_line: str) -> bytes:
 	).encode()
 
 
+def _fake_frappe_local():
+	return SimpleNamespace(response={}, cache={})
+
+
 class TestASNNewPortalPage(FrappeTestCase):
 	def test_parse_single_rows_returns_empty_without_type_error_for_blank_form_lists(self):
 		class _FakeForm:
@@ -204,7 +208,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
 			),
-			patch("asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(response={})),
+			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
 			asn_new.get_context(context)
 		self.assertEqual(context.active_tab, "single")
@@ -230,7 +234,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
 			),
 			patch("asn_module.templates.pages.asn_new._create_bulk_asns", side_effect=_boom),
-			patch("asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(response={})),
+			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
 			asn_new.get_context(context)
 		self.assertEqual(context.active_tab, "bulk")
@@ -257,7 +261,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
 			),
 			patch("asn_module.templates.pages.asn_new._create_single_asn", side_effect=_boom),
-			patch("asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(response={})),
+			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
 			asn_new.get_context(context)
 
@@ -309,7 +313,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 				"asn_module.templates.pages.asn_new._create_bulk_asns",
 				return_value=asn_new.CreateResult(asn_names=["ASN-0001", "ASN-0002"]),
 			),
-			patch("asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(response={})),
+			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
 			asn_new.get_context(context)
 
@@ -559,11 +563,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 		]
 		with (
 			patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=rows),
-			patch("asn_module.templates.pages.asn_new.enforce_bulk_limits"),
-			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
-			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
+			patch("asn_module.templates.pages.asn_new_services.enforce_bulk_limits"),
+			patch("asn_module.templates.pages.asn_new_services.validate_selected_purchase_orders"),
+			patch("asn_module.templates.pages.asn_new_services.validate_supplier_invoices_not_reused"),
 			patch(
-				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
+				"asn_module.templates.pages.asn_new_services.fetch_purchase_order_items",
 				return_value=({}, {}),
 			),
 		):
@@ -619,11 +623,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 		with (
 			patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=rows),
-			patch("asn_module.templates.pages.asn_new.enforce_bulk_limits"),
-			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
-			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
+			patch("asn_module.templates.pages.asn_new_services.enforce_bulk_limits"),
+			patch("asn_module.templates.pages.asn_new_services.validate_selected_purchase_orders"),
+			patch("asn_module.templates.pages.asn_new_services.validate_supplier_invoices_not_reused"),
 			patch(
-				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
+				"asn_module.templates.pages.asn_new_services.fetch_purchase_order_items",
 				return_value=(rows_by_key, remaining_qty),
 			),
 			patch(
@@ -639,7 +643,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 	def test_create_bulk_asn_rejects_empty_csv(self):
 		with (
 			patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=[]),
-			patch("asn_module.templates.pages.asn_new.enforce_bulk_limits"),
+			patch("asn_module.templates.pages.asn_new_services.enforce_bulk_limits"),
 			self.assertRaises(PortalValidationError) as ctx,
 		):
 			asn_new._create_bulk_asns("Supp-001")
@@ -668,11 +672,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 		]
 		with (
 			patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=rows),
-			patch("asn_module.templates.pages.asn_new.enforce_bulk_limits"),
-			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
-			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
+			patch("asn_module.templates.pages.asn_new_services.enforce_bulk_limits"),
+			patch("asn_module.templates.pages.asn_new_services.validate_selected_purchase_orders"),
+			patch("asn_module.templates.pages.asn_new_services.validate_supplier_invoices_not_reused"),
 			patch(
-				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
+				"asn_module.templates.pages.asn_new_services.fetch_purchase_order_items",
 				return_value=({}, {}),
 			),
 			self.assertRaises(PortalValidationError) as ctx,
