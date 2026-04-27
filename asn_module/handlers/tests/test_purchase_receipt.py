@@ -11,7 +11,11 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn,
 	make_test_asn_with_two_items,
 )
-from asn_module.handlers.purchase_receipt import create_from_asn, on_purchase_receipt_submit
+from asn_module.handlers.purchase_receipt import (
+	create_from_asn,
+	on_purchase_receipt_submit,
+	on_purchase_receipt_trash,
+)
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 
@@ -204,6 +208,29 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			on_purchase_receipt_submit(SimpleNamespace(asn=None), "on_submit")
 
 		get_doc.assert_not_called()
+
+	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
+		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0)
+
+		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
+			on_purchase_receipt_trash(doc, "on_trash")
+
+		delete.assert_called_once_with(
+			"ASN Transition Log",
+			{
+				"ref_doctype": "Purchase Receipt",
+				"ref_name": "PR-UNIT-004",
+				"state": "PR_CREATED_DRAFT",
+			},
+		)
+
+	def test_on_purchase_receipt_trash_keeps_submitted_transition_logs(self):
+		doc = SimpleNamespace(name="PR-UNIT-005", docstatus=1)
+
+		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
+			on_purchase_receipt_trash(doc, "on_trash")
+
+		delete.assert_not_called()
 
 	def test_on_purchase_receipt_submit_skips_unmapped_pr_rows(self):
 		asn = SimpleNamespace(name="ASN-UNIT-003", reload=lambda: None, update_receipt_status=lambda: None)

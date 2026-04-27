@@ -155,6 +155,23 @@ def _set_amounts_from_qty(pr, pr_item) -> None:
 		pr_item.base_net_amount = base_amount
 
 
+def on_purchase_receipt_trash(doc, method):
+	"""Remove draft-creation trace rows so stale draft PRs can be deleted."""
+	del method
+
+	if doc.docstatus != 0:
+		return
+
+	frappe.db.delete(
+		"ASN Transition Log",
+		{
+			"ref_doctype": "Purchase Receipt",
+			"ref_name": doc.name,
+			"state": "PR_CREATED_DRAFT",
+		},
+	)
+
+
 def on_purchase_receipt_submit(doc, method):
 	"""Update ASN receipt tracking and attach follow-up QR codes on submit."""
 	del method

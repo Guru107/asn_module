@@ -159,6 +159,7 @@ after_install = "asn_module.setup.after_install"
 doc_events = {
 	"Purchase Receipt": {
 		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
+		"on_trash": "asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
 	},
 	"Quality Inspection": {
 		"on_submit": "asn_module.handlers.quality_inspection.on_quality_inspection_submit",
