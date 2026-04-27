@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "en-US"
+tone_instructions: "Be direct, concise, and specific. Prioritize correctness, security, data integrity, and test gaps."
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  review_details: true
+  high_level_summary: true
+  changed_files_summary: true
+  sequence_diagrams: false
+  estimate_code_review_effort: true
+  poem: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+  path_filters:
+    - "!coverage.xml"
+    - "!cypress/screenshots/**"
+    - "!cypress/videos/**"
+    - "!**/__pycache__/**"
+    - "!**/.pytest_cache/**"
+    - "!**/.ruff_cache/**"
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+  path_instructions:
+    - path: "asn_module/**/*.py"
+      instructions: >-
+        Review as a Frappe/ERPNext custom app that must remain compatible with
+        both v15 and v16. Check version-sensitive APIs, permission boundaries,
+        docstatus transitions, transaction safety, idempotency, efficient database
+        access, and clear ValidationError usage. Avoid recommending broad
+        abstractions for small handlers.
+    - path: "asn_module/**/doctype/**/*.json"
+      instructions: >-
+        Check DocType schema changes for safe fieldnames, permissions, links,
+        required fields, indexes, and migration impact on existing records in
+        both Frappe/ERPNext v15 and v16.
+    - path: "asn_module/handlers/**/*.py"
+      instructions: >-
+        Focus on workflow side effects, duplicate document creation, scan replay
+        behavior, permission bypasses, and whether transition logs remain
+        consistent when downstream ERPNext validation fails.
+    - path: "asn_module/qr_engine/**/*.py"
+      instructions: >-
+        Pay close attention to token validation, scan-code normalization,
+        collision handling, registry lookups, replay safety, and role checks.
+    - path: "asn_module/templates/pages/**/*"
+      instructions: >-
+        Review portal code for supplier data isolation, explicit permission
+        checks, CSRF-safe mutations, resilient form parsing, and mobile-safe UX.
+    - path: "asn_module/**/test_*.py"
+      instructions: >-
+        Tests must be deterministic on ephemeral Frappe sites for both supported
+        stacks: Frappe/ERPNext v15 and v16. Prefer targeted FrappeTestCase
+        coverage, avoid persistent-site assumptions, and preserve the 96%
+        production coverage gate.
+    - path: "scripts/*.sh"
+      instructions: >-
+        Shell scripts should use strict mode, quote variables, clean up ephemeral
+        sites reliably via traps, and avoid destructive actions without explicit
+        intent.
+  pre_merge_checks:
+    title:
+      mode: "warning"
+      requirements: "Use a concise conventional-style title, for example 'test: raise coverage gate'."
+    description:
+      mode: "warning"
+  tools:
+    github-checks:
+      enabled: true
+      timeout_ms: 900000
+    ruff:
+      enabled: true
+    eslint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    trufflehog:
+      enabled: true
+    flake8:
+      enabled: false
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "docs/CodingConventions.md"
+      - "docs/ProjectOverview.md"
+  learnings:
+    scope: "local"
+  pull_requests:
+    scope: "local"
+
+chat:
+  art: false
+  auto_reply: true

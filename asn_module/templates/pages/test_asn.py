@@ -54,6 +54,23 @@ class TestASNPortalPage(FrappeTestCase):
 			"parent",
 		)
 
+	def test_get_supplier_for_user_returns_none_for_administrator(self):
+		with patch("asn_module.templates.pages.asn.frappe.db.get_value") as get_value:
+			supplier = _get_supplier_for_user("Administrator")
+
+		self.assertIsNone(supplier)
+		get_value.assert_not_called()
+
+	def test_has_website_permission_uses_session_user_when_user_not_passed(self):
+		doc = SimpleNamespace(supplier="Supp-001")
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+		):
+			self.assertTrue(has_website_permission(doc, "read"))
+
 	def test_has_website_permission_allows_matching_supplier(self):
 		doc = SimpleNamespace(supplier="Supp-001")
 
@@ -246,6 +263,59 @@ class TestASNPortalPage(FrappeTestCase):
 			with self.assertRaises(frappe.PermissionError):
 				cancel_portal_asn("ASN-0001")
 
+	def test_cancel_portal_asn_rejects_empty_name(self):
+		with self.assertRaises(frappe.ValidationError):
+			cancel_portal_asn(" ")
+
+	def test_cancel_portal_asn_rejects_other_supplier(self):
+		doc = SimpleNamespace(supplier="Supp-002", docstatus=1, status="Submitted", name="ASN-0001")
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch("asn_module.templates.pages.asn.frappe.get_doc", return_value=doc),
+			self.assertRaises(frappe.PermissionError),
+		):
+			cancel_portal_asn("ASN-0001")
+
+	def test_cancel_portal_asn_rejects_non_submitted_docstatus(self):
+		doc = SimpleNamespace(supplier="Supp-001", docstatus=0, status="Draft", name="ASN-0001")
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch("asn_module.templates.pages.asn.frappe.get_doc", return_value=doc),
+			self.assertRaises(frappe.ValidationError),
+		):
+			cancel_portal_asn("ASN-0001")
+
+	def test_cancel_portal_asn_rejects_wrong_status(self):
+		doc = SimpleNamespace(supplier="Supp-001", docstatus=1, status="Received", name="ASN-0001")
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch("asn_module.templates.pages.asn.frappe.get_doc", return_value=doc),
+			self.assertRaises(frappe.ValidationError),
+		):
+			cancel_portal_asn("ASN-0001")
+
+	def test_cancel_portal_asn_rejects_existing_purchase_receipt(self):
+		doc = SimpleNamespace(supplier="Supp-001", docstatus=1, status="Submitted", name="ASN-0001")
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch("asn_module.templates.pages.asn.frappe.get_doc", return_value=doc),
+			patch("asn_module.templates.pages.asn.purchase_receipt_exists_for_asn", return_value=True),
+			self.assertRaises(frappe.ValidationError),
+		):
+			cancel_portal_asn("ASN-0001")
+
 	def test_cancel_portal_asn_calls_cancel_when_eligible(self):
 		doc = SimpleNamespace(supplier="Supp-001", docstatus=1, status="Submitted", name="ASN-0001")
 		doc.flags = SimpleNamespace(ignore_permissions=False)
@@ -275,6 +345,47 @@ class TestASNPortalPage(FrappeTestCase):
 		):
 			with self.assertRaises(frappe.PermissionError):
 				delete_portal_asn("ASN-0001")
+
+	def test_delete_portal_asn_rejects_empty_name(self):
+		with self.assertRaises(frappe.ValidationError):
+			delete_portal_asn("")
+
+	def test_delete_portal_asn_rejects_other_supplier(self):
+		doc = SimpleNamespace(supplier="Supp-002", docstatus=2, name="ASN-0001")
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch("asn_module.templates.pages.asn.frappe.get_doc", return_value=doc),
+			self.assertRaises(frappe.PermissionError),
+		):
+			delete_portal_asn("ASN-0001")
+
+	def test_delete_portal_asn_rejects_non_cancelled_docstatus(self):
+		doc = SimpleNamespace(supplier="Supp-001", docstatus=1, name="ASN-0001")
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch("asn_module.templates.pages.asn.frappe.get_doc", return_value=doc),
+			self.assertRaises(frappe.ValidationError),
+		):
+			delete_portal_asn("ASN-0001")
+
+	def test_delete_portal_asn_rejects_existing_purchase_receipt(self):
+		doc = SimpleNamespace(supplier="Supp-001", docstatus=2, name="ASN-0001")
+		with (
+			patch(
+				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
+			),
+			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
+			patch("asn_module.templates.pages.asn.frappe.get_doc", return_value=doc),
+			patch("asn_module.templates.pages.asn.purchase_receipt_exists_for_asn", return_value=True),
+			self.assertRaises(frappe.ValidationError),
+		):
+			delete_portal_asn("ASN-0001")
 
 	def test_delete_portal_asn_calls_delete_when_eligible(self):
 		doc = SimpleNamespace(supplier="Supp-001", docstatus=2, name="ASN-0001")

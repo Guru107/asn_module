@@ -3,6 +3,8 @@ from unittest.mock import patch
 
 from frappe.tests.utils import FrappeTestCase
 
+import asn_module.custom_fields.purchase_invoice as purchase_invoice_fields
+import asn_module.custom_fields.purchase_receipt as purchase_receipt_fields
 import asn_module.hooks as hooks
 import asn_module.setup as setup_module
 
@@ -47,3 +49,21 @@ class TestHooks(FrappeTestCase):
 		create_notifications.assert_called_once_with()
 		register_actions.assert_called_once_with()
 		self.assertEqual(call_order, ["pr", "pi", "notif", "actions"])
+
+	def test_purchase_receipt_custom_fields_define_asn_link_and_item_mapping(self):
+		with patch("asn_module.custom_fields.purchase_receipt.create_custom_fields") as create_custom_fields:
+			purchase_receipt_fields.setup()
+
+		fields = create_custom_fields.call_args.args[0]["Purchase Receipt"]
+		self.assertEqual(fields[0]["fieldname"], "asn")
+		self.assertEqual(fields[0]["options"], "ASN")
+		self.assertEqual(fields[1]["fieldname"], "asn_items")
+		self.assertEqual(fields[1]["fieldtype"], "JSON")
+
+	def test_purchase_invoice_custom_fields_define_asn_link(self):
+		with patch("asn_module.custom_fields.purchase_invoice.create_custom_fields") as create_custom_fields:
+			purchase_invoice_fields.setup()
+
+		fields = create_custom_fields.call_args.args[0]["Purchase Invoice"]
+		self.assertEqual(fields[0]["fieldname"], "asn")
+		self.assertEqual(fields[0]["options"], "ASN")

@@ -8,6 +8,9 @@ from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	PortalValidationError,
 	enforce_bulk_limits,
+	error_entry,
+	fetch_purchase_order_items,
+	get_supplier_open_purchase_orders,
 	normalize_group_field,
 	normalize_group_value,
 	parse_non_negative_rate,
@@ -96,6 +99,52 @@ class TestNormalizeGroupValue(FrappeTestCase):
 
 	def test_normal(self):
 		self.assertEqual(normalize_group_value("hello"), "hello")
+
+
+class TestServiceUtilities(FrappeTestCase):
+	def test_error_entry_keeps_row_invoice_field_and_message(self):
+		result = error_entry(row_number=2, invoice_no="INV-1", field="qty", message="Bad qty")
+
+		self.assertEqual(result["row_number"], 2)
+		self.assertEqual(result["invoice_no"], "INV-1")
+		self.assertEqual(result["field"], "qty")
+		self.assertEqual(result["message"], "Bad qty")
+
+	def test_get_supplier_open_purchase_orders_indexes_rows_by_name(self):
+		rows = [SimpleNamespace(name="PO-001"), SimpleNamespace(name="PO-002")]
+		with patch(
+			"asn_module.templates.pages.asn_new_services.get_open_purchase_orders_for_supplier",
+			return_value=rows,
+		):
+			result = get_supplier_open_purchase_orders("Supp-001")
+
+		self.assertEqual(sorted(result), ["PO-001", "PO-002"])
+		self.assertIs(result["PO-001"], rows[0])
+
+	def test_fetch_purchase_order_items_returns_empty_without_purchase_orders(self):
+		with patch("asn_module.templates.pages.asn_new_services.frappe.get_all") as get_all:
+			result = fetch_purchase_order_items([])
+
+		self.assertEqual(result, ({}, {}))
+		get_all.assert_not_called()
+
+	def test_fetch_purchase_order_items_groups_by_purchase_order_and_sr_no(self):
+		rows = [
+			frappe._dict({"name": "POI-1", "parent": "PO-1", "idx": 1, "item_code": "ITEM-1", "qty": 10}),
+			frappe._dict({"name": "POI-2", "parent": "PO-1", "idx": 2, "item_code": "ITEM-2", "qty": 5}),
+		]
+		with (
+			patch("asn_module.templates.pages.asn_new_services.frappe.get_all", return_value=rows),
+			patch(
+				"asn_module.templates.pages.asn_new_services._get_shipped_qty_by_po_item",
+				return_value={"POI-1": 3},
+			),
+		):
+			rows_by_key, remaining = fetch_purchase_order_items(["PO-1"])
+
+		self.assertEqual(rows_by_key[("PO-1", "1")][0].name, "POI-1")
+		self.assertEqual(remaining["POI-1"], 7)
+		self.assertEqual(remaining["POI-2"], 5)
 
 
 class TestNormalizeGroupField(FrappeTestCase):

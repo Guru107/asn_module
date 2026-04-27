@@ -67,15 +67,33 @@ omit = [
 	"*/tests/*",
 	"*/patches/*",
 	"*/config/*",
+	"*/apps/erpnext/*",
+	"*/apps/frappe/*",
+	"*/apps/payments/*",
 	"*/__init__.py",
-	"asn_module/setup.py",
+	"*/asn_module/setup.py",
+	"*/asn_module/utils/cypress_helpers.py",
+	"*/asn_module/property_tests/*",
 	"*/templates/pages/test_*.py",
 ]
 
 [tool.coverage.report]
-fail_under = 90
+fail_under = 96
 show_missing = true
 skip_empty = true
+omit = [
+	"*/tests/*",
+	"*/patches/*",
+	"*/config/*",
+	"*/apps/erpnext/*",
+	"*/apps/frappe/*",
+	"*/apps/payments/*",
+	"*/__init__.py",
+	"*/asn_module/setup.py",
+	"*/asn_module/utils/cypress_helpers.py",
+	"*/asn_module/property_tests/*",
+	"*/test_*.py",
+]
 exclude_lines = [
 	"pragma: no cover",
 	"if __name__ == .__main__.",
