@@ -59,5 +59,6 @@ cypress/screenshots/
 .aider*
 
 .coverage
+coverage.xml
 .hypothesis/
 dump.rdb

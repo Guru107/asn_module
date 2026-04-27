@@ -6,7 +6,11 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate, today
 
-from asn_module.asn_module.doctype.asn.asn import get_po_items, get_purchase_order_items
+from asn_module.asn_module.doctype.asn.asn import (
+	get_item_transition_summary,
+	get_po_items,
+	get_purchase_order_items,
+)
 from asn_module.utils.test_setup import TEST_COMPANY_NAME, before_tests
 
 IGNORE_TEST_RECORD_DEPENDENCIES = [
@@ -409,6 +413,84 @@ class TestASN(FrappeTestCase):
 
 		self.assertEqual(doc.status, "Draft")
 
+	def test_get_context_sets_website_fields_and_portal_actions(self):
+		asn = make_test_asn()
+		asn.name = "ASN-CONTEXT-001"
+		context = SimpleNamespace()
+		with (
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.asn_eligible_for_supplier_portal_cancel",
+				return_value=True,
+			),
+			patch(
+				"asn_module.asn_module.doctype.asn.asn.asn_eligible_for_supplier_portal_delete",
+				return_value=False,
+			),
+		):
+			asn.get_context(context)
+
+		self.assertEqual(context.doc, asn)
+		self.assertEqual(context.title, "ASN-CONTEXT-001")
+		self.assertTrue(context.can_cancel_portal)
+		self.assertFalse(context.can_delete_portal)
+
+	def test_purge_scan_codes_noops_when_doctype_missing(self):
+		asn = make_test_asn()
+		asn.name = "ASN-NO-SCAN-CODE"
+		with (
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.exists", return_value=False),
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.delete") as mock_delete,
+		):
+			asn._purge_scan_codes_for_asn()
+
+		mock_delete.assert_not_called()
+
+	def test_delete_asn_transition_logs_noops_when_doctype_missing(self):
+		asn = make_test_asn()
+		asn.name = "ASN-NO-LOG"
+		with (
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.exists", return_value=False),
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.delete") as mock_delete,
+		):
+			asn._delete_asn_transition_logs()
+
+		mock_delete.assert_not_called()
+
+	def test_delete_linked_draft_purchase_receipts_noops_without_asn_column(self):
+		asn = make_test_asn()
+		with (
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.has_column", return_value=False),
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.get_all") as get_all,
+		):
+			asn._delete_linked_draft_purchase_receipts()
+
+		get_all.assert_not_called()
+
+	def test_validate_supplier_invoice_unique_ignores_blank_invoice_no(self):
+		asn = make_test_asn()
+		asn.supplier_invoice_no = ""
+		with patch("asn_module.asn_module.doctype.asn.asn.frappe.db.exists") as exists:
+			asn._validate_supplier_invoice_unique()
+
+		exists.assert_not_called()
+
+	def test_validate_po_qty_ignores_rows_without_po_links(self):
+		asn = make_test_asn()
+		asn.items[0].purchase_order = ""
+		asn.items[0].purchase_order_item = ""
+		with patch("asn_module.asn_module.doctype.asn.asn.frappe.get_all") as get_all:
+			asn._validate_po_qty()
+
+		get_all.assert_not_called()
+
+	def test_validate_po_qty_ignores_missing_purchase_order_item_qty(self):
+		asn = make_test_asn()
+		with (
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.get_all", return_value=[]),
+			patch("asn_module.asn_module.doctype.asn.asn._get_shipped_qty_by_po_item", return_value={}),
+		):
+			asn._validate_po_qty()
+
 	def test_submit_sets_status_date_and_attachments(self):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
@@ -653,6 +735,9 @@ class TestASN(FrappeTestCase):
 		self.assertGreaterEqual(len(results), 1)
 		self.assertEqual(results[0][0], po.items[0].item_code)
 
+	def test_get_po_items_returns_empty_without_purchase_order_filter(self):
+		self.assertEqual(get_po_items("ASN Item", "test", "item_code", 0, 20, {}), [])
+
 	def test_get_purchase_order_items_rejects_inaccessible_purchase_order(self):
 		with patch(
 			"asn_module.asn_module.doctype.asn.asn._get_accessible_purchase_order",
@@ -668,3 +753,11 @@ class TestASN(FrappeTestCase):
 		):
 			with self.assertRaises(frappe.PermissionError):
 				get_po_items("ASN Item", "test", "item_code", 0, 20, {"purchase_order": "PO-0001"})
+
+	def test_get_item_transition_summary_rejects_without_read_permission(self):
+		doc = SimpleNamespace(has_permission=lambda _ptype: False)
+		with (
+			patch("asn_module.asn_module.doctype.asn.asn.frappe.get_doc", return_value=doc),
+			self.assertRaises(frappe.PermissionError),
+		):
+			get_item_transition_summary("ASN-0001")
