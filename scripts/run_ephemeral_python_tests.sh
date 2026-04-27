@@ -123,4 +123,4 @@ elif [ "${CI:-}" = "true" ] && [ "$#" -eq 0 ]; then
 		test_exit=$?
 	fi
 fi
-exit $test_exit
+exit "$test_exit"
