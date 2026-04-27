@@ -138,8 +138,14 @@ def _get_existing_success_result(action_key: str, source_doctype: str, source_na
 			if not frappe.db.exists(log["result_doctype"], log["result_name"]):
 				continue
 			doc = frappe.get_doc(log["result_doctype"], log["result_name"])
-		except Exception:
+		except (frappe.DoesNotExistError, frappe.PermissionError, ImportError):
 			continue
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				_("Failed to resolve existing result from Scan Log"),
+			)
+			raise
 		return {
 			"doctype": doc.doctype,
 			"name": doc.name,

@@ -8,6 +8,7 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.qr_engine.dispatch import (
 	ActionNotFoundError,
 	PermissionDeniedError,
+	_get_existing_success_result,
 	_resolve_action,
 	dispatch,
 )
@@ -149,6 +150,7 @@ class TestDispatch(FrappeTestCase):
 			"Scan Log",
 			filters={
 				"action": "create_purchase_receipt",
+				"source_doctype": "DocType",
 				"source_name": "QR Action Registry",
 				"result": "Success",
 			},
@@ -200,6 +202,7 @@ class TestDispatch(FrappeTestCase):
 			"Scan Log",
 			filters={
 				"action": "create_purchase_receipt",
+				"source_doctype": "DocType",
 				"source_name": "QR Action Registry",
 				"result": "Success",
 			},
@@ -210,6 +213,23 @@ class TestDispatch(FrappeTestCase):
 		self.assertEqual(log["device_info"], "Rescan")
 		self.assertEqual(log["result_doctype"], "ToDo")
 		self.assertEqual(log["result_name"], todo.name)
+
+	def test_existing_success_result_logs_and_raises_unexpected_errors(self):
+		unexpected_error = RuntimeError("database unavailable")
+
+		with (
+			patch(
+				"asn_module.qr_engine.dispatch.frappe.get_all",
+				return_value=[{"result_doctype": "ToDo", "result_name": "TODO-0001"}],
+			),
+			patch("asn_module.qr_engine.dispatch.frappe.db.exists", return_value=True),
+			patch("asn_module.qr_engine.dispatch.frappe.get_doc", side_effect=unexpected_error),
+			patch("asn_module.qr_engine.dispatch.frappe.log_error") as log_error,
+		):
+			with self.assertRaises(RuntimeError):
+				_get_existing_success_result("create_purchase_receipt", "DocType", "QR Action Registry")
+
+		log_error.assert_called_once()
 
 	def test_dispatch_rejects_source_doctype_mismatch_and_logs_failure(self):
 		self._set_registry(source_doctype="ASN")
