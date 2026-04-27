@@ -170,6 +170,15 @@ def on_purchase_receipt_trash(doc, method):
 			"state": "PR_CREATED_DRAFT",
 		},
 	)
+	frappe.db.delete(
+		"Scan Log",
+		{
+			"action": "create_purchase_receipt",
+			"result_doctype": "Purchase Receipt",
+			"result_name": doc.name,
+			"result": "Success",
+		},
+	)
 
 
 def on_purchase_receipt_submit(doc, method):

@@ -215,12 +215,22 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
 			on_purchase_receipt_trash(doc, "on_trash")
 
-		delete.assert_called_once_with(
+		self.assertEqual(delete.call_count, 2)
+		delete.assert_any_call(
 			"ASN Transition Log",
 			{
 				"ref_doctype": "Purchase Receipt",
 				"ref_name": "PR-UNIT-004",
 				"state": "PR_CREATED_DRAFT",
+			},
+		)
+		delete.assert_any_call(
+			"Scan Log",
+			{
+				"action": "create_purchase_receipt",
+				"result_doctype": "Purchase Receipt",
+				"result_name": "PR-UNIT-004",
+				"result": "Success",
 			},
 		)
 
