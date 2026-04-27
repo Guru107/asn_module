@@ -152,6 +152,7 @@ class TestDispatch(FrappeTestCase):
 				"action": "create_purchase_receipt",
 				"source_doctype": "DocType",
 				"source_name": "QR Action Registry",
+				"scan_code": code,
 				"result": "Success",
 			},
 			fields=["name", "device_info", "result_doctype", "result_name"],
@@ -181,6 +182,7 @@ class TestDispatch(FrappeTestCase):
 				"action": "create_purchase_receipt",
 				"source_doctype": "DocType",
 				"source_name": "QR Action Registry",
+				"scan_code": code,
 				"device_info": "Original",
 				"result": "Success",
 				"result_doctype": "ToDo",
@@ -204,6 +206,7 @@ class TestDispatch(FrappeTestCase):
 				"action": "create_purchase_receipt",
 				"source_doctype": "DocType",
 				"source_name": "QR Action Registry",
+				"scan_code": code,
 				"result": "Success",
 			},
 			fields=["device_info", "result_doctype", "result_name"],
@@ -225,11 +228,91 @@ class TestDispatch(FrappeTestCase):
 			patch("asn_module.qr_engine.dispatch.frappe.db.exists", return_value=True),
 			patch("asn_module.qr_engine.dispatch.frappe.get_doc", side_effect=unexpected_error),
 			patch("asn_module.qr_engine.dispatch.frappe.log_error") as log_error,
+			self.assertRaises(RuntimeError),
 		):
-			with self.assertRaises(RuntimeError):
-				_get_existing_success_result("create_purchase_receipt", "DocType", "QR Action Registry")
+			_get_existing_success_result(
+				"create_purchase_receipt",
+				"DocType",
+				"QR Action Registry",
+				"SCAN-CODE-1",
+			)
 
 		log_error.assert_called_once()
+
+	def test_dispatch_used_scan_code_does_not_reopen_other_barcode_result(self):
+		self._set_registry()
+		other_code = self._make_scan_code()
+		frappe.db.set_value("Scan Code", other_code, "status", "Used", update_modified=False)
+		current_code = get_or_create_scan_code("create_purchase_receipt", "DocType", "QR Action Registry")
+		todo = frappe.get_doc(
+			{
+				"doctype": "ToDo",
+				"description": "Other barcode result",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Scan Code", current_code, "status", "Used", update_modified=False)
+		frappe.get_doc(
+			{
+				"doctype": "Scan Log",
+				"action": "create_purchase_receipt",
+				"source_doctype": "DocType",
+				"source_name": "QR Action Registry",
+				"scan_code": other_code,
+				"device_info": "Original",
+				"result": "Success",
+				"result_doctype": "ToDo",
+				"result_name": todo.name,
+			}
+		).insert(ignore_permissions=True)
+
+		with (
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			self.assertRaises(frappe.ValidationError),
+		):
+			dispatch(code=current_code, device_info="Rescan")
+
+		self.assertEqual(frappe.db.get_value("Scan Code", current_code, "scan_count"), 0)
+
+	def test_dispatch_used_scan_code_rejects_when_prior_result_is_missing(self):
+		self._set_registry()
+		code = self._make_scan_code()
+		frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
+		frappe.get_doc(
+			{
+				"doctype": "Scan Log",
+				"action": "create_purchase_receipt",
+				"source_doctype": "DocType",
+				"source_name": "QR Action Registry",
+				"scan_code": code,
+				"device_info": "Original",
+				"result": "Success",
+				"result_doctype": "ToDo",
+				"result_name": "MISSING-TODO-0001",
+			}
+		).insert(ignore_permissions=True, ignore_links=True)
+
+		with (
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			self.assertRaises(frappe.ValidationError),
+		):
+			dispatch(code=code, device_info="Rescan")
+
+		self.assertEqual(frappe.db.get_value("Scan Code", code, "scan_count"), 0)
+		log = frappe.get_all(
+			"Scan Log",
+			filters={
+				"action": "create_purchase_receipt",
+				"source_doctype": "DocType",
+				"source_name": "QR Action Registry",
+				"scan_code": code,
+				"result": "Failure",
+			},
+			fields=["device_info", "error_message"],
+			order_by="creation desc",
+			limit=1,
+		)[0]
+		self.assertEqual(log["device_info"], "Rescan")
+		self.assertIn("already been used", log["error_message"])
 
 	def test_dispatch_rejects_source_doctype_mismatch_and_logs_failure(self):
 		self._set_registry(source_doctype="ASN")
@@ -426,6 +509,7 @@ def scan_log_emitting_handler(*, source_doctype, source_name, payload):
 			"action": payload["action"],
 			"source_doctype": source_doctype,
 			"source_name": source_name,
+			"scan_code": payload.get("scan_code"),
 			"result": "Success",
 			"device_info": device,
 		}

@@ -9,6 +9,7 @@
 		"action",
 		"source_doctype",
 		"source_name",
+		"scan_code",
 		"device_info",
 		"result",
 		"result_doctype",
@@ -51,6 +52,14 @@
 			"options": "source_doctype",
 			"read_only": 1,
 			"reqd": 1
+		},
+		{
+			"fieldname": "scan_code",
+			"fieldtype": "Link",
+			"label": "Scan Code",
+			"options": "Scan Code",
+			"read_only": 1,
+			"search_index": 1
 		},
 		{
 			"fieldname": "device_info",
@@ -114,5 +123,6 @@
 	],
 	"sort_field": "creation",
 	"sort_order": "DESC",
-	"states": []
+	"states": [],
+	"indexes": [["scan_code", "action", "source_doctype", "source_name", "result"]]
 }
