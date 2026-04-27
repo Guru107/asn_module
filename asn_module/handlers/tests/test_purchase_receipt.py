@@ -152,6 +152,8 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			supplier="Supp-001",
 			supplier_invoice_no="INV-UNIT-002",
 			transporter_name="Carrier",
+			vehicle_number="MH12AB1234",
+			driver_contact="9876543210",
 			lr_no="LR-UNIT",
 			lr_date="2026-04-26",
 			items=[asn_item],
@@ -196,6 +198,8 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(pr.company, "TCPL")
 		self.assertEqual(pr.currency, "INR")
 		self.assertEqual(pr.supplier_delivery_note, "INV-UNIT-002")
+		self.assertEqual(pr.vehicle_no, "MH12AB1234")
+		self.assertEqual(pr.driver_name, "9876543210")
 		self.assertEqual(pr.items[0].purchase_order_item, "POI-001")
 		self.assertEqual(pr.items[0].warehouse, "Stores - TCPL")
 		self.assertEqual(pr.items[0].qty, 3)

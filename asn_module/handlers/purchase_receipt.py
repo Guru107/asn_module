@@ -84,6 +84,8 @@ def _apply_asn_fields(pr, asn) -> None:
 	# ASN owns supplier-facing transport/invoice references.
 	pr.supplier_delivery_note = asn.supplier_invoice_no
 	pr.transporter_name = asn.transporter_name
+	pr.vehicle_no = asn.vehicle_number
+	pr.driver_name = asn.driver_contact
 	pr.lr_no = asn.lr_no
 	pr.lr_date = asn.lr_date
 
