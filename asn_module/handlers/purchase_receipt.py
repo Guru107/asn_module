@@ -77,6 +77,9 @@ def _unique(values: list[str]) -> list[str]:
 
 def _apply_asn_fields(pr, asn) -> None:
 	pr.supplier = asn.supplier
+	if not getattr(pr, "supplier_name", None):
+		pr.supplier_name = getattr(asn, "supplier_name", None) or asn.supplier
+	pr.title = pr.supplier_name or pr.supplier
 	pr.asn = asn.name
 	# ASN owns supplier-facing transport/invoice references.
 	pr.supplier_delivery_note = asn.supplier_invoice_no

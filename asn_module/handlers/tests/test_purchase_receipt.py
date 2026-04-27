@@ -175,6 +175,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 					company="TCPL",
 					currency="INR",
 					conversion_rate=1,
+					title="{supplier_name}",
 				)
 
 			def insert(self, **kwargs):
@@ -191,6 +192,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 		self.assertEqual(result["name"], "PR-UNIT-002")
 		self.assertEqual(pr.supplier, "Supp-001")
+		self.assertEqual(pr.title, "Supp-001")
 		self.assertEqual(pr.company, "TCPL")
 		self.assertEqual(pr.currency, "INR")
 		self.assertEqual(pr.supplier_delivery_note, "INV-UNIT-002")
