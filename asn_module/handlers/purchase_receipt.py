@@ -179,6 +179,19 @@ def on_purchase_receipt_trash(doc, method):
 			"result": "Success",
 		},
 	)
+	if doc.asn:
+		frappe.db.set_value(
+			"Scan Code",
+			{
+				"action_key": "create_purchase_receipt",
+				"source_doctype": "ASN",
+				"source_name": doc.asn,
+				"status": "Used",
+			},
+			"status",
+			"Active",
+			update_modified=True,
+		)
 
 
 def on_purchase_receipt_submit(doc, method):

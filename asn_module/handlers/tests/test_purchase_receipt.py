@@ -210,9 +210,12 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		get_doc.assert_not_called()
 
 	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
-		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0)
+		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0, asn="ASN-UNIT-004")
 
-		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete,
+			patch("asn_module.handlers.purchase_receipt.frappe.db.set_value") as set_value,
+		):
 			on_purchase_receipt_trash(doc, "on_trash")
 
 		self.assertEqual(delete.call_count, 2)
@@ -233,14 +236,30 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				"result": "Success",
 			},
 		)
+		set_value.assert_called_once_with(
+			"Scan Code",
+			{
+				"action_key": "create_purchase_receipt",
+				"source_doctype": "ASN",
+				"source_name": "ASN-UNIT-004",
+				"status": "Used",
+			},
+			"status",
+			"Active",
+			update_modified=True,
+		)
 
 	def test_on_purchase_receipt_trash_keeps_submitted_transition_logs(self):
-		doc = SimpleNamespace(name="PR-UNIT-005", docstatus=1)
+		doc = SimpleNamespace(name="PR-UNIT-005", docstatus=1, asn="ASN-UNIT-005")
 
-		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete,
+			patch("asn_module.handlers.purchase_receipt.frappe.db.set_value") as set_value,
+		):
 			on_purchase_receipt_trash(doc, "on_trash")
 
 		delete.assert_not_called()
+		set_value.assert_not_called()
 
 	def test_on_purchase_receipt_submit_skips_unmapped_pr_rows(self):
 		asn = SimpleNamespace(name="ASN-UNIT-003", reload=lambda: None, update_receipt_status=lambda: None)
