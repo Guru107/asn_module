@@ -163,6 +163,54 @@ class TestDispatch(FrappeTestCase):
 
 		self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Used")
 
+	def test_dispatch_used_scan_code_returns_existing_created_document(self):
+		self._set_registry()
+		code = self._make_scan_code()
+		todo = frappe.get_doc(
+			{
+				"doctype": "ToDo",
+				"description": "Existing scan result",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
+		frappe.get_doc(
+			{
+				"doctype": "Scan Log",
+				"action": "create_purchase_receipt",
+				"source_doctype": "DocType",
+				"source_name": "QR Action Registry",
+				"device_info": "Original",
+				"result": "Success",
+				"result_doctype": "ToDo",
+				"result_name": todo.name,
+			}
+		).insert(ignore_permissions=True)
+
+		with patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]):
+			result = dispatch(code=code, device_info="Rescan")
+
+		self.assertTrue(result["success"])
+		self.assertEqual(result["action"], "create_purchase_receipt")
+		self.assertEqual(result["doctype"], "ToDo")
+		self.assertEqual(result["name"], todo.name)
+		self.assertEqual(result["url"], todo.get_url())
+		self.assertIn("Existing", result["message"])
+		self.assertEqual(frappe.db.get_value("Scan Code", code, "scan_count"), 1)
+		log = frappe.get_all(
+			"Scan Log",
+			filters={
+				"action": "create_purchase_receipt",
+				"source_name": "QR Action Registry",
+				"result": "Success",
+			},
+			fields=["device_info", "result_doctype", "result_name"],
+			order_by="creation desc",
+			limit=1,
+		)[0]
+		self.assertEqual(log["device_info"], "Rescan")
+		self.assertEqual(log["result_doctype"], "ToDo")
+		self.assertEqual(log["result_name"], todo.name)
+
 	def test_dispatch_rejects_source_doctype_mismatch_and_logs_failure(self):
 		self._set_registry(source_doctype="ASN")
 		code_val = "".join(secrets.choice(SCAN_CODE_ALPHABET) for _ in range(SCAN_CODE_LENGTH))
