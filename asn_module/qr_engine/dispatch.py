@@ -1,7 +1,9 @@
 import frappe
 from frappe import _
+from frappe.utils import get_datetime, now_datetime
 
 from asn_module.qr_engine.scan_codes import (
+	RESCAN_SAFE_ACTIONS,
 	get_scan_code_doc,
 	normalize_scan_code,
 	record_successful_scan,
@@ -90,6 +92,7 @@ def _log_scan(
 	source_name: str,
 	result: str,
 	device_info: str,
+	scan_code: str | None = None,
 	result_doctype: str | None = None,
 	result_name: str | None = None,
 	error_message: str | None = None,
@@ -100,6 +103,7 @@ def _log_scan(
 			"action": action,
 			"source_doctype": source_doctype,
 			"source_name": source_name,
+			"scan_code": scan_code,
 			"device_info": device_info,
 			"result": result,
 			"result_doctype": result_doctype,
@@ -114,6 +118,57 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 	module = frappe.get_module(module_path)
 	handler_fn = getattr(module, method_name)
 	return handler_fn(source_doctype=source_doctype, source_name=source_name, payload=payload)
+
+
+def _get_existing_success_result(
+	action_key: str,
+	source_doctype: str,
+	source_name: str,
+	scan_code: str,
+) -> dict | None:
+	logs = frappe.get_all(
+		"Scan Log",
+		filters={
+			"action": action_key,
+			"source_doctype": source_doctype,
+			"source_name": source_name,
+			"scan_code": scan_code,
+			"result": "Success",
+			"result_doctype": ("is", "set"),
+			"result_name": ("is", "set"),
+		},
+		fields=["result_doctype", "result_name"],
+		order_by="creation desc",
+		limit=5,
+	)
+	for log in logs:
+		try:
+			if not frappe.db.exists(log["result_doctype"], log["result_name"]):
+				continue
+			doc = frappe.get_doc(log["result_doctype"], log["result_name"])
+		except (frappe.DoesNotExistError, frappe.PermissionError, ImportError):
+			continue
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				_("Failed to resolve existing result from Scan Log"),
+			)
+			raise
+		return {
+			"doctype": doc.doctype,
+			"name": doc.name,
+			"url": doc.get_url(),
+			"message": _("Existing {0} {1} opened").format(doc.doctype, doc.name),
+		}
+	return None
+
+
+def _can_open_existing_result(scan_doc: frappe.model.document.Document, action_key: str) -> bool:
+	if scan_doc.status != "Used" or action_key in RESCAN_SAFE_ACTIONS:
+		return False
+	if scan_doc.expires_on and get_datetime(scan_doc.expires_on) < now_datetime():
+		return False
+	return True
 
 
 def _payload_from_scan_code_registry(scan_doc: frappe.model.document.Document, device_info: str) -> dict:
@@ -140,6 +195,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 	action_key = "unknown"
 	source_doctype = "DocType"
 	source_name = "QR Action Registry"
+	scan_code_name = None
 
 	try:
 		if not normalized:
@@ -151,15 +207,42 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		if not scan_doc:
 			raise ScanCodeNotFoundError(_("Unknown or invalid scan code."))
 
+		scan_code_name = scan_doc.name
 		action_key = scan_doc.action_key
 		source_doctype = scan_doc.source_doctype
 		source_name = scan_doc.source_name
 
-		validate_scan_code_row(scan_doc, action_key)
-
 		action = _resolve_action(action_key)
 		_validate_source_doctype(action["source_doctype"], source_doctype)
 		_check_permission(action["allowed_roles"])
+
+		if _can_open_existing_result(scan_doc, action_key):
+			existing_result = _get_existing_success_result(
+				action_key,
+				source_doctype,
+				source_name,
+				scan_doc.name,
+			)
+			if existing_result:
+				record_successful_scan(scan_doc.name, action_key)
+				_log_scan(
+					action=action_key,
+					source_doctype=source_doctype,
+					source_name=source_name,
+					result="Success",
+					device_info=device_info,
+					scan_code=scan_doc.name,
+					result_doctype=existing_result["doctype"],
+					result_name=existing_result["name"],
+				)
+				frappe.local.flags.commit = True
+				return {
+					"success": True,
+					"action": action_key,
+					**existing_result,
+				}
+
+		validate_scan_code_row(scan_doc, action_key)
 
 		payload = _payload_from_scan_code_registry(scan_doc, device_info)
 
@@ -176,6 +259,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 				source_name=source_name,
 				result="Success",
 				device_info=device_info,
+				scan_code=scan_doc.name,
 				result_doctype=handler_result.get("doctype"),
 				result_name=handler_result.get("name"),
 			)
@@ -197,6 +281,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			source_name=failure_source_name,
 			result="Failure",
 			device_info=device_info,
+			scan_code=scan_code_name,
 			error_message=str(exc),
 		)
 		frappe.db.commit()
