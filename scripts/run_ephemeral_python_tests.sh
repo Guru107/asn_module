@@ -112,7 +112,13 @@ elif [ "${CI:-}" = "true" ] && [ "$#" -eq 0 ]; then
 	if [ ! -f "$coverage_data_source" ] && [ -f "$BENCH_ROOT/.coverage" ]; then
 		coverage_data_source="$BENCH_ROOT/.coverage"
 	fi
-	if [ -f "$coverage_data_source" ] && [ -x "$BENCH_ROOT/env/bin/python" ]; then
+	if [ ! -f "$coverage_data_source" ]; then
+		echo "Coverage data not found; cannot enforce the coverage gate." >&2
+		test_exit=1
+	elif [ ! -x "$BENCH_ROOT/env/bin/python" ]; then
+		echo "Coverage runner not found at $BENCH_ROOT/env/bin/python." >&2
+		test_exit=1
+	else
 		COVERAGE_FILE="$coverage_data_source" COVERAGE_RCFILE="$APP_ROOT/pyproject.toml" "$BENCH_ROOT/env/bin/python" -m coverage report
 		test_exit=$?
 	fi

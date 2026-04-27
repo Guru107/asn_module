@@ -65,18 +65,21 @@ class TestTransitionTraceFilters(_ReportTestBase):
 
 	def test_execute_filters_by_item_code(self):
 		self._emit(state="Item Code Filter Test", item_code=self._item_code)
+		other_item_code = f"{self._item_code}-OTHER"
+		self._emit(state="Item Code Filter Other", item_code=other_item_code)
 
 		_columns, rows = execute({"item_code": self._item_code})
 
 		self.assertTrue(rows)
 		for row in rows:
 			self.assertEqual(row[3], self._item_code)
+		self.assertFalse(any(row[3] == other_item_code for row in rows))
 
 	def test_execute_filters_by_to_date_excludes_future_rows(self):
 		self._emit(state="To Date Filter Test")
 		past_date = frappe.utils.add_days(frappe.utils.today(), -30)
 
-		_columns, rows = execute({"to_date": past_date})
+		_columns, rows = execute({"asn": self._asn_name, "to_date": past_date})
 
 		self.assertEqual(rows, [])
 

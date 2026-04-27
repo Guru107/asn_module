@@ -41,7 +41,7 @@ Run the full suite and check coverage before every PR:
 bench --site development.localhost run-tests --app asn_module --with-coverage
 ```
 
-Coverage must not drop below **95%**.
+Coverage must not drop below **96%**.
 
 ---
 
@@ -192,7 +192,6 @@ const row = `
 
 - Covering Indexes: Include all columns requested in the SELECT to avoid a "Bookmark Lookup" or "Row ID Scan".
   - Example: `INDEX(user_id, status, last_login) for SELECT last_login FROM users WHERE user_id = ? AND status = ?`.
-- 
 - Prefix Indexing: Use for long VARCHAR or TEXT columns to save space while maintaining selectivity.
   - Example: `CREATE INDEX idx_url ON links (url(20));`.
 - Invisible/Ignored Indexes: Test the impact of removing an index without actually dropping it.

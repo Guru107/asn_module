@@ -94,6 +94,7 @@ knowledge_base:
     filePatterns:
       - "AGENTS.md"
       - "CLAUDE.md"
+      - "docs/CodingConventions.md"
       - "docs/ProjectOverview.md"
   learnings:
     scope: "local"

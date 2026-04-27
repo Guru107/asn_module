@@ -350,7 +350,7 @@ class TestGetOrCreateScanCodeCanonicalReuse(TestCase):
 		fake_frappe.ValidationError = Exception
 		fake_frappe.db.get_value.return_value = None
 		fake_frappe.db.exists.return_value = True
-		fake_frappe.throw.side_effect = Exception("Could not allocate")
+		fake_frappe.throw.side_effect = RuntimeError("Could not allocate")
 
 		with (
 			patch("asn_module.qr_engine.scan_codes.frappe", fake_frappe),
@@ -358,7 +358,7 @@ class TestGetOrCreateScanCodeCanonicalReuse(TestCase):
 				"asn_module.qr_engine.scan_codes._random_scan_code_value",
 				return_value="AAAAAAAAAAAAAAAA",
 			),
-			self.assertRaises(Exception),
+			self.assertRaises(RuntimeError),
 		):
 			get_or_create_scan_code("create_purchase_receipt", "ASN", "ASN-004")
 
