@@ -73,7 +73,10 @@ function show_asn_bulk_upload_dialog() {
 					frappe.msgprint({
 						title: __("ASNs Created"),
 						indicator: "green",
-						message: __("Created {0} ASN(s): {1}", [result.created_count || names.length, links]),
+						message: __("Created {0} ASN(s): {1}", [
+							result.created_count || names.length,
+							links,
+						]),
 					});
 					dialog.hide();
 				},

@@ -37,7 +37,9 @@ def create_from_csv_file(file_url: str, supplier: str) -> dict:
 def _require_desk_bulk_permissions():
 	if frappe.has_permission("ASN", "create") and frappe.has_permission("ASN", "submit"):
 		return
-	frappe.throw(_("You need create and submit permission on ASN to use bulk upload."), frappe.PermissionError)
+	frappe.throw(
+		_("You need create and submit permission on ASN to use bulk upload."), frappe.PermissionError
+	)
 
 
 def _read_file_content(file_url: str) -> bytes:
