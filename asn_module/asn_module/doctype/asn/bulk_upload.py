@@ -43,7 +43,13 @@ def _require_desk_bulk_permissions():
 
 
 def _read_file_content(file_url: str) -> bytes:
-	file_doc = frappe.get_doc("File", {"file_url": file_url})
+	try:
+		file_doc = frappe.get_doc("File", {"file_url": file_url})
+	except frappe.DoesNotExistError:
+		frappe.throw(
+			_("Uploaded file {0} was not found. Please re-upload the CSV.").format(file_url),
+			frappe.ValidationError,
+		)
 	content = file_doc.get_content()
 	if isinstance(content, bytes):
 		return content

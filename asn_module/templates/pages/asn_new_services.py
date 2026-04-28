@@ -635,7 +635,6 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
 	doc_payload["supplier_invoice_amount"] = header["supplier_invoice_amount"]
 	asn = frappe.get_doc(doc_payload)
 	asn.flags.ignore_permissions = True
-	asn.insert(ignore_permissions=True)
-	asn.flags.ignore_permissions = True
+	asn.insert()
 	asn.submit()
 	return asn

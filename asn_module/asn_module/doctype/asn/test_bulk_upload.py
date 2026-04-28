@@ -152,6 +152,19 @@ class TestDeskBulkASNUpload(FrappeTestCase):
 		with patch("asn_module.asn_module.doctype.asn.bulk_upload.frappe.get_doc", return_value=file_doc):
 			self.assertEqual(bulk_upload._read_file_content("/private/files/asn.csv"), b"csv-text")
 
+	def test_read_file_content_raises_clear_error_for_missing_file(self):
+		with (
+			patch(
+				"asn_module.asn_module.doctype.asn.bulk_upload.frappe.get_doc",
+				side_effect=frappe.DoesNotExistError("missing"),
+			),
+			self.assertRaises(frappe.ValidationError) as ctx,
+		):
+			bulk_upload._read_file_content("/private/files/missing.csv")
+
+		self.assertIn("/private/files/missing.csv", str(ctx.exception))
+		self.assertIn("re-upload the CSV", str(ctx.exception))
+
 	def test_format_validation_errors_uses_fallback_message(self):
 		self.assertEqual(
 			bulk_upload._format_validation_errors([{"message": " "}]),

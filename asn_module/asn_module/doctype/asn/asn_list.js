@@ -7,6 +7,33 @@ frappe.listview_settings["ASN"] = {
 };
 
 function show_asn_bulk_upload_dialog() {
+	function format_error_message(error) {
+		const response = error && error.responseJSON ? error.responseJSON : {};
+		if (response._server_messages) {
+			try {
+				const messages = JSON.parse(response._server_messages).map((message) =>
+					frappe.utils.escape_html(parse_server_message(message))
+				);
+				return messages.join("<br>");
+			} catch {
+				return response._server_messages;
+			}
+		}
+		return (
+			response.message ||
+			(error && error.message) ||
+			__("Bulk upload failed. Please try again.")
+		);
+	}
+
+	function parse_server_message(message) {
+		try {
+			return JSON.parse(message).message || message;
+		} catch {
+			return message;
+		}
+	}
+
 	function download_template() {
 		frappe.call({
 			method: "asn_module.asn_module.doctype.asn.bulk_upload.get_bulk_csv_headers",
@@ -79,6 +106,13 @@ function show_asn_bulk_upload_dialog() {
 						]),
 					});
 					dialog.hide();
+				},
+				error(error) {
+					frappe.msgprint({
+						title: __("Bulk Upload Failed"),
+						indicator: "red",
+						message: format_error_message(error),
+					});
 				},
 				always() {
 					dialog.enable_primary_action();
