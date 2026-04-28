@@ -51,6 +51,13 @@ function show_asn_bulk_upload_dialog() {
 				document.body.removeChild(anchor);
 				URL.revokeObjectURL(url);
 			},
+			error(error) {
+				frappe.msgprint({
+					title: __("Download Failed"),
+					indicator: "red",
+					message: format_error_message(error),
+				});
+			},
 		});
 	}
 
