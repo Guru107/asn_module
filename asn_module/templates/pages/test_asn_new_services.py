@@ -13,6 +13,7 @@ from asn_module.templates.pages.asn_new_services import (
 	get_supplier_open_purchase_orders,
 	normalize_group_field,
 	normalize_group_value,
+	parse_bulk_csv_content,
 	parse_non_negative_rate,
 	parse_optional_non_negative_rate,
 	parse_positive_qty,
@@ -28,6 +29,15 @@ from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 def _test_dates():
 	return get_fiscal_year_test_dates()
+
+
+def _bulk_csv_content(row_line: str) -> bytes:
+	return (
+		"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,"
+		"transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,"
+		"sr_no,item_code,qty,rate\n"
+		f"{row_line}\n"
+	).encode()
 
 
 class TestParsePositiveQty(FrappeTestCase):
@@ -102,6 +112,24 @@ class TestNormalizeGroupValue(FrappeTestCase):
 
 
 class TestServiceUtilities(FrappeTestCase):
+	def test_parse_bulk_csv_content_accepts_portal_template_without_request_context(self):
+		csv_content = _bulk_csv_content(
+			"INV-1,"
+			f"{_test_dates()['supplier_invoice_date']},{_test_dates()['expected_delivery_date']},"
+			f"LR-1,{_test_dates()['lr_date']},TR-1,,,250,PO-0001,1,ITEM-001,10,25"
+		)
+
+		rows = parse_bulk_csv_content(csv_content)
+
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0].supplier_invoice_no, "INV-1")
+		self.assertEqual(rows[0].purchase_order, "PO-0001")
+		self.assertEqual(rows[0].sr_no, "1")
+		self.assertEqual(rows[0].item_code, "ITEM-001")
+		self.assertEqual(rows[0].qty, 10)
+		self.assertEqual(rows[0].rate, 25)
+		self.assertEqual(rows[0].supplier_invoice_amount, 250)
+
 	def test_error_entry_keeps_row_invoice_field_and_message(self):
 		result = error_entry(row_number=2, invoice_no="INV-1", field="qty", message="Bad qty")
 
