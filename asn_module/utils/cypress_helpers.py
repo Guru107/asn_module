@@ -178,12 +178,32 @@ def seed_supplier_large_po_context():
 
 	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 
-	po = create_purchase_order(qty=1, supplier=supplier.name, item_count=100, rate=10)
+	single_po = create_purchase_order(
+		qty=1,
+		supplier=supplier.name,
+		item_count=100,
+		rate=10,
+		unique_items=True,
+	)
+	bulk_po = create_purchase_order(
+		qty=1,
+		supplier=supplier.name,
+		item_count=100,
+		rate=10,
+		unique_items=True,
+	)
 	return {
 		"supplier": supplier.name,
 		"portal_user": portal_user_name,
 		"portal_password": portal_password,
-		"purchase_order": {"name": po.name, "items": [i.as_dict() for i in po.items]},
+		"single_purchase_order": {
+			"name": single_po.name,
+			"items": [i.as_dict() for i in single_po.items],
+		},
+		"bulk_purchase_order": {
+			"name": bulk_po.name,
+			"items": [i.as_dict() for i in bulk_po.items],
+		},
 	}
 
 

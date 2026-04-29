@@ -1080,8 +1080,19 @@
 	}
 
 	addPoBtn.addEventListener("click", () => {
+		const typedPo = (poInput.value || "").trim();
 		if (!poSuggestionsBox.hidden && poSuggestionRows.length && poActiveSuggestion >= 0) {
+			const exactRow = poSuggestionRows.find((row) => (row.value || "").trim() === typedPo);
+			if (exactRow && exactRow.value) {
+				tryAddPurchaseOrder(exactRow.value);
+				return;
+			}
+
 			const row = poSuggestionRows[poActiveSuggestion];
+			if (typedPo && row && (row.value || "").trim() !== typedPo) {
+				tryAddPurchaseOrder(typedPo);
+				return;
+			}
 			if (row && row.value) {
 				tryAddPurchaseOrder(row.value);
 				return;
@@ -1091,7 +1102,7 @@
 			tryAddPurchaseOrder(poSuggestionRows[0].value);
 			return;
 		}
-		tryAddPurchaseOrder(poInput.value);
+		tryAddPurchaseOrder(typedPo);
 	});
 
 	poInput.addEventListener("input", () => {

@@ -16,6 +16,7 @@ from asn_module.templates.pages.asn_new_services import (
 	validate_supplier_invoices_not_reused,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+from asn_module.utils import cypress_helpers
 
 
 def _test_dates():
@@ -36,6 +37,39 @@ def _fake_frappe_local():
 
 
 class TestASNNewPortalPage(FrappeTestCase):
+	def test_seed_supplier_large_po_context_returns_isolated_purchase_orders(self):
+		def fake_po(name):
+			item = SimpleNamespace(as_dict=lambda: {"item_code": "ITEM-001"})
+			return SimpleNamespace(name=name, items=[item])
+
+		with (
+			patch.object(cypress_helpers.frappe, "conf", SimpleNamespace(get=lambda key: key == "allow_tests")),
+			patch.object(cypress_helpers.frappe, "only_for"),
+			patch(
+				"asn_module.utils.cypress_helpers._ensure_supplier_portal_user",
+				return_value=(SimpleNamespace(name="SUP-001"), "supplier@example.com", "secret"),
+			),
+			patch(
+				"asn_module.asn_module.doctype.asn.test_asn.create_purchase_order",
+				side_effect=[fake_po("PO-SINGLE"), fake_po("PO-BULK")],
+			) as create_purchase_order,
+		):
+			context = cypress_helpers.seed_supplier_large_po_context()
+
+		self.assertEqual(context["single_purchase_order"]["name"], "PO-SINGLE")
+		self.assertEqual(context["bulk_purchase_order"]["name"], "PO-BULK")
+		create_purchase_order.assert_any_call(
+			qty=1,
+			supplier="SUP-001",
+			item_count=100,
+			rate=10,
+			unique_items=True,
+		)
+		self.assertNotEqual(
+			context["single_purchase_order"]["name"],
+			context["bulk_purchase_order"]["name"],
+		)
+
 	def test_parse_single_rows_returns_empty_without_type_error_for_blank_form_lists(self):
 		class _FakeForm:
 			def getlist(self, fieldname):
