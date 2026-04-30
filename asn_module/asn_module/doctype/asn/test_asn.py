@@ -64,8 +64,7 @@ def _ensure_supplier():
 	return supplier.name
 
 
-def _ensure_item():
-	item_code = "_Test ASN Item"
+def _ensure_item(item_code: str = "_Test ASN Item"):
 	if frappe.db.exists("Item", item_code):
 		# Keep the default ASN test item non-inspection to avoid cross-test leakage
 		# from stock-transfer/QI tests that temporarily enable inspection.
@@ -267,11 +266,13 @@ def create_purchase_order(**kwargs):
 	po.conversion_factor = kwargs.get("conversion_factor", 1)
 	po.supplier_warehouse = kwargs.get("supplier_warehouse")
 	item_count = max(int(kwargs.get("item_count", 1) or 1), 1)
-	for _ in range(item_count):
+	use_unique_items = bool(kwargs.get("unique_items")) and not kwargs.get("item_code")
+	for idx in range(item_count):
+		row_item_code = _ensure_item(f"_Test ASN Item {idx + 1}") if use_unique_items else item_code
 		po.append(
 			"items",
 			{
-				"item_code": item_code,
+				"item_code": row_item_code,
 				"warehouse": warehouse,
 				"qty": kwargs.get("qty", 10),
 				"rate": kwargs.get("rate", 500),
