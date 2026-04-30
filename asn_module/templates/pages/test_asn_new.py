@@ -43,7 +43,9 @@ class TestASNNewPortalPage(FrappeTestCase):
 			return SimpleNamespace(name=name, items=[item])
 
 		with (
-			patch.object(cypress_helpers.frappe, "conf", SimpleNamespace(get=lambda key: key == "allow_tests")),
+			patch.object(
+				cypress_helpers.frappe, "conf", SimpleNamespace(get=lambda key: key == "allow_tests")
+			),
 			patch.object(cypress_helpers.frappe, "only_for"),
 			patch(
 				"asn_module.utils.cypress_helpers._ensure_supplier_portal_user",
