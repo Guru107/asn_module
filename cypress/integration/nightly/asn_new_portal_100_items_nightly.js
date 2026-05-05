@@ -14,7 +14,7 @@ context("ASN New portal nightly — 100 item PO flows", () => {
 	});
 
 	it("submits single ASN from a 100-line purchase order", () => {
-		const poName = seededData.purchase_order.name;
+		const poName = seededData.single_purchase_order.name;
 		cy.visit("/asn_new", { failOnStatusCode: false });
 		cy.get("#single-po-input", { timeout: 20000 }).clear().type(poName);
 		cy.get("#add-po-btn").click();
@@ -43,14 +43,24 @@ context("ASN New portal nightly — 100 item PO flows", () => {
 	});
 
 	it("submits bulk ASN from a 100-line purchase order CSV", () => {
-		const po = seededData.purchase_order;
+		const po = seededData.bulk_purchase_order;
 		const invoiceNo = "BULK-100-" + Date.now();
+		const invoiceDate = new Date().toISOString().slice(0, 10);
+		const expectedDeliveryDate = new Date(Date.now() + 9 * 24 * 60 * 60 * 1000)
+			.toISOString()
+			.slice(0, 10);
 		const csvLines = [
 			"supplier_invoice_no,supplier_invoice_date,expected_delivery_date,lr_no,lr_date,transporter_name,vehicle_number,driver_contact,supplier_invoice_amount,purchase_order,sr_no,item_code,qty,rate",
 		];
 		for (let idx = 1; idx <= 100; idx++) {
+			if (!Array.isArray(po.items) || po.items.length < idx) {
+				throw new Error(
+					`Fixture contract violation: po.items missing or too short for index ${idx} for invoice ${invoiceNo}`
+				);
+			}
+			const item = po.items[idx - 1];
 			csvLines.push(
-				`${invoiceNo},2026-04-01,2026-04-10,,,Transporter,KA01AB1234,,1000,${po.name},${idx},${po.items[0].item_code},1,10`
+				`${invoiceNo},${invoiceDate},${expectedDeliveryDate},,,Transporter,KA01AB1234,,1000,${po.name},${idx},${item.item_code},1,10`
 			);
 		}
 		const csv = csvLines.join("\n");
