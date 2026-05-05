@@ -64,7 +64,7 @@ def _ensure_supplier():
 	return supplier.name
 
 
-def _ensure_item(item_code: str = "_Test ASN Item"):
+def _ensure_item(item_code: str = "_Test ASN Item") -> str:
 	if frappe.db.exists("Item", item_code):
 		# Keep the default ASN test item non-inspection to avoid cross-test leakage
 		# from stock-transfer/QI tests that temporarily enable inspection.

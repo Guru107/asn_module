@@ -1,6 +1,6 @@
 from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import frappe
 from frappe.exceptions import ValidationError as FrappeValidationError
@@ -38,7 +38,7 @@ def _fake_frappe_local():
 
 class TestASNNewPortalPage(FrappeTestCase):
 	def test_seed_supplier_large_po_context_returns_isolated_purchase_orders(self):
-		def fake_po(name):
+		def fake_po(name) -> SimpleNamespace:
 			item = SimpleNamespace(as_dict=lambda: {"item_code": "ITEM-001"})
 			return SimpleNamespace(name=name, items=[item])
 
@@ -60,12 +60,25 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 		self.assertEqual(context["single_purchase_order"]["name"], "PO-SINGLE")
 		self.assertEqual(context["bulk_purchase_order"]["name"], "PO-BULK")
-		create_purchase_order.assert_any_call(
-			qty=1,
-			supplier="SUP-001",
-			item_count=100,
-			rate=10,
-			unique_items=True,
+		self.assertEqual(create_purchase_order.call_count, 2)
+		create_purchase_order.assert_has_calls(
+			[
+				call(
+					qty=1,
+					supplier="SUP-001",
+					item_count=100,
+					rate=10,
+					unique_items=True,
+				),
+				call(
+					qty=1,
+					supplier="SUP-001",
+					item_count=100,
+					rate=10,
+					unique_items=True,
+				),
+			],
+			any_order=False,
 		)
 		self.assertNotEqual(
 			context["single_purchase_order"]["name"],

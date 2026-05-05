@@ -1081,15 +1081,18 @@
 
 	addPoBtn.addEventListener("click", () => {
 		const typedPo = (poInput.value || "").trim();
+		const typedPoNorm = typedPo.toLowerCase();
 		if (!poSuggestionsBox.hidden && poSuggestionRows.length && poActiveSuggestion >= 0) {
-			const exactRow = poSuggestionRows.find((row) => (row.value || "").trim() === typedPo);
+			const exactRow = poSuggestionRows.find(
+				(row) => (row.value || "").trim().toLowerCase() === typedPoNorm
+			);
 			if (exactRow && exactRow.value) {
 				tryAddPurchaseOrder(exactRow.value);
 				return;
 			}
 
 			const row = poSuggestionRows[poActiveSuggestion];
-			if (typedPo && row && (row.value || "").trim() !== typedPo) {
+			if (typedPo && row && (row.value || "").trim().toLowerCase() !== typedPoNorm) {
 				tryAddPurchaseOrder(typedPo);
 				return;
 			}
