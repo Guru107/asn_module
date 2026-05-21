@@ -42,6 +42,18 @@ context("ASN New portal nightly — 100 item PO flows", () => {
 		cy.location("pathname", { timeout: 20000 }).should("match", /\/asn\/asn-[^/]+$/i);
 	});
 
+	it("adds purchase order from suggestions with case-insensitive typed value", () => {
+		const poName = seededData.single_purchase_order.name;
+		cy.visit("/asn_new", { failOnStatusCode: false });
+		cy.get("#single-po-input", { timeout: 20000 }).clear().type(poName.toLowerCase());
+		cy.get("#add-po-btn").click();
+		cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
+		cy.get("#single-item-picker-list input[type='checkbox']", { timeout: 20000 }).should(
+			"have.length",
+			100
+		);
+	});
+
 	it("submits bulk ASN from a 100-line purchase order CSV", () => {
 		const po = seededData.bulk_purchase_order;
 		const invoiceNo = "BULK-100-" + Date.now();
