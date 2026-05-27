@@ -98,6 +98,13 @@ class TestASNNewPortalPage(FrappeTestCase):
 			"ITEM-100",
 		)
 
+	def test_seed_supplier_large_po_context_rejects_when_tests_disabled(self):
+		with (
+			patch.object(cypress_helpers.frappe, "conf", SimpleNamespace(get=lambda _key: False)),
+			self.assertRaises(frappe.exceptions.ValidationError),
+		):
+			cypress_helpers.seed_supplier_large_po_context()
+
 	def test_parse_single_rows_returns_empty_without_type_error_for_blank_form_lists(self):
 		class _FakeForm:
 			def getlist(self, fieldname):

@@ -10,6 +10,7 @@ DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-}"
 EPHEMERAL_ADMIN_PASSWORD="${EPHEMERAL_ADMIN_PASSWORD:-admin}"
 RUN_ID="${EPHEMERAL_SITE_RUN_ID:-$(date +%Y%m%d%H%M%S)-$$}"
 SITE_NAME="asn-e2e-${RUN_ID//[^a-zA-Z0-9]/}"
+HOST_NAME="${SITE_NAME}"
 E2E_MODE="${1:-smoke}"
 SERVE_PORT="${EPHEMERAL_E2E_PORT:-}"
 SERVER_PID=""
@@ -61,8 +62,9 @@ bench --site "$SITE_NAME" install-app asn_module
 bench build --app asn_module
 
 bench --site "$SITE_NAME" set-config allow_tests true
-# Ensure Cypress baseUrl resolves to the runtime serve port in CI.
-bench --site "$SITE_NAME" set-config host_name "http://${SITE_NAME}:${SERVE_PORT}"
+# Default host_name uses the ephemeral site hostname. If /etc/hosts update cannot
+# run in a non-interactive environment, this is switched to 127.0.0.1 below.
+bench --site "$SITE_NAME" set-config host_name "http://${HOST_NAME}:${SERVE_PORT}"
 # `before_tests` handles ERPNext baseline setup deterministically for this app.
 # Avoid setup-wizard fixture replays here because they intermittently trigger
 # nested-set recursion and pollute CI logs without adding test coverage value.
@@ -71,7 +73,13 @@ bench --site "$SITE_NAME" execute asn_module.utils.test_setup.before_tests
 bench use "$SITE_NAME"
 
 echo "Adding hosts entry for Cypress baseUrl..."
-echo "127.0.0.1 ${SITE_NAME}" | sudo tee -a /etc/hosts >/dev/null
+if echo "127.0.0.1 ${SITE_NAME}" | sudo tee -a /etc/hosts >/dev/null; then
+	HOST_NAME="${SITE_NAME}"
+else
+	echo "Warning: could not update /etc/hosts via sudo; falling back to 127.0.0.1 host_name." >&2
+	HOST_NAME="127.0.0.1"
+	bench --site "$SITE_NAME" set-config host_name "http://${HOST_NAME}:${SERVE_PORT}"
+fi
 
 echo "Starting Frappe (port ${SERVE_PORT}, log ${SERVE_LOG})..."
 nohup bench --site "$SITE_NAME" serve --port "$SERVE_PORT" --noreload >"$SERVE_LOG" 2>&1 &
@@ -83,7 +91,7 @@ for _ in $(seq 1 45); do
 		cat "$SERVE_LOG" >&2 || true
 		exit 1
 	fi
-	if curl -sSf "http://${SITE_NAME}:${SERVE_PORT}/api/method/frappe.ping" >/dev/null 2>&1; then
+	if curl -sSf "http://${HOST_NAME}:${SERVE_PORT}/api/method/frappe.ping" >/dev/null 2>&1; then
 		ready=1
 		break
 	fi
