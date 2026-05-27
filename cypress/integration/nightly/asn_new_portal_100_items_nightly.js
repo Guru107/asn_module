@@ -13,6 +13,25 @@ context("ASN New portal nightly — 100 item PO flows", () => {
 		cy.login(seededData.portal_user, seededData.portal_password);
 	});
 
+	it("adds purchase order from suggestions with case-insensitive typed value", () => {
+		const poName = seededData.single_purchase_order.name;
+		cy.visit("/asn_new", { failOnStatusCode: false });
+		cy.get("#single-po-input", { timeout: 20000 }).clear().type(poName.toLowerCase());
+		cy.get("#asn-po-suggestions", { timeout: 20000 }).should("be.visible");
+		cy.contains(
+			"#asn-po-suggestions .asn-po-suggestion",
+			new RegExp(Cypress._.escapeRegExp(poName), "i")
+		)
+			.should("be.visible")
+			.click();
+		cy.get("#add-po-btn").click();
+		cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
+		cy.get("#single-item-picker-list input[type='checkbox']", { timeout: 20000 }).should(
+			"have.length",
+			100
+		);
+	});
+
 	it("submits single ASN from a 100-line purchase order", () => {
 		const poName = seededData.single_purchase_order.name;
 		cy.visit("/asn_new", { failOnStatusCode: false });
