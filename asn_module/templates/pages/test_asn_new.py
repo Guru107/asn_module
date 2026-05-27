@@ -39,8 +39,11 @@ def _fake_frappe_local():
 class TestASNNewPortalPage(FrappeTestCase):
 	def test_seed_supplier_large_po_context_returns_isolated_purchase_orders(self):
 		def fake_po(name) -> SimpleNamespace:
-			item = SimpleNamespace(as_dict=lambda: {"item_code": "ITEM-001"})
-			return SimpleNamespace(name=name, items=[item])
+			items = [
+				SimpleNamespace(as_dict=lambda item_code=f"ITEM-{idx:03d}": {"item_code": item_code})
+				for idx in range(1, 101)
+			]
+			return SimpleNamespace(name=name, items=items)
 
 		with (
 			patch.object(
@@ -83,6 +86,16 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertNotEqual(
 			context["single_purchase_order"]["name"],
 			context["bulk_purchase_order"]["name"],
+		)
+		self.assertEqual(len(context["single_purchase_order"]["items"]), 100)
+		self.assertEqual(len(context["bulk_purchase_order"]["items"]), 100)
+		self.assertEqual(
+			context["single_purchase_order"]["items"][0]["item_code"],
+			"ITEM-001",
+		)
+		self.assertEqual(
+			context["bulk_purchase_order"]["items"][-1]["item_code"],
+			"ITEM-100",
 		)
 
 	def test_parse_single_rows_returns_empty_without_type_error_for_blank_form_lists(self):
