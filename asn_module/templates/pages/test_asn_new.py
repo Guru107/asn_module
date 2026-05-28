@@ -40,7 +40,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 	def test_seed_supplier_large_po_context_returns_isolated_purchase_orders(self):
 		def fake_po(name) -> SimpleNamespace:
 			items = [
-				SimpleNamespace(as_dict=lambda idx=idx: {"item_code": f"ITEM-{idx:03d}"})
+				SimpleNamespace(as_dict=lambda item_code=f"ITEM-{idx:03d}": {"item_code": item_code})
 				for idx in range(1, 101)
 			]
 			return SimpleNamespace(name=name, items=items)
@@ -89,6 +89,14 @@ class TestASNNewPortalPage(FrappeTestCase):
 		)
 		self.assertEqual(len(context["single_purchase_order"]["items"]), 100)
 		self.assertEqual(len(context["bulk_purchase_order"]["items"]), 100)
+		self.assertEqual(
+			context["single_purchase_order"]["items"][0]["item_code"],
+			"ITEM-001",
+		)
+		self.assertEqual(
+			context["bulk_purchase_order"]["items"][-1]["item_code"],
+			"ITEM-100",
+		)
 
 	def test_seed_supplier_large_po_context_rejects_when_tests_disabled(self):
 		with (
