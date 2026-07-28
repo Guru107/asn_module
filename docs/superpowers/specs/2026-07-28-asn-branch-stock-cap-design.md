@@ -7,7 +7,7 @@ Domain vocabulary for this feature is defined in [CONTEXT.md](../../../CONTEXT.m
 
 ## Confirmed Constraints
 - Cap Warehouses are configured per Branch, not per ASN line and not per Purchase Order line.
-- Branch comes from the Purchase Order header (`Purchase Order.branch`) and the Purchase Receipt header (`Purchase Receipt.branch`). Both are assumed present on the target site as accounting dimension custom fields.
+- Branch comes from the Purchase Order header (`Purchase Order.branch`) and the Purchase Receipt header (`Purchase Receipt.branch`). Both exist as Accounting Dimension custom fields (`Link` -> `Branch`, `insert_after: dimension_col_break`), verified on production and replicated onto bench15 and bench16. See [Environment Prerequisites](#environment-prerequisites).
 - `Item.custom_max_stock` is Maximum Stock, expressed in the item's stock UOM. `Item.safety_stock` is out of scope.
 - ASN draft save must never be blocked. ASN submit and Purchase Receipt submit must be blocked.
 - Every unconfigured path fails open, so rollout cannot break existing flows.
@@ -16,7 +16,7 @@ Domain vocabulary for this feature is defined in [CONTEXT.md](../../../CONTEXT.m
 ## Out of Scope
 - `Item.safety_stock`. Deferred by explicit decision.
 - Any schema change to `ASN`, `ASN Item`, `Item`, `Purchase Order`, or `Purchase Receipt`.
-- Creating the `branch` fields. They are assumed to exist as site customisations.
+- Creating the `branch` fields. They are supplied by the Branch Accounting Dimension.
 - Transactional guarantees. See [Concurrency](#concurrency).
 
 ## Data Model
@@ -226,6 +226,24 @@ Target 96% per project conventions. The pure `evaluate` function makes the branc
 
 ## Compatibility
 The evaluator guards with `frappe.db.has_column` for `Purchase Order.branch`, `Purchase Receipt.branch`, and `Item.custom_max_stock`, and skips entirely when any is absent. The app installs and the full suite passes on a stock v15 or v16 bench without the Branch accounting dimension configured.
+
+## Environment Prerequisites
+
+Verified against production (`trikayacoatings.frappe.cloud`) on 2026-07-28 and replicated onto both local benches.
+
+| Field | Production | bench15 | bench16 |
+| --- | --- | --- | --- |
+| `Purchase Order.branch` | present | present | present |
+| `Purchase Order Item.branch` | present | present | present |
+| `Purchase Receipt.branch` | present | created 2026-07-28 | created 2026-07-28 |
+| `Purchase Receipt Item.branch` | present | created 2026-07-28 | created 2026-07-28 |
+| `Item.custom_max_stock` | **absent** | present | present |
+
+All `branch` fields come from a single `Accounting Dimension` record with `document_type = Branch`, which stamps `branch` (`Link` -> `Branch`, `insert_after: dimension_col_break`) onto every doctype in ERPNext's `accounting_dimension_doctypes` hook.
+
+`Item.custom_max_stock` does not exist on production. Until it is created there, the Stock Cap reads null for every item and fails open silently. Definition to replicate: `Float`, label "Max Stock", `insert_after: safety_stock`, `non_negative: 1`.
+
+**Creating the dimension requires a synchronous call.** `AccountingDimension.on_update` enqueues `make_dimension_in_accounting_doctypes` to the `long` queue unless `frappe.in_test` is set. Inserting the record with no worker running leaves every field uncreated. Any CI or ephemeral-site fixture that sets up the dimension must call the function directly or run under `frappe.in_test`.
 
 ## Known Limitations
 - The cap is advisory under concurrency. See [Concurrency](#concurrency).
