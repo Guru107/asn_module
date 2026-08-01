@@ -1,0 +1,248 @@
+import frappe
+from frappe.tests.utils import FrappeTestCase
+
+from asn_module.stock_cap.fetch import fetch_cap_context
+from asn_module.stock_cap.models import Line
+from asn_module.utils.test_setup import before_tests
+
+BRANCH = "_Test Fetch Branch"
+ITEM = "_Test Fetch Item"
+
+
+def _company():
+	return frappe.db.get_value("Company", {}, "name")
+
+
+def _warehouse(name: str) -> str:
+	abbr = frappe.get_cached_value("Company", _company(), "abbr")
+	full_name = f"{name} - {abbr}"
+	if not frappe.db.exists("Warehouse", full_name):
+		frappe.get_doc(
+			{"doctype": "Warehouse", "warehouse_name": name, "company": _company(), "is_group": 0}
+		).insert(ignore_permissions=True)
+	return full_name
+
+
+def _disable_hsn_validation() -> None:
+	"""Fresh Items created here have no HSN/SAC code.
+
+	india_compliance's Item.validate hook rejects that whenever the test company's
+	country is India (as our before_tests() bootstrap sets it up), which has nothing to
+	do with the stock-cap fetcher under test. --lightmode skips the app-level
+	before_tests hooks that would otherwise disable this, so disable it directly here.
+	See asn_module/tests/test_stock_cap_collect.py for the same pattern.
+	"""
+	if frappe.db.exists("DocType", "GST Settings"):
+		frappe.db.set_single_value("GST Settings", "validate_hsn_code", 0)
+
+
+class TestStockCapFetch(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		_disable_hsn_validation()
+		if not frappe.db.exists("Branch", BRANCH):
+			frappe.get_doc({"doctype": "Branch", "branch": BRANCH}).insert(ignore_permissions=True)
+		if not frappe.db.exists("Item", ITEM):
+			frappe.get_doc(
+				{
+					"doctype": "Item",
+					"item_code": ITEM,
+					"item_name": ITEM,
+					"item_group": frappe.db.get_value("Item Group", {}, "name"),
+					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
+				}
+			).insert(ignore_permissions=True)
+
+	def setUp(self):
+		self.warehouse = _warehouse("_Test Fetch WH")
+		frappe.db.delete("ASN Stock Cap Warehouse")
+		frappe.db.delete("ASN Stock Cap Settings")
+		frappe.db.set_value("Item", ITEM, "custom_max_stock", 100)
+
+	def _line(self) -> Line:
+		return Line(branch=BRANCH, item_code=ITEM, warehouse=self.warehouse, stock_qty=1.0, row_idx=1)
+
+	def _make_settings(self, enabled: int = 1, warehouses: list[str] | None = None):
+		rows = [self.warehouse] if warehouses is None else warehouses
+		frappe.get_doc(
+			{
+				"doctype": "ASN Stock Cap Settings",
+				"branch": BRANCH,
+				"enabled": enabled,
+				"warehouses": [{"warehouse": w} for w in rows],
+			}
+		).insert(ignore_permissions=True)
+
+	def test_no_settings_document_yields_no_cap_warehouses(self):
+		self.assertEqual(fetch_cap_context([self._line()]).cap_warehouses, {})
+
+	def test_disabled_settings_yields_no_cap_warehouses(self):
+		self._make_settings(enabled=0)
+		self.assertEqual(fetch_cap_context([self._line()]).cap_warehouses, {})
+
+	def test_empty_warehouse_table_yields_no_cap_warehouses(self):
+		self._make_settings(warehouses=[])
+		self.assertEqual(fetch_cap_context([self._line()]).cap_warehouses, {})
+
+	def test_enabled_settings_expose_cap_warehouses(self):
+		self._make_settings()
+		context = fetch_cap_context([self._line()])
+		self.assertEqual(context.cap_warehouses, {BRANCH: frozenset({self.warehouse})})
+
+	def test_max_stock_is_read_from_item(self):
+		self._make_settings()
+		self.assertEqual(fetch_cap_context([self._line()]).max_stock[ITEM], 100.0)
+
+	def test_missing_max_stock_column_yields_empty_caps(self):
+		self._make_settings()
+		original = frappe.db.has_column
+
+		def fake_has_column(doctype, column):
+			if doctype == "Item" and column == "custom_max_stock":
+				return False
+			return original(doctype, column)
+
+		frappe.db.has_column = fake_has_column
+		try:
+			self.assertEqual(fetch_cap_context([self._line()]).max_stock, {})
+		finally:
+			frappe.db.has_column = original
+
+	def test_missing_bin_rows_coalesce_to_zero(self):
+		self._make_settings()
+		context = fetch_cap_context([self._line()])
+		self.assertEqual(context.on_hand.get((BRANCH, ITEM), 0.0), 0.0)
+
+	def test_no_lines_returns_empty_context(self):
+		context = fetch_cap_context([])
+		self.assertEqual(context.cap_warehouses, {})
+		self.assertEqual(context.max_stock, {})
+		self.assertEqual(context.on_hand, {})
+		self.assertEqual(context.in_transit, {})
+
+
+def _create_purchase_order(create_purchase_order, **kwargs):
+	"""Build a real Purchase Order fixture via test_asn.create_purchase_order.
+
+	This bench has ``custom_order_type`` and a ``taxes`` row as mandatory on Purchase
+	Order (Property Setters/Custom Fields imported from production) that the shared
+	helper does not set, so fill them in only when the current site's metadata actually
+	requires it -- keeps this working whether or not those customisations are present.
+	Mirrors the workaround in asn_module/tests/test_stock_cap_collect.py.
+	"""
+	po = create_purchase_order(do_not_save=True, **kwargs)
+
+	meta = po.meta
+	order_type_field = meta.get_field("custom_order_type")
+	if order_type_field and order_type_field.reqd and not po.get("custom_order_type"):
+		po.custom_order_type = "Material"
+
+	taxes_field = meta.get_field("taxes")
+	if taxes_field and taxes_field.reqd and not po.get("taxes"):
+		tax_account = frappe.db.get_value("Account", {"company": po.company, "is_group": 0}, "name")
+		if tax_account:
+			po.append(
+				"taxes",
+				{
+					"category": "Total",
+					"add_deduct_tax": "Add",
+					"charge_type": "Actual",
+					"account_head": tax_account,
+					"description": "_Test Stock Cap Fetch Tax",
+					"tax_amount": 0,
+				},
+			)
+
+	po.insert(ignore_permissions=True)
+	po.submit()
+	return po
+
+
+class TestStockCapFetchInTransit(FrappeTestCase):
+	"""In-transit behaviour needs real submitted ASNs, so it lives in its own class."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		_disable_hsn_validation()
+
+	def setUp(self):
+		from asn_module.asn_module.doctype.asn.test_asn import (
+			create_purchase_order,
+			make_test_asn,
+		)
+
+		# FrappeTestCase only rolls back once at class teardown, not per test (see
+		# frappe.deprecation_dumpster.FrappeTestCase.setUpClass), so a submitted ASN
+		# from an earlier test in this class would otherwise keep contributing to later
+		# in-transit totals. Clear this test class's own ASN fixtures before each test.
+		stale_asn_names = frappe.get_all("ASN Item", filters={"item_code": "_Test ASN Item"}, pluck="parent")
+		if stale_asn_names:
+			frappe.db.delete("ASN Item", {"parent": ["in", stale_asn_names]})
+			frappe.db.delete("ASN", {"name": ["in", stale_asn_names]})
+
+		self.purchase_order = _create_purchase_order(create_purchase_order)
+		self.po_item = self.purchase_order.items[0]
+		self.branch = BRANCH
+		if not frappe.db.exists("Branch", self.branch):
+			frappe.get_doc({"doctype": "Branch", "branch": self.branch}).insert(ignore_permissions=True)
+		frappe.db.set_value("Purchase Order", self.purchase_order.name, "branch", self.branch)
+
+		self.warehouse = self.po_item.warehouse
+		frappe.db.delete("ASN Stock Cap Warehouse")
+		frappe.db.delete("ASN Stock Cap Settings")
+		frappe.get_doc(
+			{
+				"doctype": "ASN Stock Cap Settings",
+				"branch": self.branch,
+				"enabled": 1,
+				"warehouses": [{"warehouse": self.warehouse}],
+			}
+		).insert(ignore_permissions=True)
+
+		self.asn = make_test_asn(purchase_order=self.purchase_order, qty=7)
+		self.asn.insert()
+		self.asn.submit()
+
+	def _line(self) -> Line:
+		return Line(
+			branch=self.branch,
+			item_code=self.po_item.item_code,
+			warehouse=self.warehouse,
+			stock_qty=1.0,
+			row_idx=1,
+		)
+
+	def _in_transit(self, exclude=None) -> float:
+		context = fetch_cap_context([self._line()], exclude_asn_name=exclude)
+		return context.in_transit.get((self.branch, self.po_item.item_code), 0.0)
+
+	def test_submitted_asn_contributes_to_in_transit(self):
+		self.assertEqual(self._in_transit(), 7.0 * (self.po_item.conversion_factor or 1))
+
+	def test_exclude_asn_name_removes_that_asn(self):
+		self.assertEqual(self._in_transit(exclude=self.asn.name), 0.0)
+
+	def test_received_status_is_excluded(self):
+		frappe.db.set_value("ASN", self.asn.name, "status", "Received", update_modified=False)
+		self.assertEqual(self._in_transit(), 0.0)
+
+	def test_closed_status_is_excluded(self):
+		frappe.db.set_value("ASN", self.asn.name, "status", "Closed", update_modified=False)
+		self.assertEqual(self._in_transit(), 0.0)
+
+	def test_cancelled_asn_is_excluded(self):
+		self.asn.cancel()
+		self.assertEqual(self._in_transit(), 0.0)
+
+	def test_received_qty_is_deducted_from_in_transit(self):
+		frappe.db.set_value("ASN Item", self.asn.items[0].name, "received_qty", 3, update_modified=False)
+		expected = 4.0 * (self.po_item.conversion_factor or 1)
+		self.assertEqual(self._in_transit(), expected)
+
+	def test_over_received_line_clamps_to_zero_rather_than_going_negative(self):
+		frappe.db.set_value("ASN Item", self.asn.items[0].name, "received_qty", 99, update_modified=False)
+		self.assertEqual(self._in_transit(), 0.0)
