@@ -16,6 +16,7 @@ from asn_module.supplier_asn_portal import (
 	asn_eligible_for_supplier_portal_delete,
 )
 from asn_module.traceability import emit_asn_item_transition, get_latest_transition_rows_for_asn
+from asn_module.utils.permissions import get_accessible_doc
 
 
 class ASN(WebsiteGenerator):
@@ -378,10 +379,4 @@ def get_item_transition_summary(asn: str) -> list[dict]:
 
 
 def _get_accessible_purchase_order(purchase_order: str):
-	doc = frappe.get_doc("Purchase Order", purchase_order)
-	if doc.has_permission("read") or frappe.has_website_permission(doc, "read", user=frappe.session.user):
-		return doc
-
-	frappe.throw(
-		_("Not permitted to access Purchase Order {0}").format(purchase_order), frappe.PermissionError
-	)
+	return get_accessible_doc("Purchase Order", purchase_order)

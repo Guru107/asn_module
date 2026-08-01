@@ -1,7 +1,6 @@
 import json
 
 import frappe
-from frappe import _
 from frappe.utils import flt
 
 from asn_module.stock_cap.collect import (
@@ -13,6 +12,7 @@ from asn_module.stock_cap.evaluate import evaluate
 from asn_module.stock_cap.fetch import fetch_cap_context
 from asn_module.stock_cap.messages import may_see_stock_figures
 from asn_module.stock_cap.models import Breach
+from asn_module.utils.permissions import get_accessible_doc
 
 
 def breaches_for_asn_rows(
@@ -72,7 +72,7 @@ def get_stock_cap_preview(items, asn_name: str | None = None) -> list[dict]:
 		if not purchase_order:
 			continue
 
-		_assert_purchase_order_access(purchase_order)
+		get_accessible_doc("Purchase Order", purchase_order)
 		rows.append(
 			{
 				"idx": item.get("idx") or index,
@@ -105,14 +105,3 @@ def get_stock_cap_preview(items, asn_name: str | None = None) -> list[dict]:
 		preview.append(entry)
 
 	return preview
-
-
-def _assert_purchase_order_access(purchase_order: str):
-	doc = frappe.get_doc("Purchase Order", purchase_order)
-	if doc.has_permission("read") or frappe.has_website_permission(doc, "read", user=frappe.session.user):
-		return
-
-	frappe.throw(
-		_("Not permitted to access Purchase Order {0}").format(purchase_order),
-		frappe.PermissionError,
-	)
