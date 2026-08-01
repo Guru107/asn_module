@@ -6,6 +6,8 @@ from frappe import _
 from frappe.utils import flt
 
 from asn_module.handlers.utils import attach_qr_to_doc
+from asn_module.stock_cap.api import breaches_for_purchase_receipt
+from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.traceability import emit_asn_item_transition
 
 
@@ -53,6 +55,22 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 		"url": f"/app/purchase-receipt/{pr.name}",
 		"message": _("Purchase Receipt {0} created from ASN {1}").format(pr.name, source_name),
 	}
+
+
+def on_purchase_receipt_before_submit(doc, method=None):
+	"""Block a receipt that would carry an item above its branch maximum.
+
+	Runs before_submit so no stock ledger entry is written before the block. The receipt's
+	own ASN is excluded from the in-transit figure inside breaches_for_purchase_receipt.
+	"""
+	breaches = breaches_for_purchase_receipt(doc)
+	if not breaches:
+		return
+
+	frappe.throw(
+		format_breaches(breaches, detailed=may_see_stock_figures()),
+		title=_("Stock Cap Exceeded"),
+	)
 
 
 def _get_single_purchase_order(asn) -> tuple[str, list[str]]:
