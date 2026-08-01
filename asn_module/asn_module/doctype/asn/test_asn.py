@@ -11,7 +11,12 @@ from asn_module.asn_module.doctype.asn.asn import (
 	get_po_items,
 	get_purchase_order_items,
 )
-from asn_module.utils.test_setup import TEST_COMPANY_NAME, before_tests
+from asn_module.utils.test_setup import (
+	TEST_COMPANY_NAME,
+	before_tests,
+	build_purchase_order_with_mandatory_fields,
+	disable_hsn_validation,
+)
 
 IGNORE_TEST_RECORD_DEPENDENCIES = [
 	"Company",
@@ -764,63 +769,26 @@ class TestASN(FrappeTestCase):
 			get_item_transition_summary("ASN-0001")
 
 
-def _disable_hsn_validation() -> None:
-	"""Fresh Items created via create_purchase_order() have no HSN/SAC code.
-
-	india_compliance's Item.validate hook rejects that whenever the test company's
-	country is India (as our before_tests() bootstrap sets it up), which has nothing to
-	do with the stock-cap controller under test. --lightmode skips the app-level
-	before_tests hooks that would otherwise disable this, so disable it directly here.
-	See asn_module/tests/test_stock_cap_collect.py for the same pattern.
-	"""
-	if frappe.db.exists("DocType", "GST Settings"):
-		frappe.db.set_single_value("GST Settings", "validate_hsn_code", 0)
-
-
 _original_create_purchase_order = create_purchase_order
 
 
 def _create_purchase_order_with_mandatory_fields(**kwargs):
 	"""Wrap create_purchase_order() to satisfy this bench's mandatory custom_order_type/taxes fields.
 
-	This bench has ``custom_order_type`` and a ``taxes`` row as mandatory on Purchase
-	Order (Property Setters/Custom Fields imported from production) that
-	create_purchase_order() does not set, so fill them in only when the current site's
-	metadata actually requires it. Mirrors the workaround in
-	asn_module/tests/test_stock_cap_collect.py and test_stock_cap_fetch.py.
+	See asn_module.utils.test_setup.build_purchase_order_with_mandatory_fields for why this
+	bench-specific mandatory-field workaround is needed.
 
 	Uses the module-level reference captured before create_purchase_order() gets patched
 	(see TestASNStockCap.setUp), since this function replaces that name for the duration
 	of each test and must not call back into itself.
 	"""
 	do_not_submit = kwargs.pop("do_not_submit", False)
-	po = _original_create_purchase_order(do_not_save=True, **kwargs)
-
-	meta = po.meta
-	order_type_field = meta.get_field("custom_order_type")
-	if order_type_field and order_type_field.reqd and not po.get("custom_order_type"):
-		po.custom_order_type = "Material"
-
-	taxes_field = meta.get_field("taxes")
-	if taxes_field and taxes_field.reqd and not po.get("taxes"):
-		tax_account = frappe.db.get_value("Account", {"company": po.company, "is_group": 0}, "name")
-		if tax_account:
-			po.append(
-				"taxes",
-				{
-					"category": "Total",
-					"add_deduct_tax": "Add",
-					"charge_type": "Actual",
-					"account_head": tax_account,
-					"description": "_Test ASN Stock Cap Controller Tax",
-					"tax_amount": 0,
-				},
-			)
-
-	po.insert(ignore_permissions=True)
-	if not do_not_submit:
-		po.submit()
-	return po
+	return build_purchase_order_with_mandatory_fields(
+		_original_create_purchase_order,
+		tax_description="_Test ASN Stock Cap Controller Tax",
+		do_not_submit=do_not_submit,
+		**kwargs,
+	)
 
 
 class TestASNStockCap(FrappeTestCase):
@@ -828,7 +796,7 @@ class TestASNStockCap(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
-		_disable_hsn_validation()
+		disable_hsn_validation()
 
 	def setUp(self):
 		# make_test_asn() resolves create_purchase_order() as a module-global at call

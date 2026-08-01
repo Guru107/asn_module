@@ -3,7 +3,11 @@ from frappe.tests.utils import FrappeTestCase
 
 from asn_module.stock_cap.fetch import fetch_cap_context
 from asn_module.stock_cap.models import Line
-from asn_module.utils.test_setup import before_tests
+from asn_module.utils.test_setup import (
+	before_tests,
+	build_purchase_order_with_mandatory_fields,
+	disable_hsn_validation,
+)
 
 BRANCH = "_Test Fetch Branch"
 ITEM = "_Test Fetch Item"
@@ -23,25 +27,12 @@ def _warehouse(name: str) -> str:
 	return full_name
 
 
-def _disable_hsn_validation() -> None:
-	"""Fresh Items created here have no HSN/SAC code.
-
-	india_compliance's Item.validate hook rejects that whenever the test company's
-	country is India (as our before_tests() bootstrap sets it up), which has nothing to
-	do with the stock-cap fetcher under test. --lightmode skips the app-level
-	before_tests hooks that would otherwise disable this, so disable it directly here.
-	See asn_module/tests/test_stock_cap_collect.py for the same pattern.
-	"""
-	if frappe.db.exists("DocType", "GST Settings"):
-		frappe.db.set_single_value("GST Settings", "validate_hsn_code", 0)
-
-
 class TestStockCapFetch(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
-		_disable_hsn_validation()
+		disable_hsn_validation()
 		if not frappe.db.exists("Branch", BRANCH):
 			frappe.get_doc({"doctype": "Branch", "branch": BRANCH}).insert(ignore_permissions=True)
 		if not frappe.db.exists("Item", ITEM):
@@ -126,38 +117,14 @@ class TestStockCapFetch(FrappeTestCase):
 def _create_purchase_order(create_purchase_order, **kwargs):
 	"""Build a real Purchase Order fixture via test_asn.create_purchase_order.
 
-	This bench has ``custom_order_type`` and a ``taxes`` row as mandatory on Purchase
-	Order (Property Setters/Custom Fields imported from production) that the shared
-	helper does not set, so fill them in only when the current site's metadata actually
-	requires it -- keeps this working whether or not those customisations are present.
-	Mirrors the workaround in asn_module/tests/test_stock_cap_collect.py.
+	See asn_module.utils.test_setup.build_purchase_order_with_mandatory_fields for why
+	this bench-specific mandatory-field workaround is needed.
 	"""
-	po = create_purchase_order(do_not_save=True, **kwargs)
-
-	meta = po.meta
-	order_type_field = meta.get_field("custom_order_type")
-	if order_type_field and order_type_field.reqd and not po.get("custom_order_type"):
-		po.custom_order_type = "Material"
-
-	taxes_field = meta.get_field("taxes")
-	if taxes_field and taxes_field.reqd and not po.get("taxes"):
-		tax_account = frappe.db.get_value("Account", {"company": po.company, "is_group": 0}, "name")
-		if tax_account:
-			po.append(
-				"taxes",
-				{
-					"category": "Total",
-					"add_deduct_tax": "Add",
-					"charge_type": "Actual",
-					"account_head": tax_account,
-					"description": "_Test Stock Cap Fetch Tax",
-					"tax_amount": 0,
-				},
-			)
-
-	po.insert(ignore_permissions=True)
-	po.submit()
-	return po
+	return build_purchase_order_with_mandatory_fields(
+		create_purchase_order,
+		tax_description="_Test Stock Cap Fetch Tax",
+		**kwargs,
+	)
 
 
 class TestStockCapFetchInTransit(FrappeTestCase):
@@ -167,7 +134,7 @@ class TestStockCapFetchInTransit(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
-		_disable_hsn_validation()
+		disable_hsn_validation()
 
 	def setUp(self):
 		from asn_module.asn_module.doctype.asn.test_asn import (

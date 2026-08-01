@@ -8,7 +8,11 @@ from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 from asn_module.stock_cap.api import get_stock_cap_preview
 from asn_module.stock_cap.messages import may_see_stock_figures
 from asn_module.utils.permissions import get_accessible_doc
-from asn_module.utils.test_setup import before_tests
+from asn_module.utils.test_setup import (
+	before_tests,
+	build_purchase_order_with_mandatory_fields,
+	disable_hsn_validation,
+)
 
 BRANCH = "_Test API Access Branch"
 ITEM = "_Test API Access Item"
@@ -30,51 +34,16 @@ NO_ACCESS_USER = "asn.stock.cap.none@asn-module.test"
 def _create_purchase_order(**kwargs) -> "frappe.model.document.Document":
 	"""Build a real Purchase Order fixture, filling in bench-specific mandatory fields.
 
-	This bench has ``custom_order_type`` and a ``taxes`` row as mandatory on Purchase
-	Order (Property Setters/Custom Fields imported from production) that the shared
-	``create_purchase_order`` helper does not set, so fill them in only when the
-	current site's metadata actually requires it -- keeps this working whether or not
-	those customisations are present. Mirrors the workaround in
-	asn_module/tests/test_stock_cap_fetch.py and test_stock_cap_collect.py.
+	See asn_module.utils.test_setup.build_purchase_order_with_mandatory_fields for why
+	this bench-specific mandatory-field workaround is needed. Never submits -- callers in
+	this module only need a saved (not necessarily submitted) Purchase Order.
 	"""
-	po = create_purchase_order(do_not_save=True, **kwargs)
-
-	meta = po.meta
-	order_type_field = meta.get_field("custom_order_type")
-	if order_type_field and order_type_field.reqd and not po.get("custom_order_type"):
-		po.custom_order_type = "Material"
-
-	taxes_field = meta.get_field("taxes")
-	if taxes_field and taxes_field.reqd and not po.get("taxes"):
-		tax_account = frappe.db.get_value("Account", {"company": po.company, "is_group": 0}, "name")
-		if tax_account:
-			po.append(
-				"taxes",
-				{
-					"category": "Total",
-					"add_deduct_tax": "Add",
-					"charge_type": "Actual",
-					"account_head": tax_account,
-					"description": "_Test Stock Cap Access Tax",
-					"tax_amount": 0,
-				},
-			)
-
-	po.insert(ignore_permissions=True)
-	return po
-
-
-def _disable_hsn_validation() -> None:
-	"""Fresh Items created here have no HSN/SAC code.
-
-	india_compliance's Item.validate hook rejects that whenever the test company's
-	country is India (as our before_tests() bootstrap sets it up), which has nothing to
-	do with stock-cap access control. --lightmode skips the app-level before_tests hooks
-	that would otherwise disable this, so disable it directly here. See
-	asn_module/tests/test_stock_cap_fetch.py for the same pattern.
-	"""
-	if frappe.db.exists("DocType", "GST Settings"):
-		frappe.db.set_single_value("GST Settings", "validate_hsn_code", 0)
+	return build_purchase_order_with_mandatory_fields(
+		create_purchase_order,
+		tax_description="_Test Stock Cap Access Tax",
+		do_not_submit=True,
+		**kwargs,
+	)
 
 
 def _ensure_role(role_name: str) -> str:
@@ -135,7 +104,7 @@ class TestStockCapPreviewAccessControl(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
-		_disable_hsn_validation()
+		disable_hsn_validation()
 
 		if not frappe.db.exists("Branch", BRANCH):
 			frappe.get_doc({"doctype": "Branch", "branch": BRANCH}).insert(ignore_permissions=True)
