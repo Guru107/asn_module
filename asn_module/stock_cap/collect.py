@@ -1,0 +1,119 @@
+import frappe
+from frappe.utils import flt
+
+from asn_module.stock_cap.models import Line
+
+
+def _conversion_factor(value) -> float:
+	factor = flt(value)
+	return factor if factor > 0 else 1.0
+
+
+def asn_rows_from_doc(doc) -> list[dict]:
+	"""Adapt a saved or unsaved ASN document to the row shape collect_lines_from_asn_rows expects."""
+	return [
+		{
+			"idx": row.idx,
+			"purchase_order": row.purchase_order,
+			"purchase_order_item": row.purchase_order_item,
+			"item_code": row.item_code,
+			"qty": flt(row.qty),
+		}
+		for row in (doc.items or [])
+	]
+
+
+def collect_lines_from_asn_rows(rows: list[dict]) -> list[Line]:
+	"""Normalise ASN rows into stock-UOM lines.
+
+	ASN quantities are in the Purchase Order line's purchase UOM, so every quantity is
+	multiplied by that line's conversion factor before it can be compared with Bin.
+	"""
+	usable = [row for row in rows if row.get("purchase_order") and row.get("purchase_order_item")]
+	if not usable:
+		return []
+
+	if not frappe.db.has_column("Purchase Order", "branch"):
+		return []
+
+	purchase_orders = sorted({row["purchase_order"] for row in usable})
+	po_rows = frappe.get_all(
+		"Purchase Order",
+		filters={"name": ["in", purchase_orders]},
+		fields=["name", "branch", "set_warehouse"],
+		limit_page_length=0,
+	)
+	po_by_name = {row.name: row for row in po_rows}
+
+	po_item_names = sorted({row["purchase_order_item"] for row in usable})
+	po_item_rows = frappe.get_all(
+		"Purchase Order Item",
+		filters={"name": ["in", po_item_names]},
+		fields=["name", "warehouse", "conversion_factor"],
+		limit_page_length=0,
+	)
+	po_item_by_name = {row.name: row for row in po_item_rows}
+
+	lines = []
+	for row in usable:
+		purchase_order = po_by_name.get(row["purchase_order"])
+		po_item = po_item_by_name.get(row["purchase_order_item"])
+		if not purchase_order or not po_item or not purchase_order.branch:
+			continue
+
+		warehouse = po_item.warehouse or purchase_order.set_warehouse
+		if not warehouse:
+			continue
+
+		lines.append(
+			Line(
+				branch=purchase_order.branch,
+				item_code=row["item_code"],
+				warehouse=warehouse,
+				stock_qty=flt(row["qty"]) * _conversion_factor(po_item.conversion_factor),
+				row_idx=int(row.get("idx") or 0),
+			)
+		)
+
+	return lines
+
+
+def collect_lines_from_purchase_receipt(doc) -> list[Line]:
+	"""Normalise a Purchase Receipt. Its stock_qty is already in stock UOM.
+
+	Returns carry negative quantities and reduce stock, so they can never breach a maximum.
+	Rejected quantities post to a separate warehouse and become their own line.
+	"""
+	if getattr(doc, "is_return", 0):
+		return []
+
+	branch = getattr(doc, "branch", None)
+	if not branch:
+		return []
+
+	lines = []
+	for row in doc.items or []:
+		if flt(row.stock_qty) > 0 and row.warehouse:
+			lines.append(
+				Line(
+					branch=branch,
+					item_code=row.item_code,
+					warehouse=row.warehouse,
+					stock_qty=flt(row.stock_qty),
+					row_idx=int(row.idx or 0),
+				)
+			)
+
+		rejected_stock_qty = flt(row.rejected_qty) * _conversion_factor(row.conversion_factor)
+		if rejected_stock_qty > 0 and row.rejected_warehouse:
+			lines.append(
+				Line(
+					branch=branch,
+					item_code=row.item_code,
+					warehouse=row.rejected_warehouse,
+					stock_qty=rejected_stock_qty,
+					row_idx=int(row.idx or 0),
+				)
+			)
+
+	return lines
