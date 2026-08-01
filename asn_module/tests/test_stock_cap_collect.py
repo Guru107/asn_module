@@ -73,12 +73,126 @@ class TestStockCapCollectPurchaseReceipt(FrappeTestCase):
 		doc = SimpleNamespace(branch=None, is_return=0, items=[_receipt_row()])
 		self.assertEqual(collect_lines_from_purchase_receipt(doc), [])
 
+	def test_rejected_qty_treats_zero_conversion_factor_as_one(self):
+		doc = SimpleNamespace(
+			branch="Mumbai",
+			is_return=0,
+			items=[
+				_receipt_row(
+					stock_qty=0.0,
+					rejected_qty=4.0,
+					rejected_warehouse="Quarantine - MC",
+					conversion_factor=0.0,
+				)
+			],
+		)
+		lines = collect_lines_from_purchase_receipt(doc)
+		self.assertEqual(len(lines), 1)
+		self.assertEqual(lines[0].warehouse, "Quarantine - MC")
+		self.assertEqual(lines[0].stock_qty, 4.0)
+
+	def test_rejected_qty_treats_none_conversion_factor_as_one(self):
+		doc = SimpleNamespace(
+			branch="Mumbai",
+			is_return=0,
+			items=[
+				_receipt_row(
+					stock_qty=0.0,
+					rejected_qty=4.0,
+					rejected_warehouse="Quarantine - MC",
+					conversion_factor=None,
+				)
+			],
+		)
+		lines = collect_lines_from_purchase_receipt(doc)
+		self.assertEqual(len(lines), 1)
+		self.assertEqual(lines[0].warehouse, "Quarantine - MC")
+		self.assertEqual(lines[0].stock_qty, 4.0)
+
+
+def _ensure_branch(name: str) -> str:
+	if not frappe.db.exists("Branch", name):
+		frappe.get_doc({"doctype": "Branch", "branch": name}).insert(ignore_permissions=True)
+	return name
+
+
+def _disable_hsn_validation() -> None:
+	"""Fresh Items created via create_purchase_order() have no HSN/SAC code.
+
+	india_compliance's Item.validate hook rejects that whenever the test company's
+	country is India (as our before_tests() bootstrap sets it up), which has nothing to
+	do with the stock-cap collector under test. --lightmode skips the app-level
+	before_tests hooks that would otherwise disable this, so disable it directly here.
+	"""
+	if frappe.db.exists("DocType", "GST Settings"):
+		frappe.db.set_single_value("GST Settings", "validate_hsn_code", 0)
+
+
+def _create_purchase_order(**kwargs):
+	"""Build a real Purchase Order fixture via test_asn.create_purchase_order.
+
+	This bench has ``custom_order_type`` and a ``taxes`` row as mandatory on Purchase
+	Order (Property Setters/Custom Fields imported from production) that the shared
+	helper does not set, so fill them in only when the current site's metadata actually
+	requires it -- keeps this working whether or not those customisations are present.
+	"""
+	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+
+	do_not_submit = kwargs.pop("do_not_submit", False)
+	po = create_purchase_order(do_not_save=True, **kwargs)
+
+	meta = po.meta
+	order_type_field = meta.get_field("custom_order_type")
+	if order_type_field and order_type_field.reqd and not po.get("custom_order_type"):
+		po.custom_order_type = "Material"
+
+	taxes_field = meta.get_field("taxes")
+	if taxes_field and taxes_field.reqd and not po.get("taxes"):
+		tax_account = frappe.db.get_value("Account", {"company": po.company, "is_group": 0}, "name")
+		if tax_account:
+			po.append(
+				"taxes",
+				{
+					"category": "Total",
+					"add_deduct_tax": "Add",
+					"charge_type": "Actual",
+					"account_head": tax_account,
+					"description": "_Test Stock Cap Tax",
+					"tax_amount": 0,
+				},
+			)
+
+	po.insert(ignore_permissions=True)
+	if not do_not_submit:
+		po.submit()
+	return po
+
+
+def _ensure_extra_warehouse(name: str) -> str:
+	company = frappe.db.get_value("Company", {}, "name")
+	abbr = frappe.get_cached_value("Company", company, "abbr")
+	full_name = f"{name} - {abbr}"
+	if frappe.db.exists("Warehouse", full_name):
+		return full_name
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "Warehouse",
+			"warehouse_name": name,
+			"company": company,
+			"is_group": 0,
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	return doc.name
+
 
 class TestStockCapCollectASN(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
+		_disable_hsn_validation()
 
 	def test_asn_rows_from_doc_extracts_row_shape(self):
 		doc = SimpleNamespace(
@@ -131,3 +245,54 @@ class TestStockCapCollectASN(FrappeTestCase):
 			self.assertEqual(collect_lines_from_asn_rows(rows), [])
 		finally:
 			frappe.db.has_column = original
+
+	def test_collect_lines_from_asn_rows_multiplies_qty_by_po_item_conversion_factor(self):
+		branch = _ensure_branch("_Test Stock Cap Collect Branch")
+		purchase_order = _create_purchase_order(qty=10)
+		po_item = purchase_order.items[0]
+		frappe.db.set_value("Purchase Order", purchase_order.name, "branch", branch)
+		frappe.db.set_value("Purchase Order Item", po_item.name, "conversion_factor", 3.0)
+
+		rows = [
+			{
+				"idx": 1,
+				"purchase_order": purchase_order.name,
+				"purchase_order_item": po_item.name,
+				"item_code": po_item.item_code,
+				"qty": 5.0,
+			}
+		]
+
+		lines = collect_lines_from_asn_rows(rows)
+
+		self.assertEqual(len(lines), 1)
+		line = lines[0]
+		self.assertEqual(line.stock_qty, 15.0)
+		self.assertEqual(line.branch, branch)
+		self.assertEqual(line.item_code, po_item.item_code)
+		self.assertEqual(line.warehouse, po_item.warehouse)
+		self.assertEqual(line.row_idx, 1)
+
+	def test_collect_lines_from_asn_rows_falls_back_to_po_set_warehouse(self):
+		branch = _ensure_branch("_Test Stock Cap Collect Branch")
+		fallback_warehouse = _ensure_extra_warehouse("_Test Stock Cap Fallback WH")
+		purchase_order = _create_purchase_order(qty=10)
+		po_item = purchase_order.items[0]
+		frappe.db.set_value("Purchase Order", purchase_order.name, "branch", branch)
+		frappe.db.set_value("Purchase Order", purchase_order.name, "set_warehouse", fallback_warehouse)
+		frappe.db.set_value("Purchase Order Item", po_item.name, "warehouse", None)
+
+		rows = [
+			{
+				"idx": 1,
+				"purchase_order": purchase_order.name,
+				"purchase_order_item": po_item.name,
+				"item_code": po_item.item_code,
+				"qty": 4.0,
+			}
+		]
+
+		lines = collect_lines_from_asn_rows(rows)
+
+		self.assertEqual(len(lines), 1)
+		self.assertEqual(lines[0].warehouse, fallback_warehouse)
