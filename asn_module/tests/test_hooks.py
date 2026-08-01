@@ -67,3 +67,25 @@ class TestHooks(FrappeTestCase):
 		fields = create_custom_fields.call_args.args[0]["Purchase Invoice"]
 		self.assertEqual(fields[0]["fieldname"], "asn")
 		self.assertEqual(fields[0]["options"], "ASN")
+
+	def test_purchase_receipt_doc_events_registers_all_handlers(self):
+		pr_events = hooks.doc_events.get("Purchase Receipt")
+		self.assertIsNotNone(pr_events, "Purchase Receipt entry missing from doc_events")
+
+		self.assertIn("before_submit", pr_events)
+		self.assertEqual(
+			pr_events["before_submit"],
+			"asn_module.handlers.purchase_receipt.on_purchase_receipt_before_submit",
+		)
+
+		self.assertIn("on_submit", pr_events)
+		self.assertEqual(
+			pr_events["on_submit"],
+			"asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
+		)
+
+		self.assertIn("on_trash", pr_events)
+		self.assertEqual(
+			pr_events["on_trash"],
+			"asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
+		)
