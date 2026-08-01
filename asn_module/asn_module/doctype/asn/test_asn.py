@@ -762,3 +762,131 @@ class TestASN(FrappeTestCase):
 			self.assertRaises(frappe.PermissionError),
 		):
 			get_item_transition_summary("ASN-0001")
+
+
+def _disable_hsn_validation() -> None:
+	"""Fresh Items created via create_purchase_order() have no HSN/SAC code.
+
+	india_compliance's Item.validate hook rejects that whenever the test company's
+	country is India (as our before_tests() bootstrap sets it up), which has nothing to
+	do with the stock-cap controller under test. --lightmode skips the app-level
+	before_tests hooks that would otherwise disable this, so disable it directly here.
+	See asn_module/tests/test_stock_cap_collect.py for the same pattern.
+	"""
+	if frappe.db.exists("DocType", "GST Settings"):
+		frappe.db.set_single_value("GST Settings", "validate_hsn_code", 0)
+
+
+_original_create_purchase_order = create_purchase_order
+
+
+def _create_purchase_order_with_mandatory_fields(**kwargs):
+	"""Wrap create_purchase_order() to satisfy this bench's mandatory custom_order_type/taxes fields.
+
+	This bench has ``custom_order_type`` and a ``taxes`` row as mandatory on Purchase
+	Order (Property Setters/Custom Fields imported from production) that
+	create_purchase_order() does not set, so fill them in only when the current site's
+	metadata actually requires it. Mirrors the workaround in
+	asn_module/tests/test_stock_cap_collect.py and test_stock_cap_fetch.py.
+
+	Uses the module-level reference captured before create_purchase_order() gets patched
+	(see TestASNStockCap.setUp), since this function replaces that name for the duration
+	of each test and must not call back into itself.
+	"""
+	do_not_submit = kwargs.pop("do_not_submit", False)
+	po = _original_create_purchase_order(do_not_save=True, **kwargs)
+
+	meta = po.meta
+	order_type_field = meta.get_field("custom_order_type")
+	if order_type_field and order_type_field.reqd and not po.get("custom_order_type"):
+		po.custom_order_type = "Material"
+
+	taxes_field = meta.get_field("taxes")
+	if taxes_field and taxes_field.reqd and not po.get("taxes"):
+		tax_account = frappe.db.get_value("Account", {"company": po.company, "is_group": 0}, "name")
+		if tax_account:
+			po.append(
+				"taxes",
+				{
+					"category": "Total",
+					"add_deduct_tax": "Add",
+					"charge_type": "Actual",
+					"account_head": tax_account,
+					"description": "_Test ASN Stock Cap Controller Tax",
+					"tax_amount": 0,
+				},
+			)
+
+	po.insert(ignore_permissions=True)
+	if not do_not_submit:
+		po.submit()
+	return po
+
+
+class TestASNStockCap(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		_disable_hsn_validation()
+
+	def setUp(self):
+		# make_test_asn() resolves create_purchase_order() as a module-global at call
+		# time, so patching the name here is enough to route its PO fixture creation
+		# through the mandatory-field workaround without touching the brief's verbatim
+		# test bodies below.
+		patcher = patch(
+			"asn_module.asn_module.doctype.asn.test_asn.create_purchase_order",
+			side_effect=_create_purchase_order_with_mandatory_fields,
+		)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
+	def _breach(self):
+		return SimpleNamespace(
+			branch="Mumbai",
+			item_code="WIDGET",
+			row_idxs=(1,),
+			on_hand=90.0,
+			in_transit=0.0,
+			incoming=20.0,
+			projected=110.0,
+			cap=100.0,
+			allowed_qty=10.0,
+		)
+
+	def test_submit_is_blocked_when_cap_is_breached(self):
+		asn = make_test_asn(qty=5)
+		with patch("asn_module.asn_module.doctype.asn.asn.breaches_for_asn_doc", return_value=[]):
+			asn.insert()
+
+		with patch(
+			"asn_module.asn_module.doctype.asn.asn.breaches_for_asn_doc",
+			return_value=[self._breach()],
+		):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				asn.submit()
+
+		self.assertIn("WIDGET", str(ctx.exception))
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "docstatus"), 0)
+
+	def test_save_warns_but_succeeds_when_cap_is_breached(self):
+		asn = make_test_asn(qty=5)
+		frappe.local.message_log = []
+		with patch(
+			"asn_module.asn_module.doctype.asn.asn.breaches_for_asn_doc",
+			return_value=[self._breach()],
+		):
+			asn.insert()
+
+		self.assertTrue(frappe.db.exists("ASN", asn.name))
+		messages = " ".join(str(m) for m in frappe.local.message_log or [])
+		self.assertIn("WIDGET", messages)
+
+	def test_submit_succeeds_when_no_breach(self):
+		asn = make_test_asn(qty=5)
+		with patch("asn_module.asn_module.doctype.asn.asn.breaches_for_asn_doc", return_value=[]):
+			asn.insert()
+			asn.submit()
+
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "docstatus"), 1)

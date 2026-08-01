@@ -11,6 +11,8 @@ from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
+from asn_module.stock_cap.api import breaches_for_asn_doc
+from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.supplier_asn_portal import (
 	asn_eligible_for_supplier_portal_cancel,
 	asn_eligible_for_supplier_portal_delete,
@@ -36,6 +38,10 @@ class ASN(WebsiteGenerator):
 		super().validate()
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
+		self._warn_stock_cap()
+
+	def before_submit(self):
+		self._validate_stock_cap()
 
 	def on_submit(self):
 		asn_date = today()
@@ -250,6 +256,29 @@ class ASN(WebsiteGenerator):
 					remaining_qty,
 				)
 			)
+
+	def _warn_stock_cap(self):
+		"""Surface cap breaches on save without blocking. Drafts must always be saveable."""
+		breaches = breaches_for_asn_doc(self)
+		if not breaches:
+			return
+
+		frappe.msgprint(
+			format_breaches(breaches, detailed=may_see_stock_figures()),
+			title=_("Stock Cap Warning"),
+			indicator="orange",
+		)
+
+	def _validate_stock_cap(self):
+		"""Block submission. Runs in before_submit so nothing is written before the block."""
+		breaches = breaches_for_asn_doc(self)
+		if not breaches:
+			return
+
+		frappe.throw(
+			format_breaches(breaches, detailed=may_see_stock_figures()),
+			title=_("Stock Cap Exceeded"),
+		)
 
 	def _generate_attachments(self) -> tuple[str, str, str]:
 		qr_result = generate_qr("create_purchase_receipt", "ASN", self.name)
