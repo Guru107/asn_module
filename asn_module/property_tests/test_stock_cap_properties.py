@@ -31,22 +31,23 @@ class TestStockCapProperties(UnitTestCase):
 	@given(caps, quantities, quantities, quantities, quantities)
 	def test_projected_is_monotonic_in_declared_quantity(self, cap, on_hand, in_transit, qty, extra):
 		context = _context(cap, on_hand, in_transit)
-		low = evaluate([_line(qty)], context)
-		high = evaluate([_line(qty + extra)], context)
+		low, _accepted = evaluate([_line(qty)], context)
+		high, _accepted = evaluate([_line(qty + extra)], context)
 		if low:
 			self.assertTrue(high, "a larger quantity must not turn a breach into a pass")
 			self.assertLessEqual(low[0].projected, high[0].projected)
 
 	@given(caps, quantities, quantities, quantities)
 	def test_breach_holds_exactly_when_projected_exceeds_cap(self, cap, on_hand, in_transit, qty):
-		breaches = evaluate([_line(qty)], _context(cap, on_hand, in_transit))
+		breaches, _accepted = evaluate([_line(qty)], _context(cap, on_hand, in_transit))
 		self.assertEqual(bool(breaches), qty > 0 and (on_hand + in_transit + qty) > cap)
 
 	@given(caps, quantities, quantities, quantities)
 	def test_allowed_qty_is_the_largest_non_breaching_quantity(self, cap, on_hand, in_transit, qty):
 		context = _context(cap, on_hand, in_transit)
-		breaches = evaluate([_line(qty)], context)
+		breaches, _accepted = evaluate([_line(qty)], context)
 		if not breaches:
 			return
 
-		self.assertEqual(evaluate([_line(breaches[0].allowed_qty)], context), [])
+		no_breaches, _accepted = evaluate([_line(breaches[0].allowed_qty)], context)
+		self.assertEqual(no_breaches, [])

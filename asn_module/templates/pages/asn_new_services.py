@@ -9,7 +9,7 @@ from frappe import _
 from frappe.utils import flt
 
 from asn_module.asn_module.doctype.asn.asn import _get_shipped_qty_by_po_item
-from asn_module.stock_cap.api import breaches_for_asn_rows, consumed_from_breach_free_rows
+from asn_module.stock_cap.api import breaches_for_asn_rows
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
 
@@ -551,7 +551,7 @@ def create_bulk_asns_for_supplier(
 	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(all_purchase_orders)
 	running_remaining = dict(remaining_qty_by_name)
 	errors: list[dict] = []
-	asn_payloads: list[tuple[dict, list[dict]]] = []
+	asn_payloads: list[tuple[dict, list[dict], list[dict]]] = []
 
 	for invoice_no, invoice_rows in invoice_groups.items():
 		try:
@@ -574,6 +574,7 @@ def create_bulk_asns_for_supplier(
 			"supplier_invoice_amount": invoice_rows[0].supplier_invoice_amount,
 		}
 		items = []
+		cap_check_rows = []
 		for row in invoice_rows:
 			try:
 				po_item = resolve_po_item(
@@ -603,10 +604,21 @@ def create_bulk_asns_for_supplier(
 						"rate": item_rate,
 					}
 				)
+				# Keyed by the real CSV row_number, not a position within this invoice
+				# group -- see _collect_stock_cap_errors for why that distinction matters.
+				cap_check_rows.append(
+					{
+						"idx": row.row_number,
+						"purchase_order": row.purchase_order,
+						"purchase_order_item": po_item.name,
+						"item_code": row.item_code,
+						"qty": row.qty,
+					}
+				)
 			except PortalValidationError as exc:
 				errors.extend(exc.errors)
 		if items:
-			asn_payloads.append((header, items))
+			asn_payloads.append((header, items, cap_check_rows))
 
 	_collect_stock_cap_errors(asn_payloads, errors)
 
@@ -616,22 +628,28 @@ def create_bulk_asns_for_supplier(
 
 	insert_asn = insert_asn or insert_and_submit_asn
 	asn_names = []
-	for header, items in asn_payloads:
+	for header, items, _cap_check_rows in asn_payloads:
 		asn = insert_asn(supplier=supplier, header=header, items=items)
 		asn_names.append(asn.name)
 	return asn_names
 
 
-def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict]]], errors: list[dict]):
+def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[dict]]], errors: list[dict]):
 	"""Evaluate the cap across every parsed payload before any ASN is inserted.
 
 	Runs in the validation phase so the function keeps its all-or-nothing contract: the
 	insert loop that follows has no error handling, and partially-submitted ASNs cannot
-	be rolled back cleanly. Headroom consumed by an earlier breach-free group is carried
+	be rolled back cleanly. Headroom accepted by an earlier breach-free group is carried
 	forward so one upload cannot drive an item past its maximum across several ASNs,
 	mirroring how running_remaining already guards the PO quantity check. A group that
-	produced any breach contributes nothing to ``consumed`` — only rows that were actually
-	accepted earn headroom, per ``consumed_from_breach_free_rows``'s documented contract.
+	produced any breach contributes nothing to ``consumed`` -- only ``accepted``, the exact
+	incoming quantities ``evaluate()`` itself counted toward that group (same cap-warehouse,
+	cap-is-set, and positive-qty filters it uses to decide breaches), is folded in, and only
+	for groups that came back breach-free.
+
+	Each cap-check row carries the real CSV ``row_number`` as its ``idx`` (not a position
+	within this invoice group), so a reported breach cites the row the supplier actually
+	needs to look at.
 
 	Message text goes through the same redaction gate as the ASN controller
 	(``format_breaches(..., detailed=may_see_stock_figures())``) rather than interpolating
@@ -641,19 +659,8 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict]]], error
 	"""
 	consumed: dict[tuple[str, str], float] = {}
 
-	for header, items in asn_payloads:
-		rows = [
-			{
-				"idx": index,
-				"purchase_order": item.get("purchase_order"),
-				"purchase_order_item": item.get("purchase_order_item"),
-				"item_code": item.get("item_code"),
-				"qty": flt(item.get("qty")),
-			}
-			for index, item in enumerate(items, start=1)
-		]
-
-		breaches = breaches_for_asn_rows(rows, consumed=consumed)
+	for header, _items, cap_check_rows in asn_payloads:
+		breaches, accepted = breaches_for_asn_rows(cap_check_rows, consumed=consumed)
 		detailed = may_see_stock_figures()
 		for breach in breaches:
 			errors.append(
@@ -661,13 +668,14 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict]]], error
 					field="items_csv",
 					invoice_no=header.get("supplier_invoice_no"),
 					message=format_breaches([breach], detailed=detailed),
+					row_number=breach.row_idxs[0] if breach.row_idxs else None,
 				)
 			)
 
 		if breaches:
 			continue
 
-		for key, qty in consumed_from_breach_free_rows(rows).items():
+		for key, qty in accepted.items():
 			consumed[key] = consumed.get(key, 0.0) + qty
 
 

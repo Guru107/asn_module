@@ -19,41 +19,49 @@ def breaches_for_asn_rows(
 	rows: list[dict],
 	exclude_asn_name: str | None = None,
 	consumed: dict[tuple[str, str], float] | None = None,
-) -> list[Breach]:
+) -> tuple[list[Breach], dict[tuple[str, str], float]]:
+	"""Evaluate one ASN's (or one bulk-upload invoice group's) rows against the cap.
+
+	Returns ``(breaches, accepted)``. ``accepted`` is evaluate()'s own record of which
+	(branch, item_code) incoming quantities it actually counted -- callers that need to
+	carry headroom forward across several calls (the bulk upload loop) must feed this
+	dict back in as the next call's ``consumed`` rather than re-deriving it themselves, so
+	the cap-warehouse / cap-is-set / positive-qty filters live in exactly one place.
+	"""
 	lines = collect_lines_from_asn_rows(rows)
 	if not lines:
-		return []
+		return [], {}
 
 	context = fetch_cap_context(lines, exclude_asn_name=exclude_asn_name)
 	return evaluate(lines, context, consumed=consumed)
 
 
 def breaches_for_asn_doc(doc) -> list[Breach]:
-	return breaches_for_asn_rows(asn_rows_from_doc(doc), exclude_asn_name=doc.name or None)
+	breaches, _accepted = breaches_for_asn_rows(asn_rows_from_doc(doc), exclude_asn_name=doc.name or None)
+	return breaches
 
 
 def breaches_for_purchase_receipt(doc) -> list[Breach]:
-	"""Exclude the ASN this receipt came from.
+	"""Exclude the Purchase Order Items this receipt is itself receiving.
 
-	At before_submit that ASN is still Submitted with received_qty 0, so its quantity
-	would otherwise be counted once as in-transit and again as this receipt's own.
+	Excludes by ``purchase_order_item`` rather than by the receipt's ``asn`` field: ``asn``
+	is set only when the receipt was created through the ASN's own "Create Purchase
+	Receipt" action (handlers/purchase_receipt.py:create_from_asn). Nothing stops the
+	standard Purchase Order -> Create -> Purchase Receipt action, which leaves ``asn``
+	empty, and that receipt's goods must still not be counted once as in-transit on the
+	originating ASN and again as this receipt's own incoming. Excluding by PO item also
+	keeps ASN Items this receipt does *not* cover -- a sibling item on the same ASN, or a
+	still-unreceived remainder after a partial receipt -- correctly counted as in-transit,
+	unlike excluding the whole ASN would.
 	"""
 	lines = collect_lines_from_purchase_receipt(doc)
 	if not lines:
 		return []
 
-	context = fetch_cap_context(lines, exclude_asn_name=getattr(doc, "asn", None) or None)
-	return evaluate(lines, context)
-
-
-def consumed_from_breach_free_rows(rows: list[dict]) -> dict[tuple[str, str], float]:
-	"""Headroom claimed by rows already accepted earlier in the same bulk upload."""
-	consumed: dict[tuple[str, str], float] = {}
-	for line in collect_lines_from_asn_rows(rows):
-		key = (line.branch, line.item_code)
-		consumed[key] = consumed.get(key, 0.0) + flt(line.stock_qty)
-
-	return consumed
+	exclude_po_items = {row.purchase_order_item for row in (doc.items or []) if row.purchase_order_item}
+	context = fetch_cap_context(lines, exclude_po_items=exclude_po_items)
+	breaches, _accepted = evaluate(lines, context)
+	return breaches
 
 
 @frappe.whitelist()
@@ -84,8 +92,9 @@ def get_stock_cap_preview(items, asn_name: str | None = None) -> list[dict]:
 		)
 
 	detailed = may_see_stock_figures()
+	breaches, _accepted = breaches_for_asn_rows(rows, exclude_asn_name=asn_name)
 	preview = []
-	for breach in breaches_for_asn_rows(rows, exclude_asn_name=asn_name):
+	for breach in breaches:
 		entry = {
 			"item_code": breach.item_code,
 			"row_idxs": list(breach.row_idxs),

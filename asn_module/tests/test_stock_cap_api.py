@@ -6,7 +6,11 @@ import frappe
 from frappe.permissions import add_permission
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+from asn_module.asn_module.doctype.asn.test_asn import (
+	_mock_asn_attachments,
+	create_purchase_order,
+	make_test_asn,
+)
 from asn_module.stock_cap.api import breaches_for_purchase_receipt, get_stock_cap_preview
 from asn_module.stock_cap.messages import may_see_stock_figures
 from asn_module.utils.permissions import get_accessible_doc
@@ -274,7 +278,14 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			).insert(ignore_permissions=True)
 
 	def setUp(self):
-		# FrappeTestCase only rolls back once at class teardown, not per test.
+		# FrappeTestCase only rolls back once at class teardown, not per test, so a
+		# submitted ASN inserted by an earlier test in this class (e.g.
+		# test_receipt_not_linked_to_its_asn_is_not_double_counted) would otherwise keep
+		# contributing to later tests' in-transit totals.
+		stale_asn_names = frappe.get_all("ASN Item", filters={"item_code": PR_ITEM}, pluck="parent")
+		if stale_asn_names:
+			frappe.db.delete("ASN Item", {"parent": ["in", stale_asn_names]})
+			frappe.db.delete("ASN", {"name": ["in", stale_asn_names]})
 		frappe.db.delete("ASN Stock Cap Warehouse")
 		frappe.db.delete("ASN Stock Cap Settings")
 		frappe.db.set_value("Item", PR_ITEM, "custom_max_stock", PR_MAX_STOCK)
@@ -306,6 +317,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			"rejected_qty": 0.0,
 			"rejected_warehouse": None,
 			"conversion_factor": 1.0,
+			"purchase_order_item": None,
 		}
 		defaults.update(overrides)
 		return SimpleNamespace(**defaults)
@@ -345,6 +357,41 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			is_return=1,
 			asn=None,
 			items=[self._receipt_row(stock_qty=-(PR_MAX_STOCK * 2))],
+		)
+
+		self.assertEqual(breaches_for_purchase_receipt(doc), [])
+
+	def test_receipt_not_linked_to_its_asn_is_not_double_counted(self):
+		"""Nothing disables the standard Purchase Order -> Create -> Purchase Receipt
+		action, which leaves Purchase Receipt.asn empty -- handlers/purchase_receipt.py:
+		create_from_asn is the only place that sets it. breaches_for_purchase_receipt must
+		not double-count such a receipt's goods (once as the submitted ASN's in-transit
+		quantity, again as this receipt's own incoming) even though it has no ASN name to
+		exclude by; it must exclude by the Purchase Order Item instead.
+		"""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Unlinked Tax",
+			item_code=PR_ITEM,
+			qty=10,
+		)
+		po_item = po.items[0]
+
+		asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		doc = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			items=[
+				self._receipt_row(
+					warehouse=po_item.warehouse,
+					stock_qty=PR_MAX_STOCK,
+					purchase_order_item=po_item.name,
+				)
+			],
 		)
 
 		self.assertEqual(breaches_for_purchase_receipt(doc), [])

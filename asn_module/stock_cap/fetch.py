@@ -8,8 +8,26 @@ from asn_module.stock_cap.models import CapContext, Line
 EXCLUDED_ASN_STATUSES = ("Received", "Closed")
 
 
-def fetch_cap_context(lines: list[Line], exclude_asn_name: str | None = None) -> CapContext:
-	"""Run every read the evaluator needs and return plain data. Makes no decisions."""
+def fetch_cap_context(
+	lines: list[Line],
+	exclude_asn_name: str | None = None,
+	exclude_po_items: set[str] | frozenset[str] | None = None,
+) -> CapContext:
+	"""Run every read the evaluator needs and return plain data. Makes no decisions.
+
+	Two independent, composable exclusion mechanisms guard against double-counting a
+	document's own goods as both in-transit and incoming, for two different callers:
+
+	``exclude_asn_name`` drops the ASN currently being saved from its own in-transit total
+	(the ASN controller path, where the document being evaluated *is* the ASN).
+
+	``exclude_po_items`` drops ASN Item rows whose Purchase Order Item a Purchase Receipt is
+	consuming, regardless of whether that receipt is linked back to its ASN by name (the
+	Purchase Receipt path -- see breaches_for_purchase_receipt for why it cannot rely on
+	``doc.asn``). They are separate parameters, not one overloaded to mean two things,
+	because a Purchase Receipt has no ASN name to exclude by and an ASN save has no
+	Purchase Order Items of its own to exclude by.
+	"""
 	if not lines:
 		return CapContext(cap_warehouses={}, max_stock={}, on_hand={}, in_transit={})
 
@@ -29,7 +47,13 @@ def fetch_cap_context(lines: list[Line], exclude_asn_name: str | None = None) ->
 		cap_warehouses=cap_warehouses,
 		max_stock=_fetch_max_stock(item_codes),
 		on_hand=_fetch_on_hand(item_codes, all_warehouses, branch_by_warehouse),
-		in_transit=_fetch_in_transit(item_codes, all_warehouses, branch_by_warehouse, exclude_asn_name),
+		in_transit=_fetch_in_transit(
+			item_codes,
+			all_warehouses,
+			branch_by_warehouse,
+			exclude_asn_name=exclude_asn_name,
+			exclude_po_items=exclude_po_items,
+		),
 	)
 
 
@@ -88,7 +112,8 @@ def _fetch_in_transit(
 	item_codes: list[str],
 	warehouses: list[str],
 	branch_by_warehouse: dict[str, str],
-	exclude_asn_name: str | None,
+	exclude_asn_name: str | None = None,
+	exclude_po_items: set[str] | frozenset[str] | None = None,
 ) -> dict[tuple[str, str], float]:
 	"""Undelivered quantity on other submitted ASNs, converted to stock UOM.
 
@@ -100,11 +125,20 @@ def _fetch_in_transit(
 	warehouse_placeholders = ", ".join(["%s"] * len(warehouses))
 	status_placeholders = ", ".join(["%s"] * len(EXCLUDED_ASN_STATUSES))
 
-	exclude_clause = ""
+	exclude_clauses = []
 	params: list = [*item_codes, *warehouses, *EXCLUDED_ASN_STATUSES]
+
 	if exclude_asn_name:
-		exclude_clause = "AND asn.name != %s"
+		exclude_clauses.append("AND asn.name != %s")
 		params.append(exclude_asn_name)
+
+	if exclude_po_items:
+		po_items = sorted(exclude_po_items)
+		po_item_placeholders = ", ".join(["%s"] * len(po_items))
+		exclude_clauses.append(f"AND ai.purchase_order_item NOT IN ({po_item_placeholders})")
+		params.extend(po_items)
+
+	exclude_clause = "\n\t\t\t".join(exclude_clauses)
 
 	rows = frappe.db.sql(
 		f"""

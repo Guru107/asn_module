@@ -60,8 +60,10 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 def on_purchase_receipt_before_submit(doc, method=None):
 	"""Block a receipt that would carry an item above its branch maximum.
 
-	Runs before_submit so no stock ledger entry is written before the block. The receipt's
-	own ASN is excluded from the in-transit figure inside breaches_for_purchase_receipt.
+	Runs before_submit so no stock ledger entry is written before the block. The Purchase
+	Order Items this receipt is itself receiving are excluded from the in-transit figure
+	inside breaches_for_purchase_receipt, whether or not this receipt is linked back to an
+	ASN by name.
 	"""
 	breaches = breaches_for_purchase_receipt(doc)
 	if not breaches:

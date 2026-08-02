@@ -2,7 +2,6 @@ from asn_module.stock_cap.api import (
 	breaches_for_asn_doc,
 	breaches_for_asn_rows,
 	breaches_for_purchase_receipt,
-	consumed_from_breach_free_rows,
 	get_stock_cap_preview,
 )
 from asn_module.stock_cap.evaluate import evaluate
@@ -16,7 +15,6 @@ __all__ = [
 	"breaches_for_asn_doc",
 	"breaches_for_asn_rows",
 	"breaches_for_purchase_receipt",
-	"consumed_from_breach_free_rows",
 	"evaluate",
 	"format_breaches",
 	"get_stock_cap_preview",

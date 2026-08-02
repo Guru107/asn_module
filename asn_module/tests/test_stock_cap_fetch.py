@@ -1,5 +1,6 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import today
 
 from asn_module.stock_cap.fetch import fetch_cap_context
 from asn_module.stock_cap.models import Line
@@ -219,3 +220,147 @@ class TestStockCapFetchInTransit(FrappeTestCase):
 	def test_over_received_line_clamps_to_zero_rather_than_going_negative(self):
 		frappe.db.set_value("ASN Item", self.asn.items[0].name, "received_qty", 99, update_modified=False)
 		self.assertEqual(self._in_transit(), 0.0)
+
+
+class TestStockCapFetchExcludePoItems(FrappeTestCase):
+	"""exclude_po_items is the Purchase Receipt path's exclusion mechanism (see
+	breaches_for_purchase_receipt). Unlike exclude_asn_name -- which drops every ASN Item
+	belonging to the excluded ASN -- it drops only the specific Purchase Order Items a
+	receipt is consuming, so a sibling item on the same ASN that the receipt does not
+	cover keeps contributing its still-unreceived quantity to in-transit.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		disable_hsn_validation()
+
+	def setUp(self):
+		from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+
+		self.branch = "_Test Fetch ExcludePO Branch"
+		if not frappe.db.exists("Branch", self.branch):
+			frappe.get_doc({"doctype": "Branch", "branch": self.branch}).insert(ignore_permissions=True)
+
+		self.item_a = "_Test Fetch ExcludePO Item A"
+		self.item_b = "_Test Fetch ExcludePO Item B"
+		for item_code in (self.item_a, self.item_b):
+			if not frappe.db.exists("Item", item_code):
+				frappe.get_doc(
+					{
+						"doctype": "Item",
+						"item_code": item_code,
+						"item_name": item_code,
+						"item_group": frappe.db.get_value("Item Group", {}, "name"),
+						"stock_uom": frappe.db.get_value("UOM", {}, "name"),
+					}
+				).insert(ignore_permissions=True)
+
+		# FrappeTestCase only rolls back once at class teardown, not per test.
+		stale_asn_names = frappe.get_all(
+			"ASN Item", filters={"item_code": ["in", [self.item_a, self.item_b]]}, pluck="parent"
+		)
+		if stale_asn_names:
+			frappe.db.delete("ASN Item", {"parent": ["in", stale_asn_names]})
+			frappe.db.delete("ASN", {"name": ["in", stale_asn_names]})
+		frappe.db.delete("ASN Stock Cap Warehouse")
+		frappe.db.delete("ASN Stock Cap Settings")
+
+		# Let both POs resolve create_purchase_order's own default warehouse rather than
+		# handing them one built separately: a hand-picked Warehouse must belong to the
+		# same Company create_purchase_order defaults to, or Purchase Order validation
+		# rejects it, and that default company need not be whichever Company happens to
+		# sort first.
+		po_a = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap Fetch ExcludePO Tax A",
+			item_code=self.item_a,
+		)
+		self.warehouse = po_a.items[0].warehouse
+		po_b = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap Fetch ExcludePO Tax B",
+			item_code=self.item_b,
+			warehouse=self.warehouse,
+			supplier=po_a.supplier,
+		)
+		frappe.db.set_value("Purchase Order", po_a.name, "branch", self.branch)
+		frappe.db.set_value("Purchase Order", po_b.name, "branch", self.branch)
+
+		self.po_item_a = po_a.items[0]
+		self.po_item_b = po_b.items[0]
+
+		frappe.get_doc(
+			{
+				"doctype": "ASN Stock Cap Settings",
+				"branch": self.branch,
+				"enabled": 1,
+				"warehouses": [{"warehouse": self.warehouse}],
+			}
+		).insert(ignore_permissions=True)
+
+		self.asn = frappe.get_doc(
+			{
+				"doctype": "ASN",
+				"supplier": po_a.supplier,
+				"supplier_invoice_no": f"INV-{frappe.generate_hash(length=8)}",
+				"supplier_invoice_date": today(),
+				"expected_delivery_date": today(),
+				"items": [
+					{
+						"purchase_order": po_a.name,
+						"purchase_order_item": self.po_item_a.name,
+						"item_code": self.item_a,
+						"qty": 7,
+						"uom": self.po_item_a.uom,
+						"rate": self.po_item_a.rate,
+					},
+					{
+						"purchase_order": po_b.name,
+						"purchase_order_item": self.po_item_b.name,
+						"item_code": self.item_b,
+						"qty": 4,
+						"uom": self.po_item_b.uom,
+						"rate": self.po_item_b.rate,
+					},
+				],
+			}
+		)
+		self.asn.insert(ignore_permissions=True)
+		self.asn.submit()
+
+	def _line(self, item_code) -> Line:
+		return Line(
+			branch=self.branch, item_code=item_code, warehouse=self.warehouse, stock_qty=1.0, row_idx=1
+		)
+
+	def test_exclude_po_items_removes_only_the_matching_po_item(self):
+		context = fetch_cap_context(
+			[self._line(self.item_a), self._line(self.item_b)],
+			exclude_po_items={self.po_item_a.name},
+		)
+
+		self.assertEqual(context.in_transit.get((self.branch, self.item_a), 0.0), 0.0)
+
+	def test_exclude_po_items_keeps_a_sibling_items_unreceived_remainder_counted(self):
+		"""Regression for the partial-receipt under-count: excluding the whole ASN by name
+		used to drop every item's in-transit total, not just the item a receipt actually
+		covers. Excluding by the receipt's own purchase_order_item set must leave a
+		sibling item on the same ASN -- one this receipt does not cover -- still counted.
+		"""
+		context = fetch_cap_context(
+			[self._line(self.item_a), self._line(self.item_b)],
+			exclude_po_items={self.po_item_a.name},
+		)
+
+		expected_b = 4.0 * (self.po_item_b.conversion_factor or 1)
+		self.assertEqual(context.in_transit.get((self.branch, self.item_b), 0.0), expected_b)
+
+	def test_no_exclude_po_items_counts_both(self):
+		context = fetch_cap_context([self._line(self.item_a), self._line(self.item_b)])
+
+		expected_a = 7.0 * (self.po_item_a.conversion_factor or 1)
+		expected_b = 4.0 * (self.po_item_b.conversion_factor or 1)
+		self.assertEqual(context.in_transit.get((self.branch, self.item_a), 0.0), expected_a)
+		self.assertEqual(context.in_transit.get((self.branch, self.item_b), 0.0), expected_b)
