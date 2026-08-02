@@ -65,7 +65,7 @@ def breaches_for_purchase_receipt(doc) -> list[Breach]:
 
 
 @frappe.whitelist()
-def get_stock_cap_preview(items, asn_name: str | None = None) -> list[dict]:
+def get_stock_cap_preview(items: list | str, asn_name: str | None = None) -> list[dict]:
 	"""Headroom preview for the ASN entry form.
 
 	Suppliers receive allowed_qty and a breach flag only; stock figures are withheld

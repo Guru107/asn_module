@@ -140,6 +140,9 @@ def _fetch_in_transit(
 
 	exclude_clause = "\n\t\t\t".join(exclude_clauses)
 
+	# Every interpolated fragment is a generated run of %s placeholders or a static
+	# clause; all values travel in `params`, never in the statement text.
+	# nosemgrep: frappe-sql-format-injection
 	rows = frappe.db.sql(
 		f"""
 		SELECT

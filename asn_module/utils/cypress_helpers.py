@@ -401,7 +401,6 @@ def seed_stock_cap_context():
 	# quantity clears the cap (> 0.5x) while staying inside that remaining receivable
 	# quantity (< 0.75x).
 	frappe.db.set_value("Item", po_item.item_code, "custom_max_stock", flt(po_item.qty) / 2)
-	frappe.db.commit()
 
 	return {
 		"branch": branch,
