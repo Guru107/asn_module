@@ -9,6 +9,8 @@ from frappe import _
 from frappe.utils import flt
 
 from asn_module.asn_module.doctype.asn.asn import _get_shipped_qty_by_po_item
+from asn_module.stock_cap.api import breaches_for_asn_rows, consumed_from_breach_free_rows
+from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
 
 OPEN_PO_STATUSES = ("To Receive", "To Receive and Bill")
@@ -606,6 +608,8 @@ def create_bulk_asns_for_supplier(
 		if items:
 			asn_payloads.append((header, items))
 
+	_collect_stock_cap_errors(asn_payloads, errors)
+
 	if errors:
 		errors.append(error_entry(field="bulk", message=_("No ASNs created due to validation failures.")))
 		raise PortalValidationError(errors)
@@ -616,6 +620,50 @@ def create_bulk_asns_for_supplier(
 		asn = insert_asn(supplier=supplier, header=header, items=items)
 		asn_names.append(asn.name)
 	return asn_names
+
+
+def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict]]], errors: list[dict]):
+	"""Evaluate the cap across every parsed payload before any ASN is inserted.
+
+	Runs in the validation phase so the function keeps its all-or-nothing contract: the
+	insert loop that follows has no error handling, and partially-submitted ASNs cannot
+	be rolled back cleanly. Headroom consumed by an earlier group is carried forward so
+	one upload cannot drive an item past its maximum across several ASNs, mirroring how
+	running_remaining already guards the PO quantity check.
+
+	Message text goes through the same redaction gate as the ASN controller
+	(``format_breaches(..., detailed=may_see_stock_figures())``) rather than interpolating
+	breach figures directly: this endpoint is reached from the supplier portal, where the
+	caller has no ``read`` permission on ``Item`` and must not see On Hand, In Transit, or
+	Maximum Stock.
+	"""
+	consumed: dict[tuple[str, str], float] = {}
+
+	for header, items in asn_payloads:
+		rows = [
+			{
+				"idx": index,
+				"purchase_order": item.get("purchase_order"),
+				"purchase_order_item": item.get("purchase_order_item"),
+				"item_code": item.get("item_code"),
+				"qty": flt(item.get("qty")),
+			}
+			for index, item in enumerate(items, start=1)
+		]
+
+		breaches = breaches_for_asn_rows(rows, consumed=consumed)
+		detailed = may_see_stock_figures()
+		for breach in breaches:
+			errors.append(
+				error_entry(
+					field="items_csv",
+					invoice_no=header.get("supplier_invoice_no"),
+					message=format_breaches([breach], detailed=detailed),
+				)
+			)
+
+		for key, qty in consumed_from_breach_free_rows(rows).items():
+			consumed[key] = consumed.get(key, 0.0) + qty
 
 
 def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
@@ -636,5 +684,9 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
 	asn = frappe.get_doc(doc_payload)
 	asn.flags.ignore_permissions = True
 	asn.insert()
-	asn.submit()
+	try:
+		asn.submit()
+	except frappe.ValidationError as exc:
+		# Render the block as a field-level portal error rather than a raw traceback.
+		raise PortalValidationError([error_entry(field="items_csv", message=str(exc))]) from exc
 	return asn

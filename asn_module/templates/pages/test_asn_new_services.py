@@ -4,9 +4,11 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	PortalValidationError,
+	create_bulk_asns_for_supplier,
 	enforce_bulk_limits,
 	error_entry,
 	fetch_purchase_order_items,
@@ -25,6 +27,11 @@ from asn_module.templates.pages.asn_new_services import (
 	validate_selected_purchase_orders,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+from asn_module.utils.test_setup import (
+	before_tests,
+	build_purchase_order_with_mandatory_fields,
+	disable_hsn_validation,
+)
 
 
 def _test_dates():
@@ -346,3 +353,126 @@ class TestValidateSelectedPurchaseOrders(FrappeTestCase):
 				supplier="Supp-001",
 				selected_purchase_orders=["PO-0001", "PO-INVALID"],
 			)
+
+
+def _bulk_fixture():
+	"""A real submitted PO plus the supplier, so bulk validation has something to resolve."""
+	po = build_purchase_order_with_mandatory_fields(
+		create_purchase_order,
+		tax_description="_Test ASN Bulk Stock Cap Tax",
+	)
+	return po, po.supplier, po.items[0]
+
+
+def _bulk_row(po, po_item, *, row_number, invoice_no, qty):
+	return ParsedBulkRow(
+		row_number=row_number,
+		supplier_invoice_no=invoice_no,
+		supplier_invoice_date=_test_dates()["supplier_invoice_date"],
+		expected_delivery_date=_test_dates()["expected_delivery_date"],
+		lr_no="",
+		lr_date="",
+		transporter_name="",
+		vehicle_number="",
+		driver_contact="",
+		supplier_invoice_amount=qty * float(po_item.rate or 1),
+		purchase_order=po.name,
+		sr_no=str(po_item.idx),
+		item_code=po_item.item_code,
+		qty=qty,
+		rate=float(po_item.rate or 1),
+	)
+
+
+class TestBulkUploadStockCap(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		disable_hsn_validation()
+
+	def _breach(self):
+		return SimpleNamespace(
+			branch="Mumbai",
+			item_code="WIDGET",
+			row_idxs=(1,),
+			on_hand=95.0,
+			in_transit=0.0,
+			incoming=20.0,
+			projected=115.0,
+			cap=100.0,
+			allowed_qty=5.0,
+		)
+
+	def setUp(self):
+		self.po, self.supplier, self.po_item = _bulk_fixture()
+
+	def _one_group(self):
+		return [_bulk_row(self.po, self.po_item, row_number=1, invoice_no="CAP-INV-1", qty=1)]
+
+	def _two_groups_same_item(self):
+		return [
+			_bulk_row(self.po, self.po_item, row_number=1, invoice_no="CAP-INV-1", qty=1),
+			_bulk_row(self.po, self.po_item, row_number=2, invoice_no="CAP-INV-2", qty=1),
+		]
+
+	def test_breach_prevents_any_asn_from_being_created(self):
+		inserted = []
+
+		def fake_insert(**kwargs):
+			inserted.append(kwargs)
+			return SimpleNamespace(name="ASN-TEST")
+
+		with patch(
+			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+			return_value=[self._breach()],
+		):
+			with self.assertRaises(PortalValidationError) as ctx:
+				create_bulk_asns_for_supplier(
+					supplier=self.supplier, rows=self._one_group(), insert_asn=fake_insert
+				)
+
+		self.assertEqual(inserted, [])
+		messages = " ".join(error.get("message", "") for error in ctx.exception.errors)
+		self.assertIn("WIDGET", messages)
+		self.assertIn("No ASNs created", messages)
+
+	def test_no_breach_allows_all_asns_to_be_created(self):
+		inserted = []
+
+		def fake_insert(**kwargs):
+			inserted.append(kwargs)
+			return SimpleNamespace(name=f"ASN-{len(inserted)}")
+
+		with patch("asn_module.templates.pages.asn_new_services.breaches_for_asn_rows", return_value=[]):
+			names = create_bulk_asns_for_supplier(
+				supplier=self.supplier, rows=self._one_group(), insert_asn=fake_insert
+			)
+
+		self.assertEqual(len(names), len(inserted))
+		self.assertTrue(names)
+
+	def test_consumed_headroom_is_carried_across_groups(self):
+		seen_consumed = []
+
+		def fake_breaches(payload_rows, exclude_asn_name=None, consumed=None):
+			seen_consumed.append(dict(consumed or {}))
+			return []
+
+		with patch(
+			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+			side_effect=fake_breaches,
+		):
+			with patch(
+				"asn_module.templates.pages.asn_new_services.consumed_from_breach_free_rows",
+				return_value={("Mumbai", self.po_item.item_code): 1.0},
+			):
+				create_bulk_asns_for_supplier(
+					supplier=self.supplier,
+					rows=self._two_groups_same_item(),
+					insert_asn=lambda **kwargs: SimpleNamespace(name="ASN-X"),
+				)
+
+		self.assertGreaterEqual(len(seen_consumed), 2)
+		self.assertEqual(seen_consumed[0], {})
+		self.assertEqual(seen_consumed[1], {("Mumbai", self.po_item.item_code): 1.0})
