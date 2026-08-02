@@ -286,6 +286,10 @@ def seed_stock_cap_context():
 
 	Returns everything the stock cap spec needs to drive the desk form.
 	"""
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
 	branch = "_Cypress Cap Branch"
 	if not frappe.db.exists("Branch", branch):
 		frappe.get_doc({"doctype": "Branch", "branch": branch}).insert(ignore_permissions=True)
@@ -305,14 +309,57 @@ def seed_stock_cap_context():
 	# site's metadata actually requires them, so this keeps working on a clean CI bench
 	# too (see asn_module/utils/test_setup.py and TestASNStockCap.setUp() for the same
 	# pattern used by this app's own test suite).
-	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
-	from asn_module.utils.test_setup import build_purchase_order_with_mandatory_fields
+	from asn_module.asn_module.doctype.asn.test_asn import _ensure_company, create_purchase_order
+	from asn_module.utils.test_setup import (
+		build_purchase_order_with_mandatory_fields,
+		disable_hsn_validation,
+	)
+
+	# Dedicated item + warehouse, distinct from every other nightly seeder's fixtures.
+	# seed_minimal_asn/seed_scan_station_context (used by asn_desk_nightly.js,
+	# asn_portal_nightly.js and scan_station_nightly.js) submit ASNs against the shared
+	# default item/warehouse and never complete a Purchase Receipt, so those ASNs stay
+	# docstatus=1 for the life of the site. stock_cap/fetch.py's _fetch_in_transit sums
+	# *all* submitted, unreceived ASN Items for an item+warehouse with no branch/PO
+	# filter, so if this seeder reused that default item/warehouse, CI's full nightly
+	# run (no --spec filter, alphabetically after those three specs) would attribute
+	# their leftover in-transit stock to this branch's cap and break test 1. Using our
+	# own item/warehouse, seeded fresh here, structurally makes that impossible.
+	disable_hsn_validation()
+	item_code = "_Cypress Cap Item"
+	if not frappe.db.exists("Item", item_code):
+		frappe.get_doc(
+			{
+				"doctype": "Item",
+				"item_code": item_code,
+				"item_name": item_code,
+				"item_group": frappe.db.get_value("Item Group", {}, "name") or "All Item Groups",
+				"stock_uom": frappe.db.get_value("UOM", {}, "name") or "Nos",
+				"inspection_required_before_purchase": 0,
+			}
+		).insert(ignore_permissions=True)
+
+	company = _ensure_company()
+	abbr = frappe.get_cached_value("Company", company, "abbr")
+	warehouse_short_name = "_Cypress Cap Warehouse"
+	warehouse = f"{warehouse_short_name} - {abbr}"
+	if not frappe.db.exists("Warehouse", warehouse):
+		frappe.get_doc(
+			{
+				"doctype": "Warehouse",
+				"warehouse_name": warehouse_short_name,
+				"company": company,
+				"is_group": 0,
+			}
+		).insert(ignore_permissions=True)
 
 	po = build_purchase_order_with_mandatory_fields(
 		create_purchase_order,
 		tax_description="asn_module stock cap e2e",
 		qty=10,
 		supplier=supplier.name,
+		item_code=item_code,
+		warehouse=warehouse,
 	)
 	purchase_order = po.name
 	frappe.db.set_value("Purchase Order", purchase_order, "branch", branch)
