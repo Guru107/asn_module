@@ -23,6 +23,8 @@ def evaluate(
 	grouped: dict[tuple[str, str], list[Line]] = {}
 
 	for line in lines:
+		if _as_float(line.stock_qty) <= 0:
+			continue
 		cap_warehouses = context.cap_warehouses.get(line.branch)
 		if not cap_warehouses or line.warehouse not in cap_warehouses:
 			continue

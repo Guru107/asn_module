@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 
@@ -35,5 +36,14 @@ class Breach:
 
 	@property
 	def allowed_qty(self) -> float:
-		"""Largest additional quantity that would not breach. The only figure suppliers may see."""
-		return max(self.cap - (self.projected - self.incoming), 0.0)
+		"""Largest additional quantity that would not breach. The only figure suppliers may see.
+
+		Rounded down to 6 decimal places so the reported figure is never larger than the true
+		headroom: floating-point round-trips through ``projected - incoming`` can otherwise land a
+		fraction of an ULP above the true headroom, which would make declaring exactly the reported
+		quantity breach again.
+		"""
+		headroom = self.cap - (self.projected - self.incoming)
+		if headroom <= 0:
+			return 0.0
+		return math.floor(headroom * 1_000_000) / 1_000_000

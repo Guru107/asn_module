@@ -76,6 +76,26 @@ class TestStockCapEvaluate(unittest.TestCase):
 		breaches = evaluate([_line(5)], _context(on_hand={(BRANCH, ITEM): 200.0}))
 		self.assertEqual(breaches[0].allowed_qty, 0.0)
 
+	def test_zero_qty_line_at_already_over_cap_branch_produces_no_breach(self):
+		context = _context(on_hand={(BRANCH, ITEM): 200.0})
+		self.assertEqual(evaluate([_line(0)], context), [])
+
+	def test_declaring_reported_allowed_qty_produces_no_breach(self):
+		cap = 6805.89451973124
+		on_hand = 266.967946622052
+		in_transit = 6349.999099114582
+		qty = 6063.38417754219
+		context = _context(
+			max_stock={ITEM: cap},
+			on_hand={(BRANCH, ITEM): on_hand},
+			in_transit={(BRANCH, ITEM): in_transit},
+		)
+		breaches = evaluate([_line(qty)], context)
+		self.assertEqual(len(breaches), 1)
+
+		allowed_qty = breaches[0].allowed_qty
+		self.assertEqual(evaluate([_line(allowed_qty)], context), [])
+
 	def test_breaches_are_sorted_deterministically(self):
 		context = CapContext(
 			cap_warehouses={BRANCH: frozenset({WH})},

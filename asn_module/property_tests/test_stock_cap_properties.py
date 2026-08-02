@@ -40,7 +40,7 @@ class TestStockCapProperties(UnitTestCase):
 	@given(caps, quantities, quantities, quantities)
 	def test_breach_holds_exactly_when_projected_exceeds_cap(self, cap, on_hand, in_transit, qty):
 		breaches = evaluate([_line(qty)], _context(cap, on_hand, in_transit))
-		self.assertEqual(bool(breaches), (on_hand + in_transit + qty) > cap)
+		self.assertEqual(bool(breaches), qty > 0 and (on_hand + in_transit + qty) > cap)
 
 	@given(caps, quantities, quantities, quantities)
 	def test_allowed_qty_is_the_largest_non_breaching_quantity(self, cap, on_hand, in_transit, qty):
