@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 
 def _ensure_supplier_portal_user(
@@ -276,4 +277,55 @@ def seed_quality_inspection_context():
 		"pr_name": pr_name,
 		"qi_accepted": accepted_qi.name,
 		"qi_rejected": rejected_qi.name,
+	}
+
+
+@frappe.whitelist()
+def seed_stock_cap_context():
+	"""Seed a branch with one cap warehouse and an item capped below the PO quantity.
+
+	Returns everything the stock cap spec needs to drive the desk form.
+	"""
+	branch = "_Cypress Cap Branch"
+	if not frappe.db.exists("Branch", branch):
+		frappe.get_doc({"doctype": "Branch", "branch": branch}).insert(ignore_permissions=True)
+
+	context = seed_supplier_context()
+	# seed_supplier_context() returns "purchase_orders" as a list of
+	# {"name": ..., "items": [...]} dicts (not bare docnames) -- pull the name out.
+	purchase_order = context["purchase_orders"][0]["name"]
+	frappe.db.set_value("Purchase Order", purchase_order, "branch", branch)
+
+	po_item = frappe.get_all(
+		"Purchase Order Item",
+		filters={"parent": purchase_order},
+		fields=["name", "item_code", "warehouse", "qty"],
+		limit=1,
+	)[0]
+
+	frappe.db.delete("ASN Stock Cap Warehouse", {"warehouse": po_item.warehouse})
+	if frappe.db.exists("ASN Stock Cap Settings", branch):
+		frappe.delete_doc("ASN Stock Cap Settings", branch, force=True)
+
+	frappe.get_doc(
+		{
+			"doctype": "ASN Stock Cap Settings",
+			"branch": branch,
+			"enabled": 1,
+			"warehouses": [{"warehouse": po_item.warehouse}],
+		}
+	).insert(ignore_permissions=True)
+
+	# Cap at half the PO quantity, so a full-quantity ASN always breaches and a quarter never does.
+	frappe.db.set_value("Item", po_item.item_code, "custom_max_stock", flt(po_item.qty) / 2)
+	frappe.db.commit()
+
+	return {
+		"branch": branch,
+		"supplier": context["supplier"],
+		"purchase_order": purchase_order,
+		"item_code": po_item.item_code,
+		"warehouse": po_item.warehouse,
+		"breaching_qty": flt(po_item.qty),
+		"passing_qty": flt(po_item.qty) / 4,
 	}
