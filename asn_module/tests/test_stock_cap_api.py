@@ -1,11 +1,13 @@
+import json
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 import frappe
 from frappe.permissions import add_permission
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
-from asn_module.stock_cap.api import get_stock_cap_preview
+from asn_module.stock_cap.api import breaches_for_purchase_receipt, get_stock_cap_preview
 from asn_module.stock_cap.messages import may_see_stock_figures
 from asn_module.utils.permissions import get_accessible_doc
 from asn_module.utils.test_setup import (
@@ -201,6 +203,25 @@ class TestStockCapPreviewAccessControl(FrappeTestCase):
 
 		self.assertEqual(len(preview), 1)
 
+	def test_preview_accepts_json_encoded_items_string(self):
+		"""frappe.call's default serialization sends list/dict RPC args as a JSON string
+		when the target has no type hint frappe's request layer can deserialize against.
+		get_stock_cap_preview must decode that itself.
+		"""
+		with _as_user(PO_ONLY_USER):
+			preview = get_stock_cap_preview(json.dumps(self.items))
+
+		self.assertEqual(len(preview), 1)
+		self.assertEqual(preview[0]["item_code"], ITEM)
+
+	def test_preview_skips_rows_without_a_purchase_order(self):
+		rows = [{"idx": 1, "item_code": ITEM, "qty": MAX_STOCK * 100}, *self.items]
+
+		with _as_user(PO_ONLY_USER):
+			preview = get_stock_cap_preview(rows)
+
+		self.assertEqual(len(preview), 1)
+
 	def test_permission_gate_rejects_caller_without_purchase_order_access(self):
 		with _as_user(NO_ACCESS_USER):
 			with self.assertRaises(frappe.PermissionError):
@@ -219,3 +240,111 @@ class TestStockCapPreviewAccessControl(FrappeTestCase):
 	def test_may_see_stock_figures_false_when_caller_cannot_read_item(self):
 		with _as_user(PO_ONLY_USER):
 			self.assertFalse(may_see_stock_figures())
+
+
+PR_BRANCH = "_Test API PR Branch"
+PR_ITEM = "_Test API PR Item"
+PR_MAX_STOCK = 5
+
+
+class TestBreachesForPurchaseReceipt(FrappeTestCase):
+	"""breaches_for_purchase_receipt is asn_module's third enforcement surface (the other
+	two, breaches_for_asn_rows and get_stock_cap_preview, are exercised above). The
+	Purchase Receipt handler's own tests mock this function out entirely, so nothing else
+	in the suite calls the real implementation end to end.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		disable_hsn_validation()
+
+		if not frappe.db.exists("Branch", PR_BRANCH):
+			frappe.get_doc({"doctype": "Branch", "branch": PR_BRANCH}).insert(ignore_permissions=True)
+		if not frappe.db.exists("Item", PR_ITEM):
+			frappe.get_doc(
+				{
+					"doctype": "Item",
+					"item_code": PR_ITEM,
+					"item_name": PR_ITEM,
+					"item_group": frappe.db.get_value("Item Group", {}, "name"),
+					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
+				}
+			).insert(ignore_permissions=True)
+
+	def setUp(self):
+		# FrappeTestCase only rolls back once at class teardown, not per test.
+		frappe.db.delete("ASN Stock Cap Warehouse")
+		frappe.db.delete("ASN Stock Cap Settings")
+		frappe.db.set_value("Item", PR_ITEM, "custom_max_stock", PR_MAX_STOCK)
+
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Tax",
+			do_not_submit=True,
+			item_code=PR_ITEM,
+			qty=10,
+		)
+		self.warehouse = po.items[0].warehouse
+
+		frappe.get_doc(
+			{
+				"doctype": "ASN Stock Cap Settings",
+				"branch": PR_BRANCH,
+				"enabled": 1,
+				"warehouses": [{"warehouse": self.warehouse}],
+			}
+		).insert(ignore_permissions=True)
+
+	def _receipt_row(self, **overrides):
+		defaults = {
+			"idx": 1,
+			"item_code": PR_ITEM,
+			"warehouse": self.warehouse,
+			"stock_qty": 0.0,
+			"rejected_qty": 0.0,
+			"rejected_warehouse": None,
+			"conversion_factor": 1.0,
+		}
+		defaults.update(overrides)
+		return SimpleNamespace(**defaults)
+
+	def test_receipt_over_cap_returns_a_breach(self):
+		doc = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			asn=None,
+			items=[self._receipt_row(stock_qty=PR_MAX_STOCK * 2)],
+		)
+
+		breaches = breaches_for_purchase_receipt(doc)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].branch, PR_BRANCH)
+		self.assertEqual(breaches[0].item_code, PR_ITEM)
+		self.assertEqual(breaches[0].cap, PR_MAX_STOCK)
+
+	def test_receipt_within_cap_returns_no_breach(self):
+		doc = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			asn=None,
+			items=[self._receipt_row(stock_qty=PR_MAX_STOCK - 1)],
+		)
+
+		self.assertEqual(breaches_for_purchase_receipt(doc), [])
+
+	def test_return_receipt_short_circuits_before_any_lookup(self):
+		"""is_return=1 makes collect_lines_from_purchase_receipt return [] up front, so
+		breaches_for_purchase_receipt must return [] without touching fetch_cap_context at
+		all -- covers its own early-return branch, distinct from evaluate()'s.
+		"""
+		doc = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=1,
+			asn=None,
+			items=[self._receipt_row(stock_qty=-(PR_MAX_STOCK * 2))],
+		)
+
+		self.assertEqual(breaches_for_purchase_receipt(doc), [])

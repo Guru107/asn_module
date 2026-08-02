@@ -28,7 +28,9 @@ context("ASN stock cap", { testIsolation: false }, () => {
 	// closing until none are left rather than asserting a fixed count.
 	const closeAllVisibleModals = () => {
 		cy.get("body").then(($body) => {
-			const $closeBtn = $body.find(".modal:visible .modal-header .btn-modal-close:visible").first();
+			const $closeBtn = $body
+				.find(".modal:visible .modal-header .btn-modal-close:visible")
+				.first();
 			if ($closeBtn.length) {
 				cy.wrap($closeBtn).click();
 				cy.wait(300);
@@ -45,9 +47,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// into frm.doc is a server round-trip (validate_link_and_fetch): force the
 		// field to blur/commit and wait for the model to actually reflect it.
 		cy.get('[data-fieldname="supplier"] input').blur();
-		cy.window()
-			.its("cur_frm.doc.supplier", { timeout: 15000 })
-			.should("eq", seeded.supplier);
+		cy.window().its("cur_frm.doc.supplier", { timeout: 15000 }).should("eq", seeded.supplier);
 		// Every new ASN starts with one empty row already in the "items" table: it is
 		// a mandatory (reqd) Table field, and Frappe seeds mandatory child tables with
 		// a blank row for every new document (frappe.model.create_mandatory_children,

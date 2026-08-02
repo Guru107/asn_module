@@ -80,6 +80,16 @@ class TestStockCapEvaluate(unittest.TestCase):
 		context = _context(on_hand={(BRANCH, ITEM): 200.0})
 		self.assertEqual(evaluate([_line(0)], context), [])
 
+	def test_non_numeric_stock_qty_is_treated_as_zero_rather_than_raising(self):
+		"""Line.stock_qty is typed as float but dataclasses do not enforce that at runtime.
+
+		_as_float's fail-open except branch (TypeError/ValueError) exists precisely so a
+		malformed value can never crash the evaluator; it must coerce to 0 and be skipped
+		like any other non-positive quantity, not raise.
+		"""
+		context = _context(on_hand={(BRANCH, ITEM): 200.0})
+		self.assertEqual(evaluate([_line("not-a-number")], context), [])
+
 	def test_declaring_reported_allowed_qty_produces_no_breach(self):
 		cap = 6805.89451973124
 		on_hand = 266.967946622052

@@ -265,3 +265,29 @@ class TestStockCapCollectASN(FrappeTestCase):
 
 		self.assertEqual(len(lines), 1)
 		self.assertEqual(lines[0].warehouse, fallback_warehouse)
+
+	def test_collect_lines_from_asn_rows_skips_row_with_no_warehouse_anywhere(self):
+		"""Neither the PO Item warehouse nor the PO's set_warehouse fallback is set.
+
+		Real ERPNext data normally guarantees one or the other, but nothing in the schema
+		enforces it, so this row must be dropped rather than producing a Line with an empty
+		warehouse (which would silently never match any cap_warehouses entry downstream).
+		"""
+		branch = _ensure_branch("_Test Stock Cap Collect Branch")
+		purchase_order = _create_purchase_order(qty=10)
+		po_item = purchase_order.items[0]
+		frappe.db.set_value("Purchase Order", purchase_order.name, "branch", branch)
+		frappe.db.set_value("Purchase Order", purchase_order.name, "set_warehouse", None)
+		frappe.db.set_value("Purchase Order Item", po_item.name, "warehouse", None)
+
+		rows = [
+			{
+				"idx": 1,
+				"purchase_order": purchase_order.name,
+				"purchase_order_item": po_item.name,
+				"item_code": po_item.item_code,
+				"qty": 4.0,
+			}
+		]
+
+		self.assertEqual(collect_lines_from_asn_rows(rows), [])

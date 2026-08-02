@@ -153,6 +153,12 @@ class TestStockCapFetchInTransit(FrappeTestCase):
 
 		self.purchase_order = _create_purchase_order(create_purchase_order)
 		self.po_item = self.purchase_order.items[0]
+		# This class only asserts in-transit figures, never cap enforcement, but the ASN
+		# submitted below still runs through ASN._validate_stock_cap. Pin the PO item's cap
+		# to "no cap" (evaluate.py skips items whose max_stock <= 0) so a stray
+		# custom_max_stock value left on the shared "_Test ASN Item" fixture by some other
+		# test/session can never make self.asn.submit() below raise Stock Cap Exceeded.
+		frappe.db.set_value("Item", self.po_item.item_code, "custom_max_stock", 0, update_modified=False)
 		self.branch = BRANCH
 		if not frappe.db.exists("Branch", self.branch):
 			frappe.get_doc({"doctype": "Branch", "branch": self.branch}).insert(ignore_permissions=True)
