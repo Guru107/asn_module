@@ -627,9 +627,11 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict]]], error
 
 	Runs in the validation phase so the function keeps its all-or-nothing contract: the
 	insert loop that follows has no error handling, and partially-submitted ASNs cannot
-	be rolled back cleanly. Headroom consumed by an earlier group is carried forward so
-	one upload cannot drive an item past its maximum across several ASNs, mirroring how
-	running_remaining already guards the PO quantity check.
+	be rolled back cleanly. Headroom consumed by an earlier breach-free group is carried
+	forward so one upload cannot drive an item past its maximum across several ASNs,
+	mirroring how running_remaining already guards the PO quantity check. A group that
+	produced any breach contributes nothing to ``consumed`` — only rows that were actually
+	accepted earn headroom, per ``consumed_from_breach_free_rows``'s documented contract.
 
 	Message text goes through the same redaction gate as the ASN controller
 	(``format_breaches(..., detailed=may_see_stock_figures())``) rather than interpolating
@@ -661,6 +663,9 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict]]], error
 					message=format_breaches([breach], detailed=detailed),
 				)
 			)
+
+		if breaches:
+			continue
 
 		for key, qty in consumed_from_breach_free_rows(rows).items():
 			consumed[key] = consumed.get(key, 0.0) + qty

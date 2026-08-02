@@ -917,6 +917,29 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertTrue(fake_asn.flags.ignore_permissions)
 		self.assertEqual(get_doc.call_args.args[0]["supplier_invoice_amount"], 100)
 
+	def test_insert_and_submit_asn_raises_portal_validation_error_on_submit_failure(self):
+		def _raise_on_submit():
+			raise FrappeValidationError("Item ITEM-001: stock cap breached")
+
+		fake_asn = SimpleNamespace(
+			flags=SimpleNamespace(), insert=lambda **_kwargs: None, submit=_raise_on_submit
+		)
+		with patch("asn_module.templates.pages.asn_new.frappe.get_doc", return_value=fake_asn):
+			with self.assertRaises(PortalValidationError) as ctx:
+				asn_new._insert_and_submit_asn(
+					supplier="Supp-001",
+					header={
+						"supplier_invoice_no": "INV-1",
+						"supplier_invoice_date": _test_dates()["supplier_invoice_date"],
+						"expected_delivery_date": _test_dates()["expected_delivery_date"],
+						"supplier_invoice_amount": 100,
+					},
+					items=[{"item_code": "ITEM-001", "qty": 1}],
+				)
+
+		self.assertEqual(ctx.exception.errors[0]["field"], "items_csv")
+		self.assertIn("Item ITEM-001: stock cap breached", ctx.exception.errors[0]["message"])
+
 	def test_request_supplier_invoice_amount_valid(self):
 		with (
 			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace()),

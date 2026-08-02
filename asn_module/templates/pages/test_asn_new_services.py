@@ -476,3 +476,43 @@ class TestBulkUploadStockCap(FrappeTestCase):
 		self.assertGreaterEqual(len(seen_consumed), 2)
 		self.assertEqual(seen_consumed[0], {})
 		self.assertEqual(seen_consumed[1], {("Mumbai", self.po_item.item_code): 1.0})
+
+	def test_breaching_group_does_not_contribute_headroom_to_later_group(self):
+		"""A group that produces a breach must not feed consumed_from_breach_free_rows.
+
+		consumed_from_breach_free_rows is documented as headroom claimed by rows already
+		*accepted* earlier in the upload. If a breaching group's rows were fed into it
+		anyway, a later group referencing the same item would be evaluated against
+		inflated headroom it never earned, and could be spuriously blamed for a breach
+		that the earlier (rejected) group actually caused.
+		"""
+		seen_consumed = []
+
+		def fake_breaches(payload_rows, exclude_asn_name=None, consumed=None):
+			seen_consumed.append(dict(consumed or {}))
+			if len(seen_consumed) == 1:
+				return [self._breach()]
+			return []
+
+		with patch(
+			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+			side_effect=fake_breaches,
+		):
+			with patch(
+				"asn_module.templates.pages.asn_new_services.consumed_from_breach_free_rows",
+				return_value={("Mumbai", self.po_item.item_code): 1.0},
+			):
+				with self.assertRaises(PortalValidationError):
+					create_bulk_asns_for_supplier(
+						supplier=self.supplier,
+						rows=self._two_groups_same_item(),
+						insert_asn=lambda **kwargs: SimpleNamespace(name="ASN-X"),
+					)
+
+		self.assertEqual(len(seen_consumed), 2)
+		self.assertEqual(seen_consumed[0], {})
+		self.assertEqual(
+			seen_consumed[1],
+			{},
+			"the second group must not see headroom claimed by the first group's breaching rows",
+		)
