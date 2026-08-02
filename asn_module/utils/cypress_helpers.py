@@ -310,10 +310,7 @@ def seed_stock_cap_context():
 	# too (see asn_module/utils/test_setup.py and TestASNStockCap.setUp() for the same
 	# pattern used by this app's own test suite).
 	from asn_module.asn_module.doctype.asn.test_asn import _ensure_company, create_purchase_order
-	from asn_module.utils.test_setup import (
-		build_purchase_order_with_mandatory_fields,
-		disable_hsn_validation,
-	)
+	from asn_module.utils.test_setup import build_purchase_order_with_mandatory_fields
 
 	# Dedicated item + warehouse, distinct from every other nightly seeder's fixtures.
 	# seed_minimal_asn/seed_scan_station_context (used by asn_desk_nightly.js,
@@ -325,19 +322,30 @@ def seed_stock_cap_context():
 	# run (no --spec filter, alphabetically after those three specs) would attribute
 	# their leftover in-transit stock to this branch's cap and break test 1. Using our
 	# own item/warehouse, seeded fresh here, structurally makes that impossible.
-	disable_hsn_validation()
 	item_code = "_Cypress Cap Item"
 	if not frappe.db.exists("Item", item_code):
-		frappe.get_doc(
-			{
-				"doctype": "Item",
-				"item_code": item_code,
-				"item_name": item_code,
-				"item_group": frappe.db.get_value("Item Group", {}, "name") or "All Item Groups",
-				"stock_uom": frappe.db.get_value("UOM", {}, "name") or "Nos",
-				"inspection_required_before_purchase": 0,
-			}
-		).insert(ignore_permissions=True)
+		item_doc = {
+			"doctype": "Item",
+			"item_code": item_code,
+			"item_name": item_code,
+			"item_group": frappe.db.get_value("Item Group", {}, "name") or "All Item Groups",
+			"stock_uom": frappe.db.get_value("UOM", {}, "name") or "Nos",
+			"inspection_required_before_purchase": 0,
+		}
+		# On benches with india_compliance installed, a fresh Item with no HSN/SAC code
+		# fails Item.validate whenever GST Settings.validate_hsn_code is on (the default
+		# is_sales_item=1 routes every new Item through that check). This seeder is a live
+		# whitelisted RPC endpoint with no enclosing test transaction, so it must not reach
+		# for disable_hsn_validation() -- that helper mutates GST Settings site-wide with no
+		# rollback outside a FrappeTestCase's setUpClass (see its docstring in
+		# asn_module/utils/test_setup.py). Instead, satisfy the validation on its own merits
+		# by pointing at an existing GST HSN Code record, when that field/doctype exists.
+		# Fail open: skip silently on a bench without india_compliance (the real CI bench).
+		if frappe.db.has_column("Item", "gst_hsn_code"):
+			existing_hsn_code = frappe.db.get_value("GST HSN Code", {}, "name")
+			if existing_hsn_code:
+				item_doc["gst_hsn_code"] = existing_hsn_code
+		frappe.get_doc(item_doc).insert(ignore_permissions=True)
 
 	company = _ensure_company()
 	abbr = frappe.get_cached_value("Company", company, "abbr")
