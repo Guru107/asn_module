@@ -290,10 +290,31 @@ def seed_stock_cap_context():
 	if not frappe.db.exists("Branch", branch):
 		frappe.get_doc({"doctype": "Branch", "branch": branch}).insert(ignore_permissions=True)
 
-	context = seed_supplier_context()
-	# seed_supplier_context() returns "purchase_orders" as a list of
-	# {"name": ..., "items": [...]} dicts (not bare docnames) -- pull the name out.
-	purchase_order = context["purchase_orders"][0]["name"]
+	supplier, _portal_user_name, _portal_password = _ensure_supplier_portal_user(
+		supplier_name="Test Supplier E2E",
+		portal_email="supplier_e2e@test.com",
+		portal_password="supplier_e2e",
+	)
+
+	# Build the PO directly with build_purchase_order_with_mandatory_fields rather than
+	# going through seed_supplier_context(): some benches (this one included) import
+	# Property Setters/Custom Fields from a production-like setup that make
+	# `custom_order_type` and a `taxes` row mandatory on Purchase Order, which the plain
+	# create_purchase_order() fixture used by seed_supplier_context() does not populate.
+	# build_purchase_order_with_mandatory_fields() fills them in only when the current
+	# site's metadata actually requires them, so this keeps working on a clean CI bench
+	# too (see asn_module/utils/test_setup.py and TestASNStockCap.setUp() for the same
+	# pattern used by this app's own test suite).
+	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+	from asn_module.utils.test_setup import build_purchase_order_with_mandatory_fields
+
+	po = build_purchase_order_with_mandatory_fields(
+		create_purchase_order,
+		tax_description="asn_module stock cap e2e",
+		qty=10,
+		supplier=supplier.name,
+	)
+	purchase_order = po.name
 	frappe.db.set_value("Purchase Order", purchase_order, "branch", branch)
 
 	po_item = frappe.get_all(
@@ -316,16 +337,23 @@ def seed_stock_cap_context():
 		}
 	).insert(ignore_permissions=True)
 
-	# Cap at half the PO quantity, so a full-quantity ASN always breaches and a quarter never does.
+	# Cap at half the PO quantity, so a quarter-quantity ASN never breaches. The e2e spec
+	# drives the "passing" and "breaching" ASNs against this *same* purchase order back to
+	# back and submits the passing one first, which consumes `passing_qty` of the PO's
+	# receivable quantity (see asn.py's "exceeds remaining PO qty" check). So breaching_qty
+	# can't just be the full PO quantity -- by the time the breaching ASN is saved, only
+	# `po_item.qty - passing_qty` (= 3/4 of the PO qty) is still receivable. 0.6x the PO
+	# quantity clears the cap (> 0.5x) while staying inside that remaining receivable
+	# quantity (< 0.75x).
 	frappe.db.set_value("Item", po_item.item_code, "custom_max_stock", flt(po_item.qty) / 2)
 	frappe.db.commit()
 
 	return {
 		"branch": branch,
-		"supplier": context["supplier"],
+		"supplier": supplier.name,
 		"purchase_order": purchase_order,
 		"item_code": po_item.item_code,
 		"warehouse": po_item.warehouse,
-		"breaching_qty": flt(po_item.qty),
+		"breaching_qty": flt(po_item.qty) * 0.6,
 		"passing_qty": flt(po_item.qty) / 4,
 	}

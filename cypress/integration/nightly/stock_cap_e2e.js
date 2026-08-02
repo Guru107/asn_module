@@ -3,7 +3,12 @@ const route = (path) => {
 	return `/${Cypress.env("routePrefix")}/${p}`;
 };
 
-context("ASN stock cap", () => {
+// testIsolation: false -- the third test deliberately continues on the exact draft the
+// second test saved (no navigation, no newAsnWithQty call), so this suite needs the
+// browser's page/session state to carry over between tests. Cypress's default
+// testIsolation resets to about:blank and clears storage before every test, which would
+// otherwise strand test 3 on a blank page before it can find its buttons.
+context("ASN stock cap", { testIsolation: false }, () => {
 	let seeded;
 
 	before(() => {
@@ -17,15 +22,74 @@ context("ASN stock cap", () => {
 		cy.login();
 	});
 
+	// Saving a breach can surface more than one stock cap warning dialog in quick
+	// succession (e.g. a client-side check and the server's own _server_messages
+	// landing a moment apart), so closing "the" modal once isn't reliable -- keep
+	// closing until none are left rather than asserting a fixed count.
+	const closeAllVisibleModals = () => {
+		cy.get("body").then(($body) => {
+			const $closeBtn = $body.find(".modal:visible .modal-header .btn-modal-close:visible").first();
+			if ($closeBtn.length) {
+				cy.wrap($closeBtn).click();
+				cy.wait(300);
+				closeAllVisibleModals();
+			}
+		});
+	};
+
 	const newAsnWithQty = (qty) => {
 		cy.visit(route("asn/new"), { failOnStatusCode: false });
 		cy.get(".form-layout", { timeout: 20000 }).should("exist");
 		cy.fill_field("supplier", seeded.supplier, "Link");
+		// The Link field's value lands on the DOM input synchronously, but the commit
+		// into frm.doc is a server round-trip (validate_link_and_fetch): force the
+		// field to blur/commit and wait for the model to actually reflect it.
+		cy.get('[data-fieldname="supplier"] input').blur();
+		cy.window()
+			.its("cur_frm.doc.supplier", { timeout: 15000 })
+			.should("eq", seeded.supplier);
+		// Every new ASN starts with one empty row already in the "items" table: it is
+		// a mandatory (reqd) Table field, and Frappe seeds mandatory child tables with
+		// a blank row for every new document (frappe.model.create_mandatory_children,
+		// see apps/frappe/frappe/public/js/frappe/model/create_new.js). Because of that
+		// placeholder row, asn.js's `supplier(frm)` handler (asn.js:41-58) pops its
+		// "Changing supplier will clear all items. Continue?" confirm the first time
+		// supplier is set on a new document too, not just on a genuine re-selection.
+		// The trigger that opens it is queued via frappe.run_serially, so it can land a
+		// tick or two after `cur_frm.doc.supplier` above already reads correctly. Handle
+		// it if/when it shows up: there is nothing real to lose, since the only row is
+		// the untouched placeholder. Accepting clears the table, so re-add a fresh row.
+		// Give the deferred trigger a moment to actually run before checking for it.
+		cy.wait(800);
+		cy.get("body").then(($body) => {
+			if ($body.find(".modal:visible").length) {
+				cy.get(".modal", { timeout: 15000 }).should(
+					"contain",
+					"Changing supplier will clear all items"
+				);
+				cy.get(".modal-footer .btn-primary:visible").contains("Yes").click();
+				// Frappe's dialogs are hidden (display:none), not removed from the DOM,
+				// once closed, so assert on visibility rather than existence.
+				cy.get(".modal:visible").should("not.exist");
+				cy.window().its("cur_frm.doc.supplier").should("eq", seeded.supplier);
+			}
+		});
 		cy.get('[data-fieldname="items"] .grid-add-row').click();
 		cy.get('[data-fieldname="purchase_order"]:visible')
 			.first()
 			.type(`${seeded.purchase_order}{enter}`, { delay: 30 });
 		cy.get('[data-fieldname="qty"]:visible').first().clear().type(String(qty));
+		// Adding a row opens it directly in the full "Editing Row" grid-form overlay
+		// (grid_row_form.js), which covers the form's own Save/Submit buttons. Collapse
+		// it back to the compact grid view before interacting with the page toolbar.
+		cy.get(".grid-collapse-row:visible").click();
+		cy.get(".form-in-grid:visible").should("not.exist");
+		// Supplier Invoice No/Amount are mandatory fields on the ASN doctype itself
+		// (asn.json), unrelated to the stock cap feature, but Save fails validation
+		// without them. Supplier Invoice No must also be unique per supplier, so give
+		// each document its own value rather than reusing one across tests.
+		cy.fill_field("supplier_invoice_no", `SINV-E2E-${Date.now()}`, "Data");
+		cy.fill_field("supplier_invoice_amount", "100", "Currency");
 	};
 
 	it("submits when projected stock stays within the cap", () => {
@@ -41,15 +105,28 @@ context("ASN stock cap", () => {
 		newAsnWithQty(seeded.breaching_qty);
 		cy.get(".primary-action").contains("Save").click();
 		cy.get(".modal", { timeout: 20000 }).should("contain", seeded.item_code);
-		cy.get(".modal-header .btn-modal-close:visible").first().click();
+		closeAllVisibleModals();
+		cy.get(".modal:visible").should("not.exist");
 		cy.get(".indicator-pill", { timeout: 20000 }).should("contain", "Draft");
 	});
 
 	it("blocks submit and leaves the ASN in draft when the cap is breached", () => {
+		// The previous test's own modal(s) can still be open/mid fade-out here
+		// (testIsolation is off for this suite so the page carries over directly from
+		// that test's last assertion), which would otherwise cover the Submit button.
+		closeAllVisibleModals();
+		cy.get(".modal:visible").should("not.exist");
 		cy.get(".primary-action").contains("Submit").click();
-		cy.get(".modal-footer .btn-primary:visible").click();
+		// Submitting always raises the desk's generic "Permanently submit?" confirm
+		// first (same as the passing-case test above); only once that's accepted does
+		// the actual submit request run and the server reject it as a breach. Wait for
+		// the confirm rather than snapshotting the DOM immediately after the click --
+		// it can take a beat to render, and checking too early would find nothing and
+		// silently skip it, leaving the confirm open and the breach check never run.
+		cy.get(".modal-footer .btn-primary:visible", { timeout: 10000 }).contains("Yes").click();
 		cy.get(".modal", { timeout: 20000 }).should("contain", "exceeds maximum");
-		cy.get(".modal-header .btn-modal-close:visible").first().click();
+		closeAllVisibleModals();
+		cy.get(".modal:visible").should("not.exist");
 		cy.get(".indicator-pill", { timeout: 20000 }).should("contain", "Draft");
 	});
 });
