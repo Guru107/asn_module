@@ -77,6 +77,41 @@ def before_tests() -> None:
 			_bootstrap_erpnext_defaults_without_hook()
 
 	_ensure_company_defaults()
+	ensure_branch_dimension()
+
+
+def ensure_branch_dimension() -> None:
+	"""Make `Purchase Order.branch` and `Purchase Receipt.branch` exist.
+
+	Those columns are not ours: ERPNext's Branch Accounting Dimension creates them as
+	custom fields on every transaction doctype. Production has the dimension configured,
+	and so do the dev benches, but a freshly-built CI site does not -- which is why the
+	stock cap's branch tests passed locally for the whole build and only failed in CI.
+
+	Fails open: a site without the Accounting Dimension doctype simply keeps no branch
+	column, which is exactly the configuration the stock cap already skips.
+	"""
+	if not frappe.db.table_exists("Accounting Dimension"):
+		return
+	if frappe.db.exists("Accounting Dimension", {"document_type": "Branch"}):
+		return
+	if not frappe.db.exists("DocType", "Branch"):
+		return
+
+	dimension = frappe.get_doc({"doctype": "Accounting Dimension", "document_type": "Branch"})
+	dimension.insert(ignore_permissions=True)
+
+	# ERPNext only builds the per-doctype custom fields inline when frappe.in_test is set;
+	# otherwise it enqueues them, and a CI run has no worker to pick that up. Build them
+	# directly if the column we actually need did not appear.
+	if not frappe.db.has_column("Purchase Order", "branch"):
+		from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
+			make_dimension_in_accounting_doctypes,
+		)
+
+		make_dimension_in_accounting_doctypes(doc=dimension)
+
+	frappe.db.commit()  # nosemgrep: frappe-manual-commit - test bootstrap must persist baseline fixtures
 
 
 def disable_hsn_validation() -> None:
