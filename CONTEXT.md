@@ -41,8 +41,8 @@ The warehouses configured against a Branch whose stock counts toward that branch
 _Avoid_: selected warehouses, configured warehouses
 
 **Maximum Stock**:
-The per-branch ceiling for an item, held in `Item.custom_max_stock` and expressed in the item's stock UOM. A single branch may hold up to this quantity; the company-wide total across branches is deliberately uncapped. Null or zero means the item is uncapped.
-_Avoid_: max stock, stock limit, cap (unqualified)
+The per-branch ceiling for an item, held in `ASN Item Branch Cap.max_qty`, keyed by (item, branch), and expressed in the item's stock UOM. A single branch may hold up to this quantity; the company-wide total across branches is deliberately uncapped. Zero or an absent row means the item is uncapped.
+_Avoid_: max stock, stock limit, cap (unqualified), `Item.custom_max_stock` (retired)
 
 **Projected Stock**:
 On Hand plus In Transit Qty plus the quantity of the ASN under evaluation, summed over a branch's Cap Warehouses and expressed in stock UOM. The figure compared against Maximum Stock.

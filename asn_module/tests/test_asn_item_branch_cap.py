@@ -133,6 +133,29 @@ class TestASNItemBranchCap(FrappeTestCase):
 		messages = " ".join(str(m) for m in frappe.local.message_log or [])
 		self.assertNotIn("not be enforced", messages)
 
+	def test_duplicate_pair_after_rename_is_rejected(self):
+		"""Reproduces the post-rename state the duplicate guard exists for: ``rename_doc``
+		updates a cap row's ``branch``/``item`` Link values but never re-derives or renames
+		the document itself, so a stale-named row's columns can already describe a pair that
+		a fresh row is about to be created for. Forcing a distinct name via
+		``flags.name_set`` stands in for an actual Branch/Item rename -- it produces the same
+		"columns match, names differ" shape without depending on ``rename_doc`` machinery,
+		keeping the test fast and focused on the guard itself.
+		"""
+		self._configure_branch(BRANCH)
+		_make_cap(BRANCH, ITEM, max_qty=200)
+
+		stale = frappe.get_doc(
+			{"doctype": "ASN Item Branch Cap", "branch": BRANCH, "item": ITEM, "max_qty": 50}
+		)
+		stale.name = "_Test Stale Renamed Cap Row"
+		stale.flags.name_set = True
+
+		with self.assertRaises(frappe.ValidationError) as ctx:
+			stale.insert(ignore_permissions=True)
+
+		self.assertIn("already exists", str(ctx.exception))
+
 	def test_zero_max_qty_is_saveable(self):
 		self._configure_branch(BRANCH)
 		doc = _make_cap(BRANCH, ITEM, max_qty=0)
