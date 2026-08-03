@@ -116,3 +116,10 @@ class TestASNItemBranchCap(FrappeTestCase):
 
 		messages = " ".join(str(m) for m in frappe.local.message_log or [])
 		self.assertNotIn("not be enforced", messages)
+
+	def test_zero_max_qty_persists(self):
+		self._configure_branch(BRANCH)
+		doc = _make_cap(BRANCH, ITEM, max_qty=0)
+
+		persisted_max_qty = frappe.db.get_value("ASN Item Branch Cap", doc.name, "max_qty")
+		self.assertEqual(persisted_max_qty, 0)
