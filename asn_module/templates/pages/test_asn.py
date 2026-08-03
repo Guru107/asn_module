@@ -1,4 +1,3 @@
-import importlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -18,6 +17,50 @@ from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 def _test_dates():
 	return get_fiscal_year_test_dates()
+
+
+class TestASNPortalRouting(FrappeTestCase):
+	"""The /asn route must reach this app's portal page, not Frappe's generic list view.
+
+	The ASN DocType has has_web_view, so Frappe turns its doctype-level `route` into a
+	website rule. A doctype-level route of "asn" rewrites /asn to the endpoint "ASN",
+	which no template file matches on a case-sensitive filesystem -- so Frappe falls
+	through to ListPage, which needs read permission on ASN that portal suppliers do not
+	have, and every supplier gets 403 Not Permitted.
+	"""
+
+	def test_asn_doctype_does_not_claim_the_portal_list_route(self):
+		route = frappe.db.get_value("DocType", "ASN", "route")
+
+		self.assertFalse(
+			(route or "").strip("/"),
+			"ASN's doctype-level route shadows the supplier portal page at /asn. "
+			"Per-document routes come from each ASN's own route field and do not need it.",
+		)
+
+	def test_asn_route_resolves_to_the_portal_template_not_the_list_view(self):
+		from frappe.website.page_renderers.template_page import TemplatePage
+		from frappe.website.path_resolver import PathResolver
+		from werkzeug.test import EnvironBuilder
+		from werkzeug.wrappers import Request
+
+		# A real request is required: evaluate_dynamic_routes reads request.environ, and
+		# without one the doctype route rules are skipped entirely and this test would
+		# pass even while /asn is returning 403 in production.
+		original_request = getattr(frappe.local, "request", None)
+		frappe.local.request = Request(EnvironBuilder(path="/asn", method="GET").get_environ())
+		try:
+			_endpoint, renderer = PathResolver("asn").resolve()
+		finally:
+			frappe.local.request = original_request
+
+		# Exact type, not isinstance: ListPage subclasses TemplatePage, so isinstance
+		# passes for the very renderer this test exists to reject.
+		self.assertIs(
+			type(renderer),
+			TemplatePage,
+			f"/asn resolved to {type(renderer).__name__}; suppliers need the portal template.",
+		)
 
 
 class TestASNPortalPageAgainstRealDatabase(FrappeTestCase):
@@ -45,12 +88,6 @@ class TestASNPortalPageAgainstRealDatabase(FrappeTestCase):
 
 
 class TestASNPortalPage(FrappeTestCase):
-	def test_uppercase_page_module_alias_resolves(self):
-		mod = importlib.import_module("asn_module.templates.pages.ASN")
-		self.assertTrue(hasattr(mod, "get_context"))
-		self.assertTrue(hasattr(mod, "has_website_permission"))
-		self.assertTrue(hasattr(mod, "delete_portal_asn"))
-
 	def test_templates_use_website_route_and_gate_desk_create_action(self):
 		asn_page = Path(__file__).with_name("asn.html").read_text()
 		asn_row = Path(__file__).with_name("asn_row.html").read_text()
