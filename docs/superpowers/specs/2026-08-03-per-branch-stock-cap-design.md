@@ -19,7 +19,7 @@ The ceiling must vary per branch.
 | Is stock still pooled across a branch's warehouses? | Yes, unchanged |
 | Where does the ceiling live? | New standalone doctype `ASN Item Branch Cap` |
 | What happens to `Item.custom_max_stock`? | Retired — branch rows are the only source |
-| Are existing values migrated? | No; the field and its values are deleted |
+| Are existing values migrated? | No; the field and its values are deleted (app is pre-production) |
 | What does `max_qty = 0` mean? | Uncapped, same as no row |
 | Is misconfiguration signalled? | Yes — non-blocking warning when saving a cap row for an unconfigured branch |
 
@@ -112,6 +112,8 @@ Built on a branch off `main` **after PR #26 merges**. Folding a data-model chang
 
 Deploying needs `bench migrate` (creates the doctype, runs the removal patch) followed by `bench --site <site> clear-cache`. Until an `ASN Item Branch Cap` row exists for a branch, that branch is uncapped — expected, and the reason for the save-time warning.
 
-## Open risk
+## On retiring the field without migrating values
 
-Retiring `Item.custom_max_stock` means any site relying on it loses enforcement the moment this ships, until branch rows are created. That is the accepted cost of a single source of truth; it was chosen over a migration that would have had to guess which branches each item's global value applied to.
+The app is still under development and the stock cap has not been enabled on any production site, so no live configuration depends on `Item.custom_max_stock`. Its only values are on the development benches. Deleting the field and its data therefore costs nothing, and a migration that would have had to guess which branches each item's global value applied to buys nothing.
+
+This is the reason the simpler option was chosen. Were the cap already live somewhere, retiring the field would need either a migration or a deprecation period, because enforcement would stop the moment this shipped and stay off until branch rows existed.
