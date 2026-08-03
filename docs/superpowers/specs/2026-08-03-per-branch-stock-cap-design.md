@@ -3,7 +3,7 @@
 **Status:** approved, not yet implemented
 **Date:** 2026-08-03
 **Supersedes part of:** [2026-07-28-asn-branch-stock-cap-design.md](2026-07-28-asn-branch-stock-cap-design.md)
-**Depends on:** PR #26 (branch-wise stock cap) being merged first
+**Builds on:** the stock cap introduced earlier in this same branch (PR #26)
 
 ## Problem
 
@@ -108,7 +108,9 @@ The Cypress `seed_stock_cap_context` helper switches to creating an `ASN Item Br
 
 ## Delivery
 
-Built on a branch off `main` **after PR #26 merges**. Folding a data-model change into #26 would invalidate a completed review of 31 commits.
+Implemented on `feature/asn-branch-stock-cap`, the same branch that introduces the stock cap, rather than as a follow-up off `main`. The per-branch ceiling is how the cap is meant to work, so shipping the global-ceiling version first and replacing it immediately would put a data model into `main` that nothing is expected to use.
+
+The cost is that PR #26 grows and the parts of it this design changes -- `models.py`, `evaluate.py`, `fetch.py`, `custom_fields/item.py`, the patch, and the tests that touch them -- need reviewing again.
 
 Deploying needs `bench migrate` (creates the doctype, runs the removal patch) followed by `bench --site <site> clear-cache`. Until an `ASN Item Branch Cap` row exists for a branch, that branch is uncapped — expected, and the reason for the save-time warning.
 
