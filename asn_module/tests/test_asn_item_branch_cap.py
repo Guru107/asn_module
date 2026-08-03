@@ -117,6 +117,22 @@ class TestASNItemBranchCap(FrappeTestCase):
 		messages = " ".join(str(m) for m in frappe.local.message_log or [])
 		self.assertNotIn("not be enforced", messages)
 
+	def test_blank_branch_skips_the_warehouse_warning_check(self):
+		"""``_warn_if_branch_has_no_cap_warehouses`` guards on ``self.branch`` before it ever
+		queries ASN Stock Cap Settings. Mandatory-field validation normally stops a blank
+		branch from reaching here, but ``validate()`` runs before that check in Frappe's
+		save pipeline (see ``run_before_save_methods`` vs. ``_validate_mandatory``), so this
+		guard clause is live code, not dead code, and deserves its own direct test rather
+		than one that depends on that ordering.
+		"""
+		frappe.local.message_log = []
+		doc = frappe.get_doc({"doctype": "ASN Item Branch Cap", "branch": "", "item": ITEM, "max_qty": 10})
+
+		doc.validate()
+
+		messages = " ".join(str(m) for m in frappe.local.message_log or [])
+		self.assertNotIn("not be enforced", messages)
+
 	def test_zero_max_qty_is_saveable(self):
 		self._configure_branch(BRANCH)
 		doc = _make_cap(BRANCH, ITEM, max_qty=0)
