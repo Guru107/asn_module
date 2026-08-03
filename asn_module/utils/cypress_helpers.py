@@ -400,7 +400,15 @@ def seed_stock_cap_context():
 	# `po_item.qty - passing_qty` (= 3/4 of the PO qty) is still receivable. 0.6x the PO
 	# quantity clears the cap (> 0.5x) while staying inside that remaining receivable
 	# quantity (< 0.75x).
-	frappe.db.set_value("Item", po_item.item_code, "custom_max_stock", flt(po_item.qty) / 2)
+	frappe.db.delete("ASN Item Branch Cap", {"item": po_item.item_code})
+	frappe.get_doc(
+		{
+			"doctype": "ASN Item Branch Cap",
+			"branch": branch,
+			"item": po_item.item_code,
+			"max_qty": flt(po_item.qty) / 2,
+		}
+	).insert(ignore_permissions=True)
 
 	return {
 		"branch": branch,

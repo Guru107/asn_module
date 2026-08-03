@@ -45,7 +45,7 @@ def fetch_cap_context(
 
 	return CapContext(
 		cap_warehouses=cap_warehouses,
-		max_stock=_fetch_max_stock(item_codes),
+		max_stock=_fetch_max_stock(branches, item_codes),
 		on_hand=_fetch_on_hand(item_codes, all_warehouses, branch_by_warehouse),
 		in_transit=_fetch_in_transit(
 			item_codes,
@@ -80,17 +80,23 @@ def _fetch_cap_warehouses(branches: list[str]) -> dict[str, frozenset[str]]:
 	return {branch: frozenset(warehouses) for branch, warehouses in collected.items()}
 
 
-def _fetch_max_stock(item_codes: list[str]) -> dict[str, float]:
-	if not frappe.db.has_column("Item", "custom_max_stock"):
+def _fetch_max_stock(branches: list[str], item_codes: list[str]) -> dict[tuple[str, str], float]:
+	"""Per-branch ceilings, keyed (branch, item_code).
+
+	Guarded on the table rather than a column: a site that has not yet migrated has no
+	ASN Item Branch Cap table at all, and the fail-open rule says an unconfigured site
+	simply never enforces a cap.
+	"""
+	if not frappe.db.table_exists("ASN Item Branch Cap"):
 		return {}
 
 	rows = frappe.get_all(
-		"Item",
-		filters={"name": ["in", item_codes]},
-		fields=["name", "custom_max_stock"],
+		"ASN Item Branch Cap",
+		filters={"branch": ["in", branches], "item": ["in", item_codes]},
+		fields=["branch", "item", "max_qty"],
 		limit_page_length=0,
 	)
-	return {row.name: flt(row.custom_max_stock) for row in rows}
+	return {(row.branch, row.item): flt(row.max_qty) for row in rows}
 
 
 def _fetch_on_hand(

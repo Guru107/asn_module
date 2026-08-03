@@ -567,7 +567,15 @@ class TestBulkUploadStockCapRealPipeline(FrappeTestCase):
 					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 				}
 			).insert(ignore_permissions=True)
-		frappe.db.set_value("Item", self.item_code, "custom_max_stock", 100)
+		frappe.db.delete("ASN Item Branch Cap", {"item": self.item_code})
+		frappe.get_doc(
+			{
+				"doctype": "ASN Item Branch Cap",
+				"branch": self.branch,
+				"item": self.item_code,
+				"max_qty": 100,
+			}
+		).insert(ignore_permissions=True)
 
 		# FrappeTestCase only rolls back once at class teardown, not per test.
 		frappe.db.delete("ASN Stock Cap Warehouse")

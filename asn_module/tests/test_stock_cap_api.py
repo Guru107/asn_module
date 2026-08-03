@@ -144,7 +144,10 @@ class TestStockCapPreviewAccessControl(FrappeTestCase):
 		# this class's own cap-settings fixtures before each test.
 		frappe.db.delete("ASN Stock Cap Warehouse")
 		frappe.db.delete("ASN Stock Cap Settings")
-		frappe.db.set_value("Item", ITEM, "custom_max_stock", MAX_STOCK)
+		frappe.db.delete("ASN Item Branch Cap", {"item": ITEM})
+		frappe.get_doc(
+			{"doctype": "ASN Item Branch Cap", "branch": BRANCH, "item": ITEM, "max_qty": MAX_STOCK}
+		).insert(ignore_permissions=True)
 
 		self.po = _create_purchase_order(item_code=ITEM, qty=10)
 		frappe.db.set_value("Purchase Order", self.po.name, "branch", BRANCH)
@@ -288,7 +291,10 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			frappe.db.delete("ASN", {"name": ["in", stale_asn_names]})
 		frappe.db.delete("ASN Stock Cap Warehouse")
 		frappe.db.delete("ASN Stock Cap Settings")
-		frappe.db.set_value("Item", PR_ITEM, "custom_max_stock", PR_MAX_STOCK)
+		frappe.db.delete("ASN Item Branch Cap", {"item": PR_ITEM})
+		frappe.get_doc(
+			{"doctype": "ASN Item Branch Cap", "branch": PR_BRANCH, "item": PR_ITEM, "max_qty": PR_MAX_STOCK}
+		).insert(ignore_permissions=True)
 
 		po = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,

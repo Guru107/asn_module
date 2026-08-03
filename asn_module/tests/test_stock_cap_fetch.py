@@ -49,9 +49,12 @@ class TestStockCapFetch(FrappeTestCase):
 
 	def setUp(self):
 		self.warehouse = _warehouse("_Test Fetch WH")
+		frappe.db.delete("ASN Item Branch Cap")
 		frappe.db.delete("ASN Stock Cap Warehouse")
 		frappe.db.delete("ASN Stock Cap Settings")
-		frappe.db.set_value("Item", ITEM, "custom_max_stock", 100)
+		frappe.get_doc(
+			{"doctype": "ASN Item Branch Cap", "branch": BRANCH, "item": ITEM, "max_qty": 100}
+		).insert(ignore_permissions=True)
 
 	def _line(self) -> Line:
 		return Line(branch=BRANCH, item_code=ITEM, warehouse=self.warehouse, stock_qty=1.0, row_idx=1)
@@ -83,24 +86,37 @@ class TestStockCapFetch(FrappeTestCase):
 		context = fetch_cap_context([self._line()])
 		self.assertEqual(context.cap_warehouses, {BRANCH: frozenset({self.warehouse})})
 
-	def test_max_stock_is_read_from_item(self):
+	def test_max_stock_is_read_from_the_branch_cap_row(self):
 		self._make_settings()
-		self.assertEqual(fetch_cap_context([self._line()]).max_stock[ITEM], 100.0)
+		self.assertEqual(fetch_cap_context([self._line()]).max_stock[(BRANCH, ITEM)], 100.0)
 
-	def test_missing_max_stock_column_yields_empty_caps(self):
+	def test_cap_row_for_another_branch_is_not_returned(self):
 		self._make_settings()
-		original = frappe.db.has_column
+		other = "_Test Fetch Branch Other"
+		if not frappe.db.exists("Branch", other):
+			frappe.get_doc({"doctype": "Branch", "branch": other}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{"doctype": "ASN Item Branch Cap", "branch": other, "item": ITEM, "max_qty": 7}
+		).insert(ignore_permissions=True)
 
-		def fake_has_column(doctype, column):
-			if doctype == "Item" and column == "custom_max_stock":
+		max_stock = fetch_cap_context([self._line()]).max_stock
+
+		self.assertEqual(max_stock, {(BRANCH, ITEM): 100.0})
+
+	def test_missing_cap_table_yields_empty_caps(self):
+		self._make_settings()
+		original = frappe.db.table_exists
+
+		def fake_table_exists(doctype, *args, **kwargs):
+			if doctype == "ASN Item Branch Cap":
 				return False
-			return original(doctype, column)
+			return original(doctype, *args, **kwargs)
 
-		frappe.db.has_column = fake_has_column
+		frappe.db.table_exists = fake_table_exists
 		try:
 			self.assertEqual(fetch_cap_context([self._line()]).max_stock, {})
 		finally:
-			frappe.db.has_column = original
+			frappe.db.table_exists = original
 
 	def test_missing_bin_rows_coalesce_to_zero(self):
 		self._make_settings()
@@ -154,12 +170,10 @@ class TestStockCapFetchInTransit(FrappeTestCase):
 
 		self.purchase_order = _create_purchase_order(create_purchase_order)
 		self.po_item = self.purchase_order.items[0]
-		# This class only asserts in-transit figures, never cap enforcement, but the ASN
-		# submitted below still runs through ASN._validate_stock_cap. Pin the PO item's cap
-		# to "no cap" (evaluate.py skips items whose max_stock <= 0) so a stray
-		# custom_max_stock value left on the shared "_Test ASN Item" fixture by some other
-		# test/session can never make self.asn.submit() below raise Stock Cap Exceeded.
-		frappe.db.set_value("Item", self.po_item.item_code, "custom_max_stock", 0, update_modified=False)
+		# This class only asserts in-transit figures, never cap enforcement. Removing any cap
+		# row for the PO item keeps a stray fixture from making self.asn.submit() below raise
+		# Stock Cap Exceeded.
+		frappe.db.delete("ASN Item Branch Cap", {"item": self.po_item.item_code})
 		self.branch = BRANCH
 		if not frappe.db.exists("Branch", self.branch):
 			frappe.get_doc({"doctype": "Branch", "branch": self.branch}).insert(ignore_permissions=True)
