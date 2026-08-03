@@ -117,7 +117,7 @@ class TestASNItemBranchCap(FrappeTestCase):
 		messages = " ".join(str(m) for m in frappe.local.message_log or [])
 		self.assertNotIn("not be enforced", messages)
 
-	def test_zero_max_qty_persists(self):
+	def test_zero_max_qty_is_saveable(self):
 		self._configure_branch(BRANCH)
 		doc = _make_cap(BRANCH, ITEM, max_qty=0)
 
