@@ -576,7 +576,10 @@ git commit -m "feat: key the stock cap ceiling by branch and item"
 
 **Files:**
 - Modify: `asn_module/stock_cap/fetch.py` — `fetch_cap_context` call site and `_fetch_max_stock`
+- Modify: `asn_module/utils/cypress_helpers.py:403`
 - Test: `asn_module/tests/test_stock_cap_fetch.py`
+- Test: `asn_module/tests/test_stock_cap_api.py:147` and `:291`
+- Test: `asn_module/templates/pages/test_asn_new_services.py:570`
 
 **Interfaces:**
 - Consumes: DocType `ASN Item Branch Cap` (Task 1); `CapContext.max_stock` keyed `(branch, item_code)` (Task 2).
@@ -699,16 +702,103 @@ In `fetch_cap_context`, line 48 becomes:
 
 `branches` is already computed on line 34.
 
-- [ ] **Step 5: Run tests to verify they pass**
+These three call sites still write the retired field. They must move in this same task, not a later one: the moment `_fetch_max_stock` reads the new doctype, a fixture setting `Item.custom_max_stock` has no effect, and the suites that assert a breach (`test_stock_cap_api` asserts `len(preview) == 1` and `entry["breached"]`) fail. Reader and fixtures switch together so every task ends green.
+
+- [ ] **Step 5: Move the API test fixtures onto cap rows**
+
+In `asn_module/tests/test_stock_cap_api.py`, find the branch each fixture uses (the test file defines `BRANCH` and `PR_BRANCH` constants) and replace line 147:
+
+```python
+		frappe.db.set_value("Item", ITEM, "custom_max_stock", MAX_STOCK)
+```
+
+with:
+
+```python
+		frappe.db.delete("ASN Item Branch Cap", {"item": ITEM})
+		frappe.get_doc(
+			{"doctype": "ASN Item Branch Cap", "branch": BRANCH, "item": ITEM, "max_qty": MAX_STOCK}
+		).insert(ignore_permissions=True)
+```
+
+and line 291:
+
+```python
+		frappe.db.set_value("Item", PR_ITEM, "custom_max_stock", PR_MAX_STOCK)
+```
+
+with:
+
+```python
+		frappe.db.delete("ASN Item Branch Cap", {"item": PR_ITEM})
+		frappe.get_doc(
+			{"doctype": "ASN Item Branch Cap", "branch": PR_BRANCH, "item": PR_ITEM, "max_qty": PR_MAX_STOCK}
+		).insert(ignore_permissions=True)
+```
+
+Both constants exist already: `BRANCH`/`ITEM`/`MAX_STOCK` at the top of the file, and `PR_BRANCH`/`PR_ITEM`/`PR_MAX_STOCK` above the Purchase Receipt class. Each `setUp` sets the same branch on its Purchase Order a few lines below, so the cap must be keyed to that branch or it will not apply.
+
+- [ ] **Step 6: Move the bulk upload fixture onto a cap row**
+
+In `asn_module/templates/pages/test_asn_new_services.py`, replace line 570:
+
+```python
+		frappe.db.set_value("Item", self.item_code, "custom_max_stock", 100)
+```
+
+with a cap row for `self.branch`, which that `setUp` already defines and ensures exists a few lines above:
+
+```python
+		frappe.db.delete("ASN Item Branch Cap", {"item": self.item_code})
+		frappe.get_doc(
+			{
+				"doctype": "ASN Item Branch Cap",
+				"branch": self.branch,
+				"item": self.item_code,
+				"max_qty": 100,
+			}
+		).insert(ignore_permissions=True)
+```
+
+- [ ] **Step 7: Move the Cypress seeder onto a cap row**
+
+In `asn_module/utils/cypress_helpers.py`, replace line 403:
+
+```python
+	frappe.db.set_value("Item", po_item.item_code, "custom_max_stock", flt(po_item.qty) / 2)
+```
+
+with:
+
+```python
+	# Cap at half the PO quantity, so a full-quantity ASN always breaches and a quarter never does.
+	frappe.db.delete("ASN Item Branch Cap", {"item": po_item.item_code})
+	frappe.get_doc(
+		{
+			"doctype": "ASN Item Branch Cap",
+			"branch": branch,
+			"item": po_item.item_code,
+			"max_qty": flt(po_item.qty) / 2,
+		}
+	).insert(ignore_permissions=True)
+```
+
+`branch` is the `_Cypress Cap Branch` local already defined earlier in that function.
+
+- [ ] **Step 8: Run every affected suite**
 
 ```bash
 cd /root/workspace/bench16
-bench --site frappe16.localhost run-tests --module asn_module.tests.test_stock_cap_fetch --lightmode
+for m in asn_module.tests.test_stock_cap_fetch \
+         asn_module.tests.test_stock_cap_api \
+         asn_module.templates.pages.test_asn_new_services; do
+  bench --site frappe16.localhost run-tests --module "$m" --lightmode
+done
 ```
 
-Expected: all tests PASS, one more than before.
+Expected: all PASS. These are the suites whose fixtures just moved; a failure here means a cap row was keyed to a branch the lines do not resolve to.
 
-- [ ] **Step 6: Verify on v15**
+- [ ] **Step 9: Verify on v15**
 
 ```bash
 cd /root/workspace/bench15
@@ -717,11 +807,14 @@ bench --site development.localhost run-tests --module asn_module.tests.test_stoc
 
 Expected: all PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 ruff format asn_module/ && ruff check asn_module/
-git add asn_module/stock_cap/fetch.py asn_module/tests/test_stock_cap_fetch.py
+git add asn_module/stock_cap/fetch.py asn_module/tests/test_stock_cap_fetch.py \
+        asn_module/tests/test_stock_cap_api.py \
+        asn_module/templates/pages/test_asn_new_services.py \
+        asn_module/utils/cypress_helpers.py
 git commit -m "feat: read stock cap ceilings from ASN Item Branch Cap"
 ```
 
@@ -876,7 +969,7 @@ Expected: `custom field: None`. The column may survive — Frappe does not alway
 grep -rn "custom_max_stock" --include=*.py --include=*.js --include=*.json asn_module/ cypress/
 ```
 
-Expected: matches only in `asn_module/patches/remove_item_max_stock_field.py`. Any other match is a task later in this plan that has not run yet — note it and continue; Task 5 clears the remaining test fixtures.
+Expected: exactly one match, in `asn_module/patches/remove_item_max_stock_field.py`. Task 3 already moved every test fixture onto cap rows, so any other match is a real leftover — fix it before committing.
 
 - [ ] **Step 8: Commit**
 
@@ -889,138 +982,7 @@ git commit -m "feat: retire Item.custom_max_stock in favour of per-branch caps"
 
 ---
 
-### Task 5: Move remaining fixtures to cap rows
-
-**Files:**
-- Modify: `asn_module/tests/test_stock_cap_api.py:147` and `:291`
-- Modify: `asn_module/templates/pages/test_asn_new_services.py:570`
-- Modify: `asn_module/utils/cypress_helpers.py:403`
-
-**Interfaces:**
-- Consumes: DocType `ASN Item Branch Cap` (Task 1).
-- Produces: nothing.
-
-These four call sites still write the retired field, so the suites that depend on a cap being in force now pass vacuously — they assert a breach that can no longer happen. Each needs a cap row for the branch its fixture actually uses.
-
-- [ ] **Step 1: Fix the API tests**
-
-In `asn_module/tests/test_stock_cap_api.py`, find the branch each fixture uses (the test file defines `BRANCH` and `PR_BRANCH` constants) and replace line 147:
-
-```python
-		frappe.db.set_value("Item", ITEM, "custom_max_stock", MAX_STOCK)
-```
-
-with:
-
-```python
-		frappe.db.delete("ASN Item Branch Cap", {"item": ITEM})
-		frappe.get_doc(
-			{"doctype": "ASN Item Branch Cap", "branch": BRANCH, "item": ITEM, "max_qty": MAX_STOCK}
-		).insert(ignore_permissions=True)
-```
-
-and line 291:
-
-```python
-		frappe.db.set_value("Item", PR_ITEM, "custom_max_stock", PR_MAX_STOCK)
-```
-
-with:
-
-```python
-		frappe.db.delete("ASN Item Branch Cap", {"item": PR_ITEM})
-		frappe.get_doc(
-			{"doctype": "ASN Item Branch Cap", "branch": PR_BRANCH, "item": PR_ITEM, "max_qty": PR_MAX_STOCK}
-		).insert(ignore_permissions=True)
-```
-
-Both constants exist already: `BRANCH`/`ITEM`/`MAX_STOCK` at the top of the file, and `PR_BRANCH`/`PR_ITEM`/`PR_MAX_STOCK` above the Purchase Receipt class. Each `setUp` sets the same branch on its Purchase Order a few lines below, so the cap must be keyed to that branch or it will not apply.
-
-- [ ] **Step 2: Fix the bulk upload test**
-
-In `asn_module/templates/pages/test_asn_new_services.py`, replace line 570:
-
-```python
-		frappe.db.set_value("Item", self.item_code, "custom_max_stock", 100)
-```
-
-with a cap row for `self.branch`, which that `setUp` already defines and ensures exists a few lines above:
-
-```python
-		frappe.db.delete("ASN Item Branch Cap", {"item": self.item_code})
-		frappe.get_doc(
-			{
-				"doctype": "ASN Item Branch Cap",
-				"branch": self.branch,
-				"item": self.item_code,
-				"max_qty": 100,
-			}
-		).insert(ignore_permissions=True)
-```
-
-- [ ] **Step 3: Fix the Cypress seeder**
-
-In `asn_module/utils/cypress_helpers.py`, replace line 403:
-
-```python
-	frappe.db.set_value("Item", po_item.item_code, "custom_max_stock", flt(po_item.qty) / 2)
-```
-
-with:
-
-```python
-	# Cap at half the PO quantity, so a full-quantity ASN always breaches and a quarter never does.
-	frappe.db.delete("ASN Item Branch Cap", {"item": po_item.item_code})
-	frappe.get_doc(
-		{
-			"doctype": "ASN Item Branch Cap",
-			"branch": branch,
-			"item": po_item.item_code,
-			"max_qty": flt(po_item.qty) / 2,
-		}
-	).insert(ignore_permissions=True)
-```
-
-`branch` is the `_Cypress Cap Branch` local already defined earlier in that function.
-
-- [ ] **Step 4: Run every affected suite**
-
-```bash
-cd /root/workspace/bench16
-for m in asn_module.tests.test_stock_cap_api \
-         asn_module.tests.test_stock_cap_fetch \
-         asn_module.tests.test_stock_cap_evaluate \
-         asn_module.tests.test_stock_cap_messages \
-         asn_module.tests.test_stock_cap_settings \
-         asn_module.tests.test_asn_item_branch_cap \
-         asn_module.tests.test_hooks \
-         asn_module.templates.pages.test_asn_new_services \
-         asn_module.handlers.tests.test_purchase_receipt; do
-  bench --site frappe16.localhost run-tests --module "$m" --lightmode
-done
-```
-
-Expected: all PASS.
-
-- [ ] **Step 5: Confirm the retired field is gone from the codebase**
-
-```bash
-grep -rn "custom_max_stock" --include=*.py --include=*.js --include=*.json asn_module/ cypress/
-```
-
-Expected: exactly one match, in `asn_module/patches/remove_item_max_stock_field.py`.
-
-- [ ] **Step 6: Commit**
-
-```bash
-ruff format asn_module/ && ruff check asn_module/
-git add asn_module/tests/test_stock_cap_api.py asn_module/templates/pages/test_asn_new_services.py asn_module/utils/cypress_helpers.py
-git commit -m "test: seed per-branch cap rows instead of the retired item field"
-```
-
----
-
-### Task 6: Full suite, e2e, and coverage gate
+### Task 5: Full suite, e2e, and coverage gate
 
 **Files:** none, unless a gap is found.
 
