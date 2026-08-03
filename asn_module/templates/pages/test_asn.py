@@ -1,4 +1,3 @@
-import importlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -20,13 +19,75 @@ def _test_dates():
 	return get_fiscal_year_test_dates()
 
 
-class TestASNPortalPage(FrappeTestCase):
-	def test_uppercase_page_module_alias_resolves(self):
-		mod = importlib.import_module("asn_module.templates.pages.ASN")
-		self.assertTrue(hasattr(mod, "get_context"))
-		self.assertTrue(hasattr(mod, "has_website_permission"))
-		self.assertTrue(hasattr(mod, "delete_portal_asn"))
+class TestASNPortalRouting(FrappeTestCase):
+	"""The /asn route must reach this app's portal page, not Frappe's generic list view.
 
+	The ASN DocType has has_web_view, so Frappe turns its doctype-level `route` into a
+	website rule. A doctype-level route of "asn" rewrites /asn to the endpoint "ASN",
+	which no template file matches on a case-sensitive filesystem -- so Frappe falls
+	through to ListPage, which needs read permission on ASN that portal suppliers do not
+	have, and every supplier gets 403 Not Permitted.
+	"""
+
+	def test_asn_doctype_does_not_claim_the_portal_list_route(self):
+		route = frappe.db.get_value("DocType", "ASN", "route")
+
+		self.assertFalse(
+			(route or "").strip("/"),
+			"ASN's doctype-level route shadows the supplier portal page at /asn. "
+			"Per-document routes come from each ASN's own route field and do not need it.",
+		)
+
+	def test_asn_route_resolves_to_the_portal_template_not_the_list_view(self):
+		from frappe.website.page_renderers.template_page import TemplatePage
+		from frappe.website.path_resolver import PathResolver
+		from werkzeug.test import EnvironBuilder
+		from werkzeug.wrappers import Request
+
+		# A real request is required: evaluate_dynamic_routes reads request.environ, and
+		# without one the doctype route rules are skipped entirely and this test would
+		# pass even while /asn is returning 403 in production.
+		original_request = getattr(frappe.local, "request", None)
+		frappe.local.request = Request(EnvironBuilder(path="/asn", method="GET").get_environ())
+		try:
+			_endpoint, renderer = PathResolver("asn").resolve()
+		finally:
+			frappe.local.request = original_request
+
+		# Exact type, not isinstance: ListPage subclasses TemplatePage, so isinstance
+		# passes for the very renderer this test exists to reject.
+		self.assertIs(
+			type(renderer),
+			TemplatePage,
+			f"/asn resolved to {type(renderer).__name__}; suppliers need the portal template.",
+		)
+
+
+class TestASNPortalPageAgainstRealDatabase(FrappeTestCase):
+	"""Executes get_context's real queries instead of mocking frappe.get_all.
+
+	Every other test in this file mocks get_all, so none of them can catch a `fields`
+	argument this Frappe version's query layer refuses to parse -- the aggregate syntax
+	differs between v15 and v16. This class exists to run the query for real.
+	"""
+
+	def test_get_context_builds_item_counts_on_this_frappe_version(self):
+		context = SimpleNamespace()
+
+		# Only supplier resolution is stubbed; every query below it hits the database.
+		# A supplier with no ASNs is enough: the item-count query still runs, and it is
+		# the query layer's parsing of `fields` that broke, not the rows it returned.
+		with patch(
+			"asn_module.templates.pages.asn._get_supplier_for_user",
+			return_value="_Test Portal Supplier With No ASNs",
+		):
+			get_context(context)
+
+		self.assertTrue(context.can_create_asn)
+		self.assertEqual(context.asn_list, [])
+
+
+class TestASNPortalPage(FrappeTestCase):
 	def test_templates_use_website_route_and_gate_desk_create_action(self):
 		asn_page = Path(__file__).with_name("asn.html").read_text()
 		asn_row = Path(__file__).with_name("asn_row.html").read_text()
@@ -115,7 +176,8 @@ class TestASNPortalPage(FrappeTestCase):
 				side_effect=[
 					asn_rows,
 					[],
-					[frappe._dict({"parent": "ASN-0001", "total_items": 2})],
+					# One row per ASN Item, which is what the real query now returns.
+					[frappe._dict({"parent": "ASN-0001"}), frappe._dict({"parent": "ASN-0001"})],
 				],
 			) as get_all,
 			patch("asn_module.templates.pages.asn.frappe.db.set_value") as set_value,
@@ -133,8 +195,7 @@ class TestASNPortalPage(FrappeTestCase):
 		self.assertEqual(get_all.call_count, 3)
 		self.assertIn("route", get_all.call_args_list[0].kwargs["fields"])
 		self.assertIn("docstatus", get_all.call_args_list[1].kwargs["fields"])
-		self.assertIn({"COUNT": "name", "as": "total_items"}, get_all.call_args_list[2].kwargs["fields"])
-		self.assertEqual(get_all.call_args_list[2].kwargs["group_by"], "parent")
+		self.assertEqual(get_all.call_args_list[2].kwargs["fields"], ["parent"])
 		set_value.assert_called_once_with("ASN", "ASN-0001", "route", "asn/asn-0001", update_modified=False)
 
 	def test_get_context_returns_empty_list_when_user_has_no_supplier(self):

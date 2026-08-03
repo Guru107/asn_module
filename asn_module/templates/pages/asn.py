@@ -1,3 +1,5 @@
+from collections import Counter
+
 import frappe
 from frappe import _
 from frappe.website.utils import cleanup_page_name
@@ -46,15 +48,20 @@ def get_context(context):
 			if row.docstatus != 2:
 				asns_with_active_pr.add(row.asn)
 
-	item_counts = {
-		row.parent: row.total_items
+	# Counted in Python rather than by the database on purpose. Frappe's aggregate
+	# syntaxes are mutually exclusive across the versions this app supports: v15 rejects
+	# the {"COUNT": ...} dict form, and v16 rejects the "count(name) as x" string form.
+	# A plain field fetch is the only shape both accept, and this page reads at most 50
+	# ASNs, so the row count is small.
+	item_counts = Counter(
+		row.parent
 		for row in frappe.get_all(
 			"ASN Item",
 			filters={"parent": ["in", [asn.name for asn in asn_list]]},
-			fields=["parent", {"COUNT": "name", "as": "total_items"}],
-			group_by="parent",
+			fields=["parent"],
+			limit_page_length=0,
 		)
-	}
+	)
 
 	for asn in asn_list:
 		if not asn.route:
