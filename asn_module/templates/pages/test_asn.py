@@ -20,6 +20,30 @@ def _test_dates():
 	return get_fiscal_year_test_dates()
 
 
+class TestASNPortalPageAgainstRealDatabase(FrappeTestCase):
+	"""Executes get_context's real queries instead of mocking frappe.get_all.
+
+	Every other test in this file mocks get_all, so none of them can catch a `fields`
+	argument this Frappe version's query layer refuses to parse -- the aggregate syntax
+	differs between v15 and v16. This class exists to run the query for real.
+	"""
+
+	def test_get_context_builds_item_counts_on_this_frappe_version(self):
+		context = SimpleNamespace()
+
+		# Only supplier resolution is stubbed; every query below it hits the database.
+		# A supplier with no ASNs is enough: the item-count query still runs, and it is
+		# the query layer's parsing of `fields` that broke, not the rows it returned.
+		with patch(
+			"asn_module.templates.pages.asn._get_supplier_for_user",
+			return_value="_Test Portal Supplier With No ASNs",
+		):
+			get_context(context)
+
+		self.assertTrue(context.can_create_asn)
+		self.assertEqual(context.asn_list, [])
+
+
 class TestASNPortalPage(FrappeTestCase):
 	def test_uppercase_page_module_alias_resolves(self):
 		mod = importlib.import_module("asn_module.templates.pages.ASN")
@@ -115,7 +139,8 @@ class TestASNPortalPage(FrappeTestCase):
 				side_effect=[
 					asn_rows,
 					[],
-					[frappe._dict({"parent": "ASN-0001", "total_items": 2})],
+					# One row per ASN Item, which is what the real query now returns.
+					[frappe._dict({"parent": "ASN-0001"}), frappe._dict({"parent": "ASN-0001"})],
 				],
 			) as get_all,
 			patch("asn_module.templates.pages.asn.frappe.db.set_value") as set_value,
@@ -133,8 +158,7 @@ class TestASNPortalPage(FrappeTestCase):
 		self.assertEqual(get_all.call_count, 3)
 		self.assertIn("route", get_all.call_args_list[0].kwargs["fields"])
 		self.assertIn("docstatus", get_all.call_args_list[1].kwargs["fields"])
-		self.assertIn({"COUNT": "name", "as": "total_items"}, get_all.call_args_list[2].kwargs["fields"])
-		self.assertEqual(get_all.call_args_list[2].kwargs["group_by"], "parent")
+		self.assertEqual(get_all.call_args_list[2].kwargs["fields"], ["parent"])
 		set_value.assert_called_once_with("ASN", "ASN-0001", "route", "asn/asn-0001", update_modified=False)
 
 	def test_get_context_returns_empty_list_when_user_has_no_supplier(self):
