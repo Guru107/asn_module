@@ -9,6 +9,7 @@ BREACH = Breach(
 	row_idxs=(1, 2),
 	on_hand=60.0,
 	in_transit=20.0,
+	baseline=80.0,
 	incoming=40.0,
 	projected=120.0,
 	cap=100.0,

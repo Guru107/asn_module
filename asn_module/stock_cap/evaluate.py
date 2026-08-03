@@ -50,7 +50,11 @@ def evaluate(
 		in_transit = _as_float(context.in_transit.get((branch, item_code)))
 		incoming = sum(_as_float(line.stock_qty) for line in group)
 		accepted[(branch, item_code)] = incoming
-		projected = on_hand + in_transit + incoming + _as_float(consumed.get((branch, item_code)))
+		# Everything counted against the cap except this document's own incoming qty.
+		# Stored on the Breach as `baseline` so allowed_qty can use it directly instead
+		# of re-deriving it by subtracting incoming back out of projected.
+		baseline = on_hand + in_transit + _as_float(consumed.get((branch, item_code)))
+		projected = baseline + incoming
 
 		if projected <= cap:
 			continue
@@ -62,6 +66,7 @@ def evaluate(
 				row_idxs=tuple(sorted(line.row_idx for line in group)),
 				on_hand=on_hand,
 				in_transit=in_transit,
+				baseline=baseline,
 				incoming=incoming,
 				projected=projected,
 				cap=cap,

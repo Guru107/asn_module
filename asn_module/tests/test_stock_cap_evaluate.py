@@ -124,6 +124,33 @@ class TestStockCapEvaluate(unittest.TestCase):
 		breaches, _accepted = evaluate([_line(allowed_qty)], context)
 		self.assertEqual(breaches, [])
 
+	def test_declaring_allowed_qty_with_subnormal_on_hand_residual_produces_no_breach(self):
+		"""Regression for a lossy allowed_qty derivation.
+
+		cap=1.0, on_hand=2.220446049250313e-16 (a single ULP above zero), in_transit=0.0,
+		qty=2.0. ``on_hand`` is far too small to survive being added to ``incoming`` and then
+		subtracted back out: ``projected - incoming`` collapses to exactly 0.0, so an
+		allowed_qty derived that way reports 1.0 as safe, and re-evaluating at 1.0 breaches
+		(projected becomes 1.0000000000000002 > cap). Deriving allowed_qty from the stored
+		``baseline`` (on_hand + in_transit + consumed) instead of from projected/incoming
+		keeps the promise: re-evaluating at the reported allowed_qty must never breach.
+		"""
+		cap = 1.0
+		on_hand = 2.220446049250313e-16
+		in_transit = 0.0
+		qty = 2.0
+		context = _context(
+			max_stock={(BRANCH, ITEM): cap},
+			on_hand={(BRANCH, ITEM): on_hand},
+			in_transit={(BRANCH, ITEM): in_transit},
+		)
+		breaches, _accepted = evaluate([_line(qty)], context)
+		self.assertEqual(len(breaches), 1)
+
+		allowed_qty = breaches[0].allowed_qty
+		breaches, _accepted = evaluate([_line(allowed_qty)], context)
+		self.assertEqual(breaches, [])
+
 	def test_breaches_are_sorted_deterministically(self):
 		context = CapContext(
 			cap_warehouses={BRANCH: frozenset({WH})},
