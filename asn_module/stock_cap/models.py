@@ -15,10 +15,15 @@ class Line:
 
 @dataclass(frozen=True)
 class CapContext:
-	"""Everything the evaluator needs, as plain data. Built by fetch_cap_context."""
+	"""Everything the evaluator needs, as plain data. Built by fetch_cap_context.
+
+	``max_stock`` is keyed by (branch, item_code): the same item may carry a different
+	ceiling in each branch. ``on_hand`` and ``in_transit`` share that key because stock is
+	pooled across the branch's cap warehouses.
+	"""
 
 	cap_warehouses: dict[str, frozenset[str]]
-	max_stock: dict[str, float]
+	max_stock: dict[tuple[str, str], float]
 	on_hand: dict[tuple[str, str], float]
 	in_transit: dict[tuple[str, str], float]
 

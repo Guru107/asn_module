@@ -11,7 +11,7 @@ WH = "Main - MC"
 def _context(**overrides) -> CapContext:
 	defaults = {
 		"cap_warehouses": {BRANCH: frozenset({WH})},
-		"max_stock": {ITEM: 100.0},
+		"max_stock": {(BRANCH, ITEM): 100.0},
 		"on_hand": {},
 		"in_transit": {},
 	}
@@ -30,7 +30,7 @@ class TestStockCapEvaluate(unittest.TestCase):
 		self.assertEqual(accepted, {})
 
 	def test_zero_cap_is_treated_as_uncapped(self):
-		breaches, accepted = evaluate([_line(500)], _context(max_stock={ITEM: 0.0}))
+		breaches, accepted = evaluate([_line(500)], _context(max_stock={(BRANCH, ITEM): 0.0}))
 		self.assertEqual(breaches, [])
 		self.assertEqual(accepted, {})
 
@@ -113,7 +113,7 @@ class TestStockCapEvaluate(unittest.TestCase):
 		in_transit = 6349.999099114582
 		qty = 6063.38417754219
 		context = _context(
-			max_stock={ITEM: cap},
+			max_stock={(BRANCH, ITEM): cap},
 			on_hand={(BRANCH, ITEM): on_hand},
 			in_transit={(BRANCH, ITEM): in_transit},
 		)
@@ -127,7 +127,7 @@ class TestStockCapEvaluate(unittest.TestCase):
 	def test_breaches_are_sorted_deterministically(self):
 		context = CapContext(
 			cap_warehouses={BRANCH: frozenset({WH})},
-			max_stock={"B_ITEM": 1.0, "A_ITEM": 1.0},
+			max_stock={(BRANCH, "B_ITEM"): 1.0, (BRANCH, "A_ITEM"): 1.0},
 			on_hand={},
 			in_transit={},
 		)
@@ -137,6 +137,34 @@ class TestStockCapEvaluate(unittest.TestCase):
 		]
 		breaches, _accepted = evaluate(lines, context)
 		self.assertEqual([b.item_code for b in breaches], ["A_ITEM", "B_ITEM"])
+
+	def test_each_branch_uses_its_own_ceiling_for_the_same_item(self):
+		other_branch = "Delhi"
+		other_wh = "Delhi Store - MC"
+		context = CapContext(
+			cap_warehouses={BRANCH: frozenset({WH}), other_branch: frozenset({other_wh})},
+			max_stock={(BRANCH, ITEM): 100.0, (other_branch, ITEM): 10.0},
+			on_hand={},
+			in_transit={},
+		)
+		lines = [
+			Line(branch=BRANCH, item_code=ITEM, warehouse=WH, stock_qty=50, row_idx=1),
+			Line(branch=other_branch, item_code=ITEM, warehouse=other_wh, stock_qty=50, row_idx=2),
+		]
+
+		breaches, _accepted = evaluate(lines, context)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].branch, other_branch)
+		self.assertEqual(breaches[0].cap, 10.0)
+
+	def test_cap_for_another_branch_does_not_apply(self):
+		context = _context(max_stock={("Some Other Branch", ITEM): 1.0})
+
+		breaches, accepted = evaluate([_line(500)], context)
+
+		self.assertEqual(breaches, [])
+		self.assertEqual(accepted, {})
 
 	def test_accepted_reflects_incoming_for_every_filtered_group_regardless_of_breach(self):
 		"""accepted must mirror evaluate's own filters exactly -- the same groups that

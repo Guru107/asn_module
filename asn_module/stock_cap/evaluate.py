@@ -37,7 +37,7 @@ def evaluate(
 		cap_warehouses = context.cap_warehouses.get(line.branch)
 		if not cap_warehouses or line.warehouse not in cap_warehouses:
 			continue
-		if _as_float(context.max_stock.get(line.item_code)) <= 0:
+		if _as_float(context.max_stock.get((line.branch, line.item_code))) <= 0:
 			continue
 
 		grouped.setdefault((line.branch, line.item_code), []).append(line)
@@ -45,7 +45,7 @@ def evaluate(
 	breaches = []
 	accepted: dict[tuple[str, str], float] = {}
 	for (branch, item_code), group in grouped.items():
-		cap = _as_float(context.max_stock.get(item_code))
+		cap = _as_float(context.max_stock.get((branch, item_code)))
 		on_hand = _as_float(context.on_hand.get((branch, item_code)))
 		in_transit = _as_float(context.in_transit.get((branch, item_code)))
 		incoming = sum(_as_float(line.stock_qty) for line in group)

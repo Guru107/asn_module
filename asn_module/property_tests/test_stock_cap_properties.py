@@ -17,7 +17,7 @@ caps = st.floats(min_value=0.01, max_value=10_000, allow_nan=False, allow_infini
 def _context(cap: float, on_hand: float, in_transit: float) -> CapContext:
 	return CapContext(
 		cap_warehouses={BRANCH: frozenset({WH})},
-		max_stock={ITEM: cap},
+		max_stock={(BRANCH, ITEM): cap},
 		on_hand={(BRANCH, ITEM): on_hand},
 		in_transit={(BRANCH, ITEM): in_transit},
 	)
