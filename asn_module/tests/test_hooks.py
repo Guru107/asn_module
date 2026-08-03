@@ -3,7 +3,6 @@ from unittest.mock import patch
 
 from frappe.tests.utils import FrappeTestCase
 
-import asn_module.custom_fields.item as item_fields
 import asn_module.custom_fields.purchase_invoice as purchase_invoice_fields
 import asn_module.custom_fields.purchase_receipt as purchase_receipt_fields
 import asn_module.hooks as hooks
@@ -26,7 +25,6 @@ class TestHooks(FrappeTestCase):
 		self.assertTrue((public_js_dir / "scan_dialog.js").exists())
 		self.assertTrue((public_js_dir / "asn_module.js").exists())
 
-	@patch("asn_module.setup.setup_item_fields")
 	@patch("asn_module.setup.setup_pi_fields")
 	@patch("asn_module.setup.setup_pr_fields")
 	@patch("asn_module.setup.create_notifications")
@@ -37,12 +35,10 @@ class TestHooks(FrappeTestCase):
 		create_notifications,
 		setup_pr_fields,
 		setup_pi_fields,
-		setup_item_fields,
 	):
 		call_order = []
 		setup_pr_fields.side_effect = lambda: call_order.append("pr")
 		setup_pi_fields.side_effect = lambda: call_order.append("pi")
-		setup_item_fields.side_effect = lambda: call_order.append("item")
 		create_notifications.side_effect = lambda: call_order.append("notif")
 		register_actions.side_effect = lambda: call_order.append("actions")
 
@@ -50,10 +46,9 @@ class TestHooks(FrappeTestCase):
 
 		setup_pr_fields.assert_called_once_with()
 		setup_pi_fields.assert_called_once_with()
-		setup_item_fields.assert_called_once_with()
 		create_notifications.assert_called_once_with()
 		register_actions.assert_called_once_with()
-		self.assertEqual(call_order, ["pr", "pi", "item", "notif", "actions"])
+		self.assertEqual(call_order, ["pr", "pi", "notif", "actions"])
 
 	def test_purchase_receipt_custom_fields_define_asn_link_and_item_mapping(self):
 		with patch("asn_module.custom_fields.purchase_receipt.create_custom_fields") as create_custom_fields:
@@ -65,20 +60,12 @@ class TestHooks(FrappeTestCase):
 		self.assertEqual(fields[1]["fieldname"], "asn_items")
 		self.assertEqual(fields[1]["fieldtype"], "JSON")
 
-	def test_item_custom_fields_define_max_stock(self):
-		with patch("asn_module.custom_fields.item.create_custom_fields") as create_custom_fields:
-			item_fields.setup()
-
-		fields = create_custom_fields.call_args.args[0]["Item"]
-		self.assertEqual(fields[0]["fieldname"], "custom_max_stock")
-		self.assertEqual(fields[0]["fieldtype"], "Float")
-		self.assertEqual(fields[0]["insert_after"], "safety_stock")
-		self.assertEqual(fields[0]["non_negative"], 1)
-
-	def test_item_max_stock_patch_is_registered_for_post_model_sync(self):
+	def test_item_max_stock_removal_patch_is_registered_for_post_model_sync(self):
 		patches = (Path(__file__).resolve().parents[1] / "patches.txt").read_text()
 		post_sync = patches.split("[post_model_sync]", 1)[1]
-		self.assertIn("asn_module.patches.create_item_max_stock_field", post_sync)
+
+		self.assertIn("asn_module.patches.remove_item_max_stock_field", post_sync)
+		self.assertNotIn("asn_module.patches.create_item_max_stock_field", post_sync)
 
 	def test_purchase_invoice_custom_fields_define_asn_link(self):
 		with patch("asn_module.custom_fields.purchase_invoice.create_custom_fields") as create_custom_fields:
