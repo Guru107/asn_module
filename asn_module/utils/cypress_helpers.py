@@ -2,6 +2,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
+
 
 def _ensure_supplier_portal_user(
 	*,
@@ -280,6 +282,55 @@ def seed_quality_inspection_context():
 	}
 
 
+def _cancel_orphaned_stock_cap_asns(item_code: str) -> None:
+	"""Cancel leftover in-transit ASNs from earlier runs of the stock cap e2e spec.
+
+	stock_cap_e2e.js's own "submits when projected stock stays within the cap" test
+	submits an ASN and deliberately never receives it, so it stays docstatus=1 with
+	received_qty=0 forever -- exactly what fetch.py's _fetch_in_transit sums as
+	in-transit stock for that item+warehouse. Run the spec twice without this cleanup
+	and the second run's fresh in-transit total lands on top of the first run's
+	leftovers, breaching the cap the "stays within the cap" test itself relies on
+	staying clear.
+
+	Scoped to ``item_code`` -- always "_Cypress Cap Item", this seeder's own fixture --
+	by looking up ASN Item rows for that item_code first and only ever touching the
+	parent ASNs found that way. Several other nightly seeders (seed_minimal_asn,
+	seed_scan_station_context, ...) leave their own submitted-and-never-received ASNs
+	behind too, but against a different, shared default item; this lookup can never
+	reach those, or any real ASN against `item_code` in production data (a bench with
+	production-like data would not have this Cypress-only item at all).
+
+	Cancels rather than deletes: cancel() flips docstatus to 2, which alone removes the
+	row from _fetch_in_transit's ``docstatus = 1`` filter regardless of ``status``. That
+	makes deleting the ASN (and separately, carefully, its ASN Item child rows so none
+	are left orphaned from a deleted parent for some future query to pick up) both
+	unnecessary and a strictly bigger hammer than the job calls for.
+	"""
+	candidate_asns = frappe.get_all(
+		"ASN Item",
+		filters={"item_code": item_code},
+		pluck="parent",
+		distinct=True,
+	)
+	if not candidate_asns:
+		return
+
+	orphaned_asns = frappe.get_all(
+		"ASN",
+		filters={
+			"name": ["in", candidate_asns],
+			"docstatus": 1,
+			"status": ["not in", list(EXCLUDED_ASN_STATUSES)],
+		},
+		pluck="name",
+	)
+	for asn_name in orphaned_asns:
+		asn_doc = frappe.get_doc("ASN", asn_name)
+		asn_doc.flags.ignore_permissions = True
+		asn_doc.cancel()
+
+
 @frappe.whitelist()
 def seed_stock_cap_context():
 	"""Seed a branch with one cap warehouse and an item capped below the PO quantity.
@@ -346,6 +397,16 @@ def seed_stock_cap_context():
 			if existing_hsn_code:
 				item_doc["gst_hsn_code"] = existing_hsn_code
 		frappe.get_doc(item_doc).insert(ignore_permissions=True)
+
+	# The e2e spec's first test submits an ASN against this item and deliberately never
+	# receives it (to prove a within-cap submission succeeds pre-receipt). Left
+	# docstatus=1, that ASN is exactly what stock_cap/fetch.py's _fetch_in_transit
+	# counts as in-transit forever, so a second run of this spec on the same site would
+	# see the first run's leftover ASN(s) on top of its own fresh fixtures and the
+	# "stays within the cap" test would start failing. Clear out this fixture's own
+	# stale submissions -- and only this fixture's, see the helper's docstring -- before
+	# seeding fresh ones below.
+	_cancel_orphaned_stock_cap_asns(item_code)
 
 	company = _ensure_company()
 	abbr = frappe.get_cached_value("Company", company, "abbr")
