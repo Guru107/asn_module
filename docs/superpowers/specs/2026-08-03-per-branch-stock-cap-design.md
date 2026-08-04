@@ -1,6 +1,6 @@
 # Per-Branch Stock Cap — Design
 
-**Status:** approved, not yet implemented
+**Status:** implemented
 **Date:** 2026-08-03
 **Supersedes part of:** [2026-07-28-asn-branch-stock-cap-design.md](2026-07-28-asn-branch-stock-cap-design.md)
 **Builds on:** the stock cap introduced earlier in this same branch (PR #26)

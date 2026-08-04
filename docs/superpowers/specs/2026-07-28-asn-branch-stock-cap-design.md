@@ -1,5 +1,15 @@
 # ASN Branch-Wise Stock Cap Design
 
+> **Superseded in part by [2026-08-03-per-branch-stock-cap-design.md](2026-08-03-per-branch-stock-cap-design.md).**
+> The ceiling is no longer `Item.custom_max_stock`, a single number per item applied to every
+> branch alike. It is now one `ASN Item Branch Cap` row per `(branch, item)` pair, and
+> `Item.custom_max_stock` has been **retired** — `asn_module/patches/remove_item_max_stock_field.py`
+> deletes the Custom Field on migrate. Do not create that field on any site.
+>
+> Everything else here still holds: Cap Warehouses per Branch, warn on ASN save, block on ASN and
+> Purchase Receipt submit, redaction for users without `read` on `Item`, and the advisory
+> (non-transactional) semantics. This document is kept as the record of the original design.
+
 ## Goal
 Refuse an ASN submission, and a Purchase Receipt submission, when the stock it will land pushes an item above its permitted maximum for the destination branch. Warn at ASN draft save, block at submit.
 
@@ -237,11 +247,17 @@ Verified against production (`trikayacoatings.frappe.cloud`) on 2026-07-28 and r
 | `Purchase Order Item.branch` | present | present | present |
 | `Purchase Receipt.branch` | present | created 2026-07-28 | created 2026-07-28 |
 | `Purchase Receipt Item.branch` | present | created 2026-07-28 | created 2026-07-28 |
-| `Item.custom_max_stock` | **absent** | present | present |
+| `Item.custom_max_stock` | ~~absent~~ retired | ~~present~~ removed | ~~present~~ removed |
 
 All `branch` fields come from a single `Accounting Dimension` record with `document_type = Branch`, which stamps `branch` (`Link` -> `Branch`, `insert_after: dimension_col_break`) onto every doctype in ERPNext's `accounting_dimension_doctypes` hook.
 
-`Item.custom_max_stock` does not exist on production. Until it is created there, the Stock Cap reads null for every item and fails open silently. Definition to replicate: `Float`, label "Max Stock", `insert_after: safety_stock`, `non_negative: 1`.
+> **Retired — do not create this field.** `Item.custom_max_stock` was never created on production, and
+> the per-branch redesign removed it entirely: `asn_module/patches/remove_item_max_stock_field.py`
+> deletes the Custom Field on migrate. The ceiling now lives in `ASN Item Branch Cap`, one row per
+> `(branch, item)`. A site with no cap rows reads no ceiling and fails open silently, exactly as
+> described here — but the guard is `table_exists("ASN Item Branch Cap")`, not a `has_column` check
+> on `Item`. The original instruction to replicate a `Float` field after `safety_stock` no longer
+> applies and would be undone by the next migrate.
 
 **Creating the dimension requires a synchronous call.** `AccountingDimension.on_update` enqueues `make_dimension_in_accounting_doctypes` to the `long` queue unless `frappe.in_test` is set. Inserting the record with no worker running leaves every field uncreated. Any CI or ephemeral-site fixture that sets up the dimension must call the function directly or run under `frappe.in_test`.
 
