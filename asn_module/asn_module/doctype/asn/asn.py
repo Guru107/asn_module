@@ -12,7 +12,7 @@ from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
 from asn_module.stock_cap.api import breaches_for_asn_doc
-from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
+from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures, throw_stock_cap_exceeded
 from asn_module.supplier_asn_portal import (
 	asn_eligible_for_supplier_portal_cancel,
 	asn_eligible_for_supplier_portal_delete,
@@ -275,10 +275,7 @@ class ASN(WebsiteGenerator):
 		if not breaches:
 			return
 
-		frappe.throw(
-			format_breaches(breaches, detailed=may_see_stock_figures()),
-			title=_("Stock Cap Exceeded"),
-		)
+		throw_stock_cap_exceeded(breaches)
 
 	def _generate_attachments(self) -> tuple[str, str, str]:
 		qr_result = generate_qr("create_purchase_receipt", "ASN", self.name)

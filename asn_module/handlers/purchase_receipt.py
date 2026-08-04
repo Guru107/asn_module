@@ -7,7 +7,7 @@ from frappe.utils import flt
 
 from asn_module.handlers.utils import attach_qr_to_doc
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
-from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
+from asn_module.stock_cap.messages import throw_stock_cap_exceeded
 from asn_module.traceability import emit_asn_item_transition
 
 
@@ -69,10 +69,7 @@ def on_purchase_receipt_before_submit(doc, method=None):
 	if not breaches:
 		return
 
-	frappe.throw(
-		format_breaches(breaches, detailed=may_see_stock_figures()),
-		title=_("Stock Cap Exceeded"),
-	)
+	throw_stock_cap_exceeded(breaches)
 
 
 def _get_single_purchase_order(asn) -> tuple[str, list[str]]:

@@ -43,3 +43,18 @@ def format_breaches(breaches: list[Breach], detailed: bool) -> str:
 
 	formatter = _detailed if detailed else _redacted
 	return "\n".join(formatter(breach) for breach in breaches)
+
+
+def throw_stock_cap_exceeded(breaches: list[Breach]) -> None:
+	"""Block submission with the shared "Stock Cap Exceeded" message.
+
+	Both enforcement surfaces (the ASN controller's before_submit hook and the Purchase
+	Receipt before_submit hook) need this exact throw, byte-identical message and title
+	included -- existing tests assert on both. Callers are expected to have already checked
+	``breaches`` is non-empty; ``format_breaches`` degrades to an empty string otherwise,
+	which would throw with no message.
+	"""
+	frappe.throw(
+		format_breaches(breaches, detailed=may_see_stock_figures()),
+		title=_("Stock Cap Exceeded"),
+	)
