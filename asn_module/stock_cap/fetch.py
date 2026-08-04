@@ -62,7 +62,21 @@ def fetch_cap_context(
 
 
 def _fetch_cap_warehouses(branches: list[str]) -> dict[str, frozenset[str]]:
-	"""Enabled settings only. A branch with an empty warehouse table simply never appears."""
+	"""Enabled settings only. A branch with an empty warehouse table simply never appears.
+
+	Matched on the ``branch`` field, not ``settings.name``. ``ASN Stock Cap Settings``
+	autonames from ``branch`` (``autoname: "field:branch"``) but has no rename handling, and
+	Frappe's ``rename_doc`` only updates the Link *field value* on a renamed Branch's
+	dependents -- it never renames or re-derives the dependent document itself. After a
+	Branch rename this document's name is stale while its ``branch`` field already points at
+	the new name, so matching on ``name`` would find nothing and the fail-open rule would
+	silently stop enforcing for that branch. The ``branch`` field carries a DB-level unique
+	constraint (see the doctype JSON), so this join can never fan out into duplicate rows for
+	one branch even on an already-renamed site. The child table join still keys off
+	``settings.name`` -- that is ``parent``, the parent document's own primary key, which
+	``rename_doc`` keeps in lock-step with the child rows regardless of what the ``branch``
+	field says.
+	"""
 	settings = DocType("ASN Stock Cap Settings")
 	warehouse_row = DocType("ASN Stock Cap Warehouse")
 
@@ -70,8 +84,8 @@ def _fetch_cap_warehouses(branches: list[str]) -> dict[str, frozenset[str]]:
 		frappe.qb.from_(warehouse_row)
 		.inner_join(settings)
 		.on(settings.name == warehouse_row.parent)
-		.select(settings.name.as_("branch"), warehouse_row.warehouse)
-		.where(settings.name.isin(branches))
+		.select(settings.branch.as_("branch"), warehouse_row.warehouse)
+		.where(settings.branch.isin(branches))
 		.where(settings.enabled == 1)
 		.where(warehouse_row.parenttype == "ASN Stock Cap Settings")
 	).run(as_dict=True)

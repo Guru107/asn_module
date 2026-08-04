@@ -86,6 +86,43 @@ class TestStockCapFetch(FrappeTestCase):
 		context = fetch_cap_context([self._line()])
 		self.assertEqual(context.cap_warehouses, {BRANCH: frozenset({self.warehouse})})
 
+	def test_cap_warehouses_survive_a_branch_rename(self):
+		"""ASN Stock Cap Settings autonames from ``branch`` (field:branch) but has no rename
+		handling. ``frappe.rename_doc`` on the Branch updates this settings document's
+		``branch`` field (a Link to Branch) via its generic dependent-Link update -- it does
+		not rename or re-derive the settings document itself, so the document keeps its old
+		name while ``branch`` already points at the new one. ``_fetch_cap_warehouses`` must
+		still find this branch's cap warehouses under the new name; before the fix it matched
+		on ``settings.name`` and silently returned nothing, which -- because the module fails
+		open -- meant enforcement stopped for the renamed branch with no error at all.
+		"""
+		self._make_settings()
+		new_branch = f"{BRANCH} Renamed"
+		if frappe.db.exists("Branch", new_branch):
+			frappe.delete_doc("Branch", new_branch, ignore_permissions=True, force=True)
+
+		try:
+			frappe.rename_doc("Branch", BRANCH, new_branch, force=True)
+
+			settings_name = frappe.db.get_value("ASN Stock Cap Settings", {"branch": new_branch}, "name")
+			self.assertEqual(
+				settings_name,
+				BRANCH,
+				"the settings document must keep its old (stale) name across the rename -- "
+				"that stale name is exactly what this regression guards against",
+			)
+
+			line = Line(branch=new_branch, item_code=ITEM, warehouse=self.warehouse, stock_qty=1.0, row_idx=1)
+			context = fetch_cap_context([line])
+
+			self.assertEqual(context.cap_warehouses, {new_branch: frozenset({self.warehouse})})
+		finally:
+			# Restore the branch name so later tests in this class (and BRANCH-keyed fixtures
+			# from setUp, since FrappeTestCase only rolls back at class teardown) see BRANCH
+			# again.
+			if frappe.db.exists("Branch", new_branch):
+				frappe.rename_doc("Branch", new_branch, BRANCH, force=True)
+
 	def test_max_stock_is_read_from_the_branch_cap_row(self):
 		self._make_settings()
 		self.assertEqual(fetch_cap_context([self._line()]).max_stock[(BRANCH, ITEM)], 100.0)
