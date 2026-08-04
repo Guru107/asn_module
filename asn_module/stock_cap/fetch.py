@@ -160,8 +160,23 @@ def _fetch_in_transit(
 	warehouse_placeholders = ", ".join(["%s"] * len(warehouses))
 	status_placeholders = ", ".join(["%s"] * len(EXCLUDED_ASN_STATUSES))
 
+	# Sargable stand-in for COALESCE(poi.warehouse, po.set_warehouse) IN (...): wrapping a
+	# column in COALESCE prevents the optimizer from using any index on either column.
+	# Both Purchase Order Item.warehouse and Purchase Order.set_warehouse are nullable
+	# with no non-NULL default (confirmed against the live schema -- NULL, not ''), so
+	# "effective warehouse" is exactly poi.warehouse when it is set, else po.set_warehouse.
+	# The two OR branches reproduce that fallback without a function on either column:
+	# the first branch matches when the line has its own warehouse; the second only
+	# fires when it does not, mirroring COALESCE's short-circuit exactly (a non-NULL
+	# poi.warehouse that simply isn't in the list correctly matches neither branch, same
+	# as the original never falling back to po.set_warehouse in that case).
+	warehouse_clause = (
+		f"(poi.warehouse IN ({warehouse_placeholders}) "
+		f"OR (poi.warehouse IS NULL AND po.set_warehouse IN ({warehouse_placeholders})))"
+	)
+
 	exclude_clauses = []
-	params: list = [*item_codes, *warehouses, *EXCLUDED_ASN_STATUSES]
+	params: list = [*item_codes, *warehouses, *warehouses, *EXCLUDED_ASN_STATUSES]
 
 	if exclude_asn_name:
 		exclude_clauses.append("AND asn.name != %s")
@@ -192,7 +207,7 @@ def _fetch_in_transit(
 			INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
 			INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
 			WHERE ai.item_code IN ({item_placeholders})
-				AND COALESCE(poi.warehouse, po.set_warehouse) IN ({warehouse_placeholders})
+				AND {warehouse_clause}
 				AND asn.docstatus = 1
 				AND asn.status NOT IN ({status_placeholders})
 				{exclude_clause}
@@ -232,7 +247,7 @@ def _fetch_in_transit(
 				INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
 				INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
 				WHERE ai.item_code IN ({item_placeholders})
-					AND COALESCE(poi.warehouse, po.set_warehouse) IN ({warehouse_placeholders})
+					AND {warehouse_clause}
 					AND asn.docstatus = 1
 					AND asn.status NOT IN ({status_placeholders})
 					{exclude_clause}

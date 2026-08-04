@@ -74,3 +74,33 @@ class ASNItemBranchCap(Document):
 			title=_("Cap Not Yet Enforced"),
 			indicator="orange",
 		)
+
+
+def on_doctype_update():
+	"""Composite index backing ``_fetch_max_stock``, the hottest read in the cap check --
+	it runs on every ASN and Purchase Receipt save and submit.
+
+	Column order is (branch, item, max_qty), not (item, branch, max_qty), even though a
+	DocField-level ``search_index`` already exists on ``item`` alone. The query filters
+	both columns with an ``IN`` list
+	(``filters={"branch": ["in", branches], "item": ["in", item_codes]}``), so either
+	leading column satisfies the Leftmost Index Rule for range access. The tiebreaker is
+	cardinality: ``branches`` is the set of distinct branches touched by the lines being
+	evaluated, typically a handful even on a large multi-line ASN, while ``item_codes``
+	is usually the longer list. Leading with the lower-cardinality column keeps the
+	number of index range segments MariaDB has to probe (each ``branches`` value seeking
+	to its own sub-range, then narrowing by ``item`` within it) close to
+	``len(branches)``, not ``len(branches) * len(item_codes)``. This also matches the
+	document's own natural key order -- ``autoname: "format:{branch}::{item}"`` already
+	treats branch as the leading component of the pair.
+
+	``max_qty`` is appended last purely to make the index covering: every column
+	``_fetch_max_stock`` selects (``branch``, ``item``, ``max_qty``) is then satisfied
+	from the index alone, with no bookmark lookup into the table.
+
+	This is a plain, non-unique index. ``(branch, item)`` is logically unique -- enforced
+	at validate time by ``_validate_no_duplicate_for_pair`` -- but a database-level unique
+	constraint is a separate decision with its own migration risk (see the fix-c report)
+	and is deliberately not made here.
+	"""
+	frappe.db.add_index("ASN Item Branch Cap", ["branch", "item", "max_qty"])
