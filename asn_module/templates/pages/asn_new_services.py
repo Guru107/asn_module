@@ -620,7 +620,7 @@ def create_bulk_asns_for_supplier(
 		if items:
 			asn_payloads.append((header, items, cap_check_rows))
 
-	_collect_stock_cap_errors(asn_payloads, errors)
+	errors.extend(_collect_stock_cap_errors(asn_payloads))
 
 	if errors:
 		errors.append(error_entry(field="bulk", message=_("No ASNs created due to validation failures.")))
@@ -634,8 +634,12 @@ def create_bulk_asns_for_supplier(
 	return asn_names
 
 
-def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[dict]]], errors: list[dict]):
+def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[dict]]]) -> list[dict]:
 	"""Evaluate the cap across every parsed payload before any ASN is inserted.
+
+	Returns the errors found rather than mutating a list the caller passes in: a return
+	value reads honestly, where an out-parameter can silently go unused by a caller that
+	forgets to pass one in.
 
 	Runs in the validation phase so the function keeps its all-or-nothing contract: the
 	insert loop that follows has no error handling, and partially-submitted ASNs cannot
@@ -652,16 +656,18 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[di
 	needs to look at.
 
 	Message text goes through the same redaction gate as the ASN controller
-	(``format_breaches(..., detailed=may_see_stock_figures())``) rather than interpolating
-	breach figures directly: this endpoint is reached from the supplier portal, where the
-	caller has no ``read`` permission on ``Item`` and must not see On Hand, In Transit, or
-	Maximum Stock.
+	(``format_breaches(..., detailed=...)``) rather than interpolating breach figures
+	directly: this endpoint is reached from the supplier portal, where the caller has no
+	``read`` permission on ``Item`` and must not see On Hand, In Transit, or Maximum Stock.
+	``may_see_stock_figures()`` is read once, before the loop, rather than once per payload:
+	the caller's own read permission on Item cannot change in the middle of one request.
 	"""
+	detailed = may_see_stock_figures()
 	consumed: dict[tuple[str, str], float] = {}
+	errors: list[dict] = []
 
 	for header, _items, cap_check_rows in asn_payloads:
 		breaches, accepted = breaches_for_asn_rows(cap_check_rows, consumed=consumed)
-		detailed = may_see_stock_figures()
 		for breach in breaches:
 			errors.append(
 				error_entry(
@@ -677,6 +683,8 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[di
 
 		for key, qty in accepted.items():
 			consumed[key] = consumed.get(key, 0.0) + qty
+
+	return errors
 
 
 def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
