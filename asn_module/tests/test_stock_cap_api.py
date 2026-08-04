@@ -1,5 +1,7 @@
+import json
 from contextlib import contextmanager
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import frappe
 from frappe.permissions import add_permission
@@ -10,6 +12,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
 )
+from asn_module.handlers.purchase_receipt import on_purchase_receipt_submit
 from asn_module.stock_cap.api import breaches_for_asn_rows, breaches_for_purchase_receipt
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.utils.permissions import get_accessible_doc
@@ -469,3 +472,104 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		self.assertEqual(len(breaches), 1)
 		self.assertEqual(breaches[0].item_code, PR_ITEM)
 		self.assertEqual(breaches[0].cap, 12)
+
+	def _receive_with_partial_rejection(self, *, asn, accepted: float, rejected: float):
+		"""Drive the real on_purchase_receipt_submit handler for a receipt that accepts
+		``accepted`` units and rejects ``rejected`` -- both splits of the same shipped ASN
+		Item row -- persisting whatever received_qty the handler under test computes.
+		"""
+		asn_item_name = asn.items[0].name
+		pr_doc = SimpleNamespace(
+			asn=asn.name,
+			asn_items=json.dumps({"1": {"asn_item_name": asn_item_name, "original_qty": asn.items[0].qty}}),
+			items=[SimpleNamespace(idx=1, qty=accepted, rejected_qty=rejected, item_code=PR_ITEM)],
+			name="PR-REJECT-DRAIN-0001",
+		)
+
+		with (
+			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
+		):
+			on_purchase_receipt_submit(pr_doc, "on_submit")
+
+		return asn_item_name
+
+	def test_partial_rejection_drains_in_transit_fully(self):
+		"""Finding 2: rejected units still arrived -- they just landed in the rejection
+		warehouse instead of the accepted one. on_purchase_receipt_submit must persist
+		received_qty as the full delivered amount (accepted + rejected), not accepted alone,
+		so this ASN Item's contribution to In Transit (fetch.py:_fetch_in_transit reads
+		``ai.qty - received_qty``) drains to zero once the whole shipment has arrived, rather
+		than leaving the rejected portion stranded as phantom in-transit forever.
+		"""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API RejectDrain Tax",
+			item_code=PR_ITEM,
+			qty=10,
+		)
+
+		asn = make_test_asn(purchase_order=po, qty=10)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		asn_item_name = self._receive_with_partial_rejection(asn=asn, accepted=6, rejected=4)
+
+		self.assertEqual(frappe.db.get_value("ASN Item", asn_item_name, "received_qty"), 10)
+
+	def test_later_receipt_for_the_same_item_is_not_blocked_by_an_earlier_rejection(self):
+		"""Companion to test_partial_rejection_drains_in_transit_fully, using a *second*,
+		distinct Purchase Order Item for the same item_code/warehouse so the later receipt's
+		own receiving-quantity exclusion (which only excludes its own Purchase Order Item)
+		cannot coincidentally swallow the earlier one's leftover -- that would make this test
+		pass even without the fix. Item X ships twice: once via po_item_a (10 units, 6
+		accepted / 4 rejected), once via po_item_b (5 units, still fully in transit). A
+		receipt for po_item_b's own 5 units must weigh only its own incoming quantity against
+		the cap, not a phantom 4 units left behind by po_item_a's rejection. Before the fix,
+		received_qty on po_item_a's ASN Item stayed at 6 (accepted only), so
+		ai.qty - received_qty kept counting the rejected 4 as still in-transit, pushing this
+		receipt over PR_MAX_STOCK (5) when it should land exactly on it.
+		"""
+		po_a = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API RejectNoBlock Tax A",
+			item_code=PR_ITEM,
+			qty=10,
+		)
+		asn_a = make_test_asn(purchase_order=po_a, qty=10)
+		asn_a.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn_a.submit()
+
+		self._receive_with_partial_rejection(asn=asn_a, accepted=6, rejected=4)
+
+		po_b = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API RejectNoBlock Tax B",
+			item_code=PR_ITEM,
+			warehouse=po_a.items[0].warehouse,
+			supplier=po_a.supplier,
+			qty=PR_MAX_STOCK,
+		)
+		po_item_b = po_b.items[0]
+		asn_b = make_test_asn(purchase_order=po_b, qty=PR_MAX_STOCK)
+		asn_b.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn_b.submit()
+
+		doc = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			items=[
+				self._receipt_row(
+					warehouse=po_item_b.warehouse,
+					stock_qty=PR_MAX_STOCK,
+					purchase_order_item=po_item_b.name,
+				)
+			],
+		)
+
+		self.assertEqual(breaches_for_purchase_receipt(doc), [])

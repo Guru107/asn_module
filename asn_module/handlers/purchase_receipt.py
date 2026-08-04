@@ -235,9 +235,15 @@ def on_purchase_receipt_submit(doc, method):
 		asn_item_name = mapping.get("asn_item_name")
 		if not asn_item_name:
 			continue
-		received_qty_by_asn_item[asn_item_name] = received_qty_by_asn_item.get(asn_item_name, 0) + flt(
-			pr_item.qty
-		)
+		# Total delivered, not accepted-only: a rejected unit still arrived and landed in
+		# the rejection warehouse (collect.py's collect_lines_from_purchase_receipt already
+		# counts it there as incoming stock), and purchase_order_item_receiving_qty already
+		# subtracts rejected_qty from in-transit on this same receipt. If received_qty only
+		# tracked accepted_qty, the rejected portion would never drain from in-transit --
+		# the ASN line would keep qty - accepted as "undelivered" forever, over-blocking
+		# later receipts against a cap that has already accounted for the rejected goods.
+		received = flt(pr_item.qty) + flt(getattr(pr_item, "rejected_qty", 0))
+		received_qty_by_asn_item[asn_item_name] = received_qty_by_asn_item.get(asn_item_name, 0) + received
 
 	for asn_item_name, qty_delta in received_qty_by_asn_item.items():
 		frappe.db.sql(
