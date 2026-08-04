@@ -11,22 +11,26 @@ EXCLUDED_ASN_STATUSES = ("Received", "Closed")
 def fetch_cap_context(
 	lines: list[Line],
 	exclude_asn_name: str | None = None,
-	exclude_po_items: set[str] | frozenset[str] | None = None,
+	po_item_receiving_qty: dict[str, float] | None = None,
 ) -> CapContext:
 	"""Run every read the evaluator needs and return plain data. Makes no decisions.
 
-	Two independent, composable exclusion mechanisms guard against double-counting a
-	document's own goods as both in-transit and incoming, for two different callers:
+	Two independent, composable mechanisms guard against double-counting a document's own
+	goods as both in-transit and incoming, for two different callers:
 
 	``exclude_asn_name`` drops the ASN currently being saved from its own in-transit total
 	(the ASN controller path, where the document being evaluated *is* the ASN).
 
-	``exclude_po_items`` drops ASN Item rows whose Purchase Order Item a Purchase Receipt is
-	consuming, regardless of whether that receipt is linked back to its ASN by name (the
+	``po_item_receiving_qty`` subtracts, per Purchase Order Item, the stock-UOM quantity a
+	Purchase Receipt is actually receiving from that Purchase Order Item's in-transit
+	total -- regardless of whether the receipt is linked back to its ASN by name (the
 	Purchase Receipt path -- see breaches_for_purchase_receipt for why it cannot rely on
-	``doc.asn``). They are separate parameters, not one overloaded to mean two things,
-	because a Purchase Receipt has no ASN name to exclude by and an ASN save has no
-	Purchase Order Items of its own to exclude by.
+	``doc.asn``). It subtracts a quantity rather than dropping rows outright so a partial
+	receipt, or a second ASN shipping the same Purchase Order Item, keeps its own
+	still-undelivered remainder counted (see fetch.py:_fetch_in_transit). They are separate
+	parameters, not one overloaded to mean two things, because a Purchase Receipt has no
+	ASN name to exclude by and an ASN save has no Purchase Order Items of its own to
+	receive against.
 	"""
 	if not lines:
 		return CapContext(cap_warehouses={}, max_stock={}, on_hand={}, in_transit={})
@@ -52,7 +56,7 @@ def fetch_cap_context(
 			all_warehouses,
 			branch_by_warehouse,
 			exclude_asn_name=exclude_asn_name,
-			exclude_po_items=exclude_po_items,
+			po_item_receiving_qty=po_item_receiving_qty,
 		),
 	)
 
@@ -119,13 +123,24 @@ def _fetch_in_transit(
 	warehouses: list[str],
 	branch_by_warehouse: dict[str, str],
 	exclude_asn_name: str | None = None,
-	exclude_po_items: set[str] | frozenset[str] | None = None,
+	po_item_receiving_qty: dict[str, float] | None = None,
 ) -> dict[tuple[str, str], float]:
 	"""Undelivered quantity on other submitted ASNs, converted to stock UOM.
 
 	Raw SQL rather than the query builder because GREATEST() has no portable
-	query-builder equivalent, and clamping per row matters: an over-receipted line
-	must not lend negative in-transit quantity to its siblings.
+	query-builder equivalent, and clamping matters: an over-receipted line, or a receipt
+	that receives more of a Purchase Order Item than is still outstanding, must not lend
+	negative in-transit quantity to its siblings.
+
+	``po_item_receiving_qty`` -- stock-UOM quantity a Purchase Receipt is actually
+	receiving, keyed by Purchase Order Item -- is subtracted from that Purchase Order
+	Item's own in-transit subtotal (summed across every ASN Item row referencing it,
+	clamped at zero per row exactly as before) before rows are pooled into the
+	item_code/warehouse totals the evaluator uses. The clamp-at-zero is applied at
+	Purchase Order Item granularity, not at the pooled item_code/warehouse level, so an
+	over-receipt of one Purchase Order Item cannot eat into a different Purchase Order
+	Item's still-undelivered quantity even when both land in the same item_code and
+	warehouse.
 	"""
 	item_placeholders = ", ".join(["%s"] * len(item_codes))
 	warehouse_placeholders = ", ".join(["%s"] * len(warehouses))
@@ -138,39 +153,84 @@ def _fetch_in_transit(
 		exclude_clauses.append("AND asn.name != %s")
 		params.append(exclude_asn_name)
 
-	if exclude_po_items:
-		po_items = sorted(exclude_po_items)
-		po_item_placeholders = ", ".join(["%s"] * len(po_items))
-		exclude_clauses.append(f"AND ai.purchase_order_item NOT IN ({po_item_placeholders})")
-		params.extend(po_items)
-
 	exclude_clause = "\n\t\t\t".join(exclude_clauses)
+
+	receiving_qty = {
+		po_item: qty for po_item, qty in (po_item_receiving_qty or {}).items() if qty and qty > 0
+	}
 
 	# Every interpolated fragment is a generated run of %s placeholders or a static
 	# clause; all values travel in `params`, never in the statement text.
 	# nosemgrep: frappe-sql-format-injection
+	if not receiving_qty:
+		rows = frappe.db.sql(
+			f"""
+			SELECT
+				ai.item_code AS item_code,
+				COALESCE(poi.warehouse, po.set_warehouse) AS warehouse,
+				SUM(
+					GREATEST(ai.qty - COALESCE(ai.received_qty, 0), 0)
+					* CASE WHEN COALESCE(poi.conversion_factor, 0) > 0
+						THEN poi.conversion_factor ELSE 1 END
+				) AS qty
+			FROM `tabASN Item` ai
+			INNER JOIN `tabASN` asn ON asn.name = ai.parent
+			INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
+			INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+			WHERE ai.item_code IN ({item_placeholders})
+				AND COALESCE(poi.warehouse, po.set_warehouse) IN ({warehouse_placeholders})
+				AND asn.docstatus = 1
+				AND asn.status NOT IN ({status_placeholders})
+				{exclude_clause}
+			GROUP BY ai.item_code, COALESCE(poi.warehouse, po.set_warehouse)
+			""",
+			params,
+			as_dict=True,
+		)
+		return _aggregate_by_branch(rows, branch_by_warehouse)
+
+	po_items = sorted(receiving_qty)
+	receiving_union = " UNION ALL ".join(["SELECT %s AS purchase_order_item, %s AS qty"] * len(po_items))
+	receiving_params: list = []
+	for po_item in po_items:
+		receiving_params.extend([po_item, receiving_qty[po_item]])
+
 	rows = frappe.db.sql(
 		f"""
-		SELECT
-			ai.item_code AS item_code,
-			COALESCE(poi.warehouse, po.set_warehouse) AS warehouse,
-			SUM(
-				GREATEST(ai.qty - COALESCE(ai.received_qty, 0), 0)
-				* CASE WHEN COALESCE(poi.conversion_factor, 0) > 0
-					THEN poi.conversion_factor ELSE 1 END
-			) AS qty
-		FROM `tabASN Item` ai
-		INNER JOIN `tabASN` asn ON asn.name = ai.parent
-		INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
-		INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
-		WHERE ai.item_code IN ({item_placeholders})
-			AND COALESCE(poi.warehouse, po.set_warehouse) IN ({warehouse_placeholders})
-			AND asn.docstatus = 1
-			AND asn.status NOT IN ({status_placeholders})
-			{exclude_clause}
-		GROUP BY ai.item_code, COALESCE(poi.warehouse, po.set_warehouse)
+		SELECT item_code, warehouse, SUM(remaining) AS qty
+		FROM (
+			SELECT
+				po_totals.item_code AS item_code,
+				po_totals.warehouse AS warehouse,
+				GREATEST(po_totals.in_transit_qty - COALESCE(recv.qty, 0), 0) AS remaining
+			FROM (
+				SELECT
+					ai.purchase_order_item AS purchase_order_item,
+					ai.item_code AS item_code,
+					COALESCE(poi.warehouse, po.set_warehouse) AS warehouse,
+					SUM(
+						GREATEST(ai.qty - COALESCE(ai.received_qty, 0), 0)
+						* CASE WHEN COALESCE(poi.conversion_factor, 0) > 0
+							THEN poi.conversion_factor ELSE 1 END
+					) AS in_transit_qty
+				FROM `tabASN Item` ai
+				INNER JOIN `tabASN` asn ON asn.name = ai.parent
+				INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
+				INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+				WHERE ai.item_code IN ({item_placeholders})
+					AND COALESCE(poi.warehouse, po.set_warehouse) IN ({warehouse_placeholders})
+					AND asn.docstatus = 1
+					AND asn.status NOT IN ({status_placeholders})
+					{exclude_clause}
+				GROUP BY ai.purchase_order_item, ai.item_code, COALESCE(poi.warehouse, po.set_warehouse)
+			) po_totals
+			LEFT JOIN (
+				{receiving_union}
+			) recv ON recv.purchase_order_item = po_totals.purchase_order_item
+		) remainders
+		GROUP BY item_code, warehouse
 		""",
-		params,
+		[*params, *receiving_params],
 		as_dict=True,
 	)
 

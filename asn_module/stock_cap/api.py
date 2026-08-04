@@ -7,6 +7,7 @@ from asn_module.stock_cap.collect import (
 	asn_rows_from_doc,
 	collect_lines_from_asn_rows,
 	collect_lines_from_purchase_receipt,
+	purchase_order_item_receiving_qty,
 )
 from asn_module.stock_cap.evaluate import evaluate
 from asn_module.stock_cap.fetch import fetch_cap_context
@@ -42,24 +43,32 @@ def breaches_for_asn_doc(doc) -> list[Breach]:
 
 
 def breaches_for_purchase_receipt(doc) -> list[Breach]:
-	"""Exclude the Purchase Order Items this receipt is itself receiving.
+	"""Subtract the quantity this receipt is receiving from each Purchase Order Item's
+	in-transit total, rather than dropping that Purchase Order Item's ASN Item rows
+	wholesale.
 
-	Excludes by ``purchase_order_item`` rather than by the receipt's ``asn`` field: ``asn``
-	is set only when the receipt was created through the ASN's own "Create Purchase
-	Receipt" action (handlers/purchase_receipt.py:create_from_asn). Nothing stops the
-	standard Purchase Order -> Create -> Purchase Receipt action, which leaves ``asn``
-	empty, and that receipt's goods must still not be counted once as in-transit on the
-	originating ASN and again as this receipt's own incoming. Excluding by PO item also
-	keeps ASN Items this receipt does *not* cover -- a sibling item on the same ASN, or a
-	still-unreceived remainder after a partial receipt -- correctly counted as in-transit,
-	unlike excluding the whole ASN would.
+	Keyed by ``purchase_order_item`` rather than the receipt's ``asn`` field: ``asn`` is
+	set only when the receipt was created through the ASN's own "Create Purchase Receipt"
+	action (handlers/purchase_receipt.py:create_from_asn). Nothing stops the standard
+	Purchase Order -> Create -> Purchase Receipt action, which leaves ``asn`` empty, and
+	that receipt's goods must still not be counted once as in-transit on the originating
+	ASN and again as this receipt's own incoming.
+
+	The correction is a quantity subtraction, not a row exclusion: an ASN shipment larger
+	than a partial receipt, or a second ASN shipping the same Purchase Order Item, must
+	keep contributing its own still-undelivered remainder to in-transit. Only the amount
+	this receipt is actually receiving -- accepted plus rejected, in stock UOM, from
+	purchase_order_item_receiving_qty -- comes off, and fetch.py:_fetch_in_transit clamps
+	that subtraction at zero per Purchase Order Item so an over-receipt cannot lend
+	negative in-transit to a sibling. A sibling item on the same ASN that this receipt does
+	not cover is untouched, since it is keyed by a different Purchase Order Item entirely.
 	"""
 	lines = collect_lines_from_purchase_receipt(doc)
 	if not lines:
 		return []
 
-	exclude_po_items = {row.purchase_order_item for row in (doc.items or []) if row.purchase_order_item}
-	context = fetch_cap_context(lines, exclude_po_items=exclude_po_items)
+	receiving_qty = purchase_order_item_receiving_qty(doc)
+	context = fetch_cap_context(lines, po_item_receiving_qty=receiving_qty)
 	breaches, _accepted = evaluate(lines, context)
 	return breaches
 

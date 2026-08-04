@@ -78,6 +78,33 @@ def collect_lines_from_asn_rows(rows: list[dict]) -> list[Line]:
 	return lines
 
 
+def purchase_order_item_receiving_qty(doc) -> dict[str, float]:
+	"""Stock-UOM quantity this receipt is actually receiving, keyed by Purchase Order Item.
+
+	Sums the accepted split (``stock_qty``) and the rejected split (``rejected_qty`` x
+	``conversion_factor``) for every row against the same Purchase Order Item -- both
+	splits reduce the ASN's undelivered quantity for that Purchase Order Item, even
+	though the rejected split lands in a different warehouse. Used by
+	breaches_for_purchase_receipt to subtract only the quantity this receipt covers from
+	in-transit (see fetch.py:_fetch_in_transit), rather than dropping every ASN Item row
+	for the Purchase Order Item wholesale.
+	"""
+	if getattr(doc, "is_return", 0):
+		return {}
+
+	receiving: dict[str, float] = {}
+	for row in doc.items or []:
+		po_item = row.purchase_order_item
+		if not po_item:
+			continue
+
+		qty = flt(row.stock_qty) + flt(row.rejected_qty) * _conversion_factor(row.conversion_factor)
+		if qty > 0:
+			receiving[po_item] = receiving.get(po_item, 0.0) + qty
+
+	return receiving
+
+
 def collect_lines_from_purchase_receipt(doc) -> list[Line]:
 	"""Normalise a Purchase Receipt. Its stock_qty is already in stock UOM.
 

@@ -401,3 +401,101 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 
 		self.assertEqual(breaches_for_purchase_receipt(doc), [])
+
+	def test_partial_receipt_breach_from_the_undelivered_remainder_is_refused(self):
+		"""Regression for the in-transit under-count: an ASN ships 10 units and none of it
+		is received yet, so a receipt taking only 3 of those units must still see the other
+		7 counted as in-transit. Excluding the whole Purchase Order Item's ASN Item rows (the
+		old behaviour) would drop all 10 shipped units instead of just the 3 this receipt
+		takes, letting a receipt that genuinely breaches the ceiling through unrefused.
+
+		The Purchase Order built here is never given a ``branch``, so the ASN's own
+		before_submit cap check (which needs the Purchase Order's branch to derive any
+		lines at all -- see collect.py:collect_lines_from_asn_rows) is a no-op and does
+		not block the 10-unit shipment; only breaches_for_purchase_receipt, exercised
+		directly below, is under test here.
+		"""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Partial Tax",
+			item_code=PR_ITEM,
+			qty=10,
+		)
+		po_item = po.items[0]
+
+		asn = make_test_asn(purchase_order=po, qty=10)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		doc = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			items=[
+				self._receipt_row(
+					warehouse=po_item.warehouse,
+					stock_qty=3,
+					purchase_order_item=po_item.name,
+				)
+			],
+		)
+
+		breaches = breaches_for_purchase_receipt(doc)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].item_code, PR_ITEM)
+		self.assertEqual(breaches[0].cap, PR_MAX_STOCK)
+
+	def test_two_asns_for_the_same_po_item_the_others_shipment_still_breaches(self):
+		"""A single Purchase Order Item can be shipped across more than one ASN. A receipt
+		that exactly covers one ASN's shipment must not remove the other ASN's still-
+		undelivered quantity from in-transit -- only the receiving quantity this receipt
+		actually covers comes off.
+
+		As in test_partial_receipt_breach_from_the_undelivered_remainder_is_refused, the
+		Purchase Order is never given a ``branch``, so neither ASN's own before_submit cap
+		check blocks its shipment; breaches_for_purchase_receipt is exercised directly.
+		"""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API TwoASN Tax",
+			item_code=PR_ITEM,
+			qty=20,
+		)
+		po_item = po.items[0]
+
+		asn_a = make_test_asn(purchase_order=po, qty=8)
+		asn_a.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn_a.submit()
+
+		asn_b = make_test_asn(purchase_order=po, qty=8)
+		asn_b.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn_b.submit()
+
+		# setUp's cap of PR_MAX_STOCK (5) would already breach on ASN A's 8 units alone,
+		# which would make this test indistinguishable from the simpler single-ASN
+		# partial-receipt case above. 12 sits strictly between one ASN's shipment (8) and
+		# both combined (16), so only correctly keeping ASN B's 8 units counted -- not
+		# ASN A's -- distinguishes a fixed in-transit total from a buggy one.
+		cap_name = f"{PR_BRANCH}::{PR_ITEM}"
+		frappe.db.set_value("ASN Item Branch Cap", cap_name, "max_qty", 12, update_modified=False)
+
+		doc = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			items=[
+				self._receipt_row(
+					warehouse=po_item.warehouse,
+					stock_qty=8,
+					purchase_order_item=po_item.name,
+				)
+			],
+		)
+
+		breaches = breaches_for_purchase_receipt(doc)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].item_code, PR_ITEM)
+		self.assertEqual(breaches[0].cap, 12)

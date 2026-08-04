@@ -236,12 +236,14 @@ class TestStockCapFetchInTransit(FrappeTestCase):
 		self.assertEqual(self._in_transit(), 0.0)
 
 
-class TestStockCapFetchExcludePoItems(FrappeTestCase):
-	"""exclude_po_items is the Purchase Receipt path's exclusion mechanism (see
+class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
+	"""po_item_receiving_qty is the Purchase Receipt path's correction mechanism (see
 	breaches_for_purchase_receipt). Unlike exclude_asn_name -- which drops every ASN Item
-	belonging to the excluded ASN -- it drops only the specific Purchase Order Items a
-	receipt is consuming, so a sibling item on the same ASN that the receipt does not
-	cover keeps contributing its still-unreceived quantity to in-transit.
+	belonging to the excluded ASN -- it subtracts only the stock-UOM quantity a receipt is
+	actually receiving from the specific Purchase Order Item's in-transit subtotal, clamped
+	at zero, so a sibling item on the same ASN the receipt does not cover, the still-
+	undelivered remainder of a partially received item, and a second ASN shipping the same
+	Purchase Order Item all keep contributing their own outstanding quantity to in-transit.
 	"""
 
 	@classmethod
@@ -250,16 +252,9 @@ class TestStockCapFetchExcludePoItems(FrappeTestCase):
 		before_tests()
 		disable_hsn_validation()
 
-	def setUp(self):
-		from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
-
-		self.branch = "_Test Fetch ExcludePO Branch"
-		if not frappe.db.exists("Branch", self.branch):
-			frappe.get_doc({"doctype": "Branch", "branch": self.branch}).insert(ignore_permissions=True)
-
-		self.item_a = "_Test Fetch ExcludePO Item A"
-		self.item_b = "_Test Fetch ExcludePO Item B"
-		for item_code in (self.item_a, self.item_b):
+		if not frappe.db.exists("Branch", cls.branch_name()):
+			frappe.get_doc({"doctype": "Branch", "branch": cls.branch_name()}).insert(ignore_permissions=True)
+		for item_code in (cls.item_a_name(), cls.item_b_name()):
 			if not frappe.db.exists("Item", item_code):
 				frappe.get_doc(
 					{
@@ -270,6 +265,25 @@ class TestStockCapFetchExcludePoItems(FrappeTestCase):
 						"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 					}
 				).insert(ignore_permissions=True)
+
+	@classmethod
+	def branch_name(cls) -> str:
+		return "_Test Fetch ExcludePO Branch"
+
+	@classmethod
+	def item_a_name(cls) -> str:
+		return "_Test Fetch ExcludePO Item A"
+
+	@classmethod
+	def item_b_name(cls) -> str:
+		return "_Test Fetch ExcludePO Item B"
+
+	def setUp(self):
+		from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+
+		self.branch = self.branch_name()
+		self.item_a = self.item_a_name()
+		self.item_b = self.item_b_name()
 
 		# FrappeTestCase only rolls back once at class teardown, not per test.
 		stale_asn_names = frappe.get_all(
@@ -290,6 +304,10 @@ class TestStockCapFetchExcludePoItems(FrappeTestCase):
 			create_purchase_order,
 			tax_description="_Test Stock Cap Fetch ExcludePO Tax A",
 			item_code=self.item_a,
+			# 20, not the default 10: test_two_asns_for_the_same_po_item_... ships a second
+			# 5-unit ASN against this same Purchase Order Item on top of setUp's own 7, and
+			# ASN._validate_po_qty rejects shipping more than the PO's remaining qty.
+			qty=20,
 		)
 		self.warehouse = po_a.items[0].warehouse
 		po_b = build_purchase_order_with_mandatory_fields(
@@ -302,6 +320,7 @@ class TestStockCapFetchExcludePoItems(FrappeTestCase):
 		frappe.db.set_value("Purchase Order", po_a.name, "branch", self.branch)
 		frappe.db.set_value("Purchase Order", po_b.name, "branch", self.branch)
 
+		self.po_a = po_a
 		self.po_item_a = po_a.items[0]
 		self.po_item_b = po_b.items[0]
 
@@ -314,67 +333,128 @@ class TestStockCapFetchExcludePoItems(FrappeTestCase):
 			}
 		).insert(ignore_permissions=True)
 
-		self.asn = frappe.get_doc(
+		self.asn = self._make_and_submit_asn(
+			supplier=po_a.supplier,
+			items=[
+				{
+					"purchase_order": po_a.name,
+					"purchase_order_item": self.po_item_a.name,
+					"item_code": self.item_a,
+					"qty": 7,
+					"uom": self.po_item_a.uom,
+					"rate": self.po_item_a.rate,
+				},
+				{
+					"purchase_order": po_b.name,
+					"purchase_order_item": self.po_item_b.name,
+					"item_code": self.item_b,
+					"qty": 4,
+					"uom": self.po_item_b.uom,
+					"rate": self.po_item_b.rate,
+				},
+			],
+		)
+
+	def _make_and_submit_asn(self, *, supplier, items):
+		asn = frappe.get_doc(
 			{
 				"doctype": "ASN",
-				"supplier": po_a.supplier,
+				"supplier": supplier,
 				"supplier_invoice_no": f"INV-{frappe.generate_hash(length=8)}",
 				"supplier_invoice_date": today(),
 				"expected_delivery_date": today(),
-				"items": [
-					{
-						"purchase_order": po_a.name,
-						"purchase_order_item": self.po_item_a.name,
-						"item_code": self.item_a,
-						"qty": 7,
-						"uom": self.po_item_a.uom,
-						"rate": self.po_item_a.rate,
-					},
-					{
-						"purchase_order": po_b.name,
-						"purchase_order_item": self.po_item_b.name,
-						"item_code": self.item_b,
-						"qty": 4,
-						"uom": self.po_item_b.uom,
-						"rate": self.po_item_b.rate,
-					},
-				],
+				"items": items,
 			}
 		)
-		self.asn.insert(ignore_permissions=True)
-		self.asn.submit()
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		return asn
 
 	def _line(self, item_code) -> Line:
 		return Line(
 			branch=self.branch, item_code=item_code, warehouse=self.warehouse, stock_qty=1.0, row_idx=1
 		)
 
-	def test_exclude_po_items_removes_only_the_matching_po_item(self):
+	def _stock_qty(self, po_item, purchase_uom_qty: float) -> float:
+		return purchase_uom_qty * (po_item.conversion_factor or 1)
+
+	def _in_transit(self, item_code, po_item_receiving_qty=None) -> float:
 		context = fetch_cap_context(
 			[self._line(self.item_a), self._line(self.item_b)],
-			exclude_po_items={self.po_item_a.name},
+			po_item_receiving_qty=po_item_receiving_qty,
 		)
+		return context.in_transit.get((self.branch, item_code), 0.0)
 
-		self.assertEqual(context.in_transit.get((self.branch, self.item_a), 0.0), 0.0)
+	def test_po_item_receiving_qty_removes_only_the_matching_po_item(self):
+		receiving = {self.po_item_a.name: self._stock_qty(self.po_item_a, 7)}
+		self.assertEqual(self._in_transit(self.item_a, receiving), 0.0)
 
-	def test_exclude_po_items_keeps_a_sibling_items_unreceived_remainder_counted(self):
+	def test_po_item_receiving_qty_keeps_a_sibling_items_unreceived_remainder_counted(self):
 		"""Regression for the partial-receipt under-count: excluding the whole ASN by name
 		used to drop every item's in-transit total, not just the item a receipt actually
-		covers. Excluding by the receipt's own purchase_order_item set must leave a
-		sibling item on the same ASN -- one this receipt does not cover -- still counted.
+		covers. Subtracting only the receipt's own receiving quantity, keyed by Purchase
+		Order Item, must leave a sibling item on the same ASN -- one this receipt does not
+		cover -- still fully counted.
 		"""
-		context = fetch_cap_context(
-			[self._line(self.item_a), self._line(self.item_b)],
-			exclude_po_items={self.po_item_a.name},
+		receiving = {self.po_item_a.name: self._stock_qty(self.po_item_a, 7)}
+		expected_b = self._stock_qty(self.po_item_b, 4)
+		self.assertEqual(self._in_transit(self.item_b, receiving), expected_b)
+
+	def test_no_po_item_receiving_qty_counts_both(self):
+		expected_a = self._stock_qty(self.po_item_a, 7)
+		expected_b = self._stock_qty(self.po_item_b, 4)
+		self.assertEqual(self._in_transit(self.item_a), expected_a)
+		self.assertEqual(self._in_transit(self.item_b), expected_b)
+
+	def test_partial_receipt_leaves_the_undelivered_remainder_counted(self):
+		"""This is the bug this class guards against: the ASN shipped 7 units of PO item
+		A and none of it has been received yet (received_qty is still 0 at before_submit),
+		so a receipt taking only 3 of those 7 units must leave the other 4 counted as
+		in-transit -- not zero it out as the old whole-row exclusion did.
+		"""
+		receiving = {self.po_item_a.name: self._stock_qty(self.po_item_a, 3)}
+		expected_remainder = self._stock_qty(self.po_item_a, 4)
+		self.assertEqual(self._in_transit(self.item_a, receiving), expected_remainder)
+
+	def test_two_asns_for_the_same_po_item_leaves_the_other_asns_shipment_counted(self):
+		"""A single Purchase Order Item can be shipped across more than one ASN. A receipt
+		that exactly covers the first ASN's shipment must not remove the second ASN's still-
+		undelivered quantity -- only its own receiving quantity comes off the combined total.
+		"""
+		self._make_and_submit_asn(
+			supplier=self.po_a.supplier,
+			items=[
+				{
+					"purchase_order": self.po_a.name,
+					"purchase_order_item": self.po_item_a.name,
+					"item_code": self.item_a,
+					"qty": 5,
+					"uom": self.po_item_a.uom,
+					"rate": self.po_item_a.rate,
+				}
+			],
 		)
 
-		expected_b = 4.0 * (self.po_item_b.conversion_factor or 1)
-		self.assertEqual(context.in_transit.get((self.branch, self.item_b), 0.0), expected_b)
+		# Before any receipt, both ASNs' shipments of PO item A are in-transit.
+		self.assertEqual(self._in_transit(self.item_a), self._stock_qty(self.po_item_a, 12))
 
-	def test_no_exclude_po_items_counts_both(self):
-		context = fetch_cap_context([self._line(self.item_a), self._line(self.item_b)])
+		# A receipt that exactly covers the first ASN's 7 units must leave the second
+		# ASN's 5 still-undelivered units counted.
+		receiving = {self.po_item_a.name: self._stock_qty(self.po_item_a, 7)}
+		expected_remainder = self._stock_qty(self.po_item_a, 5)
+		self.assertEqual(self._in_transit(self.item_a, receiving), expected_remainder)
 
-		expected_a = 7.0 * (self.po_item_a.conversion_factor or 1)
-		expected_b = 4.0 * (self.po_item_b.conversion_factor or 1)
-		self.assertEqual(context.in_transit.get((self.branch, self.item_a), 0.0), expected_a)
-		self.assertEqual(context.in_transit.get((self.branch, self.item_b), 0.0), expected_b)
+	def test_full_receipt_zeroes_out_in_transit_without_going_negative(self):
+		receiving = {self.po_item_a.name: self._stock_qty(self.po_item_a, 7)}
+		self.assertEqual(self._in_transit(self.item_a, receiving), 0.0)
+
+	def test_over_receiving_a_po_item_clamps_to_zero_without_borrowing_from_a_sibling(self):
+		"""fetch.py:_fetch_in_transit clamps the subtraction at zero per Purchase Order
+		Item, before pooling into the item_code/warehouse total the evaluator reads. An
+		over-receipt of PO item A must not lend negative in-transit to item B's own total,
+		even though both items share this test's one warehouse.
+		"""
+		receiving = {self.po_item_a.name: self._stock_qty(self.po_item_a, 999)}
+		expected_b = self._stock_qty(self.po_item_b, 4)
+		self.assertEqual(self._in_transit(self.item_a, receiving), 0.0)
+		self.assertEqual(self._in_transit(self.item_b, receiving), expected_b)
