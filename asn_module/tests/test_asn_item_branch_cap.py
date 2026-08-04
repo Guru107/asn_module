@@ -117,6 +117,48 @@ class TestASNItemBranchCap(FrappeTestCase):
 		messages = " ".join(str(m) for m in frappe.local.message_log or [])
 		self.assertNotIn("not be enforced", messages)
 
+	def test_warning_does_not_spuriously_fire_after_branch_rename(self):
+		"""Reproduces the same stale-name defect ``d31e4bd`` fixed in
+		``stock_cap/fetch.py::_fetch_cap_warehouses``, but for
+		``_warn_if_branch_has_no_cap_warehouses``. ``ASN Stock Cap Settings`` autonames from
+		``branch`` (``autoname: "field:branch"``) but has no rename handling, and Frappe's
+		``rename_doc`` updates only the settings document's ``branch`` field -- it never
+		renames the document itself. Configure a branch with real cap warehouses, rename the
+		branch, then set a cap for the new name: before the fix, looking the settings document
+		up by ``self.branch`` (its post-rename name) finds nothing, because the settings
+		document still carries its pre-rename name -- so ``settings`` comes back ``None`` and
+		the code falls through to the "not enforced" warning even though the branch is, in
+		fact, fully configured. That is a spurious warning for a properly configured branch,
+		the same class of silent breakage the fetch.py fix addressed, just surfacing as a
+		wrong warning instead of a silently-skipped cap check.
+		"""
+		branch = _ensure_branch("_Test Cap Branch For Rename")
+		self._configure_branch(branch)
+
+		new_branch = f"{branch} Renamed"
+		if frappe.db.exists("Branch", new_branch):
+			frappe.delete_doc("Branch", new_branch, ignore_permissions=True, force=True)
+
+		try:
+			frappe.rename_doc("Branch", branch, new_branch, force=True)
+
+			settings_name = frappe.db.get_value("ASN Stock Cap Settings", {"branch": new_branch}, "name")
+			self.assertEqual(
+				settings_name,
+				branch,
+				"the settings document must keep its old (stale) name across the rename -- "
+				"that stale name is exactly what this regression guards against",
+			)
+
+			frappe.local.message_log = []
+			_make_cap(new_branch, ITEM)
+
+			messages = " ".join(str(m) for m in frappe.local.message_log or [])
+			self.assertNotIn("not be enforced", messages)
+		finally:
+			if frappe.db.exists("Branch", new_branch):
+				frappe.rename_doc("Branch", new_branch, branch, force=True)
+
 	def test_blank_branch_skips_the_warehouse_warning_check(self):
 		"""``_warn_if_branch_has_no_cap_warehouses`` guards on ``self.branch`` before it ever
 		queries ASN Stock Cap Settings. Mandatory-field validation normally stops a blank

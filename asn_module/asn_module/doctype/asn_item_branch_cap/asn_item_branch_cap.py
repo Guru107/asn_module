@@ -52,12 +52,23 @@ class ASNItemBranchCap(Document):
 		naming the warehouses whose stock counts. Without the second, this row is inert
 		and nothing would otherwise say so. Deliberately a warning, not a block: the
 		fail-open rule stands, and ceilings may legitimately be set before warehouses.
+
+		Looked up by the ``branch`` field, not ``settings.name``. ``ASN Stock Cap
+		Settings`` autonames from ``branch`` (``autoname: "field:branch"``) but has no
+		rename handling, and Frappe's ``rename_doc`` only updates the Link *field value*
+		on a renamed Branch's dependents -- it never renames or re-derives the dependent
+		document itself (see ``stock_cap/fetch.py::_fetch_cap_warehouses`` for the same
+		fix applied on the enforcement path). After a Branch rename this settings
+		document's name is stale while its ``branch`` field already points at the new
+		name, so matching on ``name`` would silently find nothing and this warning would
+		stop firing for a branch that in fact has no cap warehouses configured. ``branch``
+		carries a DB-level unique constraint, so this can never match more than one row.
 		"""
 		if not self.branch:
 			return
 
 		settings = frappe.db.get_value(
-			"ASN Stock Cap Settings", self.branch, ["name", "enabled"], as_dict=True
+			"ASN Stock Cap Settings", {"branch": self.branch}, ["name", "enabled"], as_dict=True
 		)
 		if settings and settings.enabled:
 			has_warehouse = frappe.db.exists(
