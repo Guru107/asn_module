@@ -495,3 +495,48 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 		expected_b = self._stock_qty(self.po_item_b, 4)
 		self.assertEqual(self._in_transit(self.item_a, receiving), 0.0)
 		self.assertEqual(self._in_transit(self.item_b, receiving), expected_b)
+
+	def test_over_receiving_a_po_item_clamps_to_zero_without_borrowing_from_a_same_item_sibling(self):
+		"""The risk the clamp was actually written for: item_a and item_b above are two
+		*distinct* item codes, so pooling their (already non-negative) subtotals together
+		can never exercise a negative-borrowing bug -- two positive numbers summed can't go
+		negative regardless of where the clamp sits. The real risk is two distinct Purchase
+		Order Items that share one item_code and one warehouse: the evaluator pools their
+		in-transit by (item_code, warehouse), so if the per-PO-Item clamp in
+		_fetch_in_transit ran after pooling instead of before, an enormous over-receipt
+		against one PO Item could drag the shared item_code/warehouse total negative and
+		silently cancel out a sibling PO Item's own still-undelivered quantity. Pin that the
+		clamp is per-PO-Item and applied before pooling, so this cannot happen.
+		"""
+		from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+
+		po_c = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap Fetch ExcludePO Tax C",
+			item_code=self.item_a,
+			warehouse=self.warehouse,
+			supplier=self.po_a.supplier,
+		)
+		frappe.db.set_value("Purchase Order", po_c.name, "branch", self.branch)
+		po_item_c = po_c.items[0]
+
+		self._make_and_submit_asn(
+			supplier=po_c.supplier,
+			items=[
+				{
+					"purchase_order": po_c.name,
+					"purchase_order_item": po_item_c.name,
+					"item_code": self.item_a,
+					"qty": 5,
+					"uom": po_item_c.uom,
+					"rate": po_item_c.rate,
+				}
+			],
+		)
+
+		# Massively over-receive po_item_a (999 units against a 7-unit shipment). If the
+		# clamp ran after pooling instead of per-PO-Item, this would drag item_a's pooled
+		# total negative and eat into po_item_c's own still-undelivered 5 units.
+		receiving = {self.po_item_a.name: self._stock_qty(self.po_item_a, 999)}
+		expected_remainder = self._stock_qty(po_item_c, 5)
+		self.assertEqual(self._in_transit(self.item_a, receiving), expected_remainder)
