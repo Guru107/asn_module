@@ -1,8 +1,3 @@
-import json
-
-import frappe
-from frappe.utils import flt
-
 from asn_module.stock_cap.collect import (
 	asn_rows_from_doc,
 	collect_lines_from_asn_rows,
@@ -11,9 +6,7 @@ from asn_module.stock_cap.collect import (
 )
 from asn_module.stock_cap.evaluate import evaluate
 from asn_module.stock_cap.fetch import fetch_cap_context
-from asn_module.stock_cap.messages import may_see_stock_figures
 from asn_module.stock_cap.models import Breach
-from asn_module.utils.permissions import get_accessible_doc
 
 
 def breaches_for_asn_rows(
@@ -71,55 +64,3 @@ def breaches_for_purchase_receipt(doc) -> list[Breach]:
 	context = fetch_cap_context(lines, po_item_receiving_qty=receiving_qty)
 	breaches, _accepted = evaluate(lines, context)
 	return breaches
-
-
-@frappe.whitelist()
-def get_stock_cap_preview(items: list | str, asn_name: str | None = None) -> list[dict]:
-	"""Headroom preview for the ASN entry form.
-
-	Suppliers receive allowed_qty and a breach flag only; stock figures are withheld
-	unless the caller can read Item.
-	"""
-	if isinstance(items, str):
-		items = json.loads(items)
-
-	rows = []
-	for index, item in enumerate(items or [], start=1):
-		purchase_order = (item.get("purchase_order") or "").strip()
-		if not purchase_order:
-			continue
-
-		get_accessible_doc("Purchase Order", purchase_order)
-		rows.append(
-			{
-				"idx": item.get("idx") or index,
-				"purchase_order": purchase_order,
-				"purchase_order_item": item.get("purchase_order_item"),
-				"item_code": item.get("item_code"),
-				"qty": flt(item.get("qty")),
-			}
-		)
-
-	detailed = may_see_stock_figures()
-	breaches, _accepted = breaches_for_asn_rows(rows, exclude_asn_name=asn_name)
-	preview = []
-	for breach in breaches:
-		entry = {
-			"item_code": breach.item_code,
-			"row_idxs": list(breach.row_idxs),
-			"breached": True,
-			"allowed_qty": flt(breach.allowed_qty),
-		}
-		if detailed:
-			entry.update(
-				{
-					"branch": breach.branch,
-					"on_hand": flt(breach.on_hand),
-					"in_transit": flt(breach.in_transit),
-					"projected": flt(breach.projected),
-					"cap": flt(breach.cap),
-				}
-			)
-		preview.append(entry)
-
-	return preview

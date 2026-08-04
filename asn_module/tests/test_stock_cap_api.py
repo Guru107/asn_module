@@ -1,4 +1,3 @@
-import json
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -11,8 +10,8 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
 )
-from asn_module.stock_cap.api import breaches_for_purchase_receipt, get_stock_cap_preview
-from asn_module.stock_cap.messages import may_see_stock_figures
+from asn_module.stock_cap.api import breaches_for_asn_rows, breaches_for_purchase_receipt
+from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.utils.permissions import get_accessible_doc
 from asn_module.utils.test_setup import (
 	before_tests,
@@ -101,9 +100,10 @@ def _as_user(email: str):
 		frappe.set_user(previous)
 
 
-class TestStockCapPreviewAccessControl(FrappeTestCase):
-	"""Covers the stock_cap security seam: get_stock_cap_preview, may_see_stock_figures,
-	and the shared Purchase Order access gate under real, role-based permission checks.
+class TestStockCapAccessControlAndRedaction(FrappeTestCase):
+	"""Covers the stock_cap security seam: may_see_stock_figures + format_breaches
+	redaction, and the shared Purchase Order access gate, under real, role-based
+	permission checks.
 	"""
 
 	@classmethod
@@ -176,58 +176,28 @@ class TestStockCapPreviewAccessControl(FrappeTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
-	def test_preview_withholds_stock_figures_without_item_read(self):
-		with _as_user(PO_ONLY_USER):
-			preview = get_stock_cap_preview(self.items)
-
-		self.assertEqual(len(preview), 1)
-		entry = preview[0]
-		self.assertEqual(entry["item_code"], ITEM)
-		self.assertEqual(entry["row_idxs"], [1])
-		self.assertTrue(entry["breached"])
-		self.assertIn("allowed_qty", entry)
-		for withheld_key in ("branch", "on_hand", "in_transit", "projected", "cap"):
-			self.assertNotIn(withheld_key, entry)
-
-	def test_preview_includes_stock_figures_with_item_read(self):
-		with _as_user(FULL_USER):
-			preview = get_stock_cap_preview(self.items)
-
-		self.assertEqual(len(preview), 1)
-		entry = preview[0]
-		self.assertEqual(entry["branch"], BRANCH)
-		for included_key in ("on_hand", "in_transit", "projected", "cap"):
-			self.assertIn(included_key, entry)
-
-	def test_preview_rejects_caller_without_purchase_order_access(self):
-		with _as_user(NO_ACCESS_USER):
-			with self.assertRaises(frappe.PermissionError):
-				get_stock_cap_preview(self.items)
-
-	def test_preview_does_not_reject_caller_with_purchase_order_access(self):
-		with _as_user(PO_ONLY_USER):
-			preview = get_stock_cap_preview(self.items)
-
-		self.assertEqual(len(preview), 1)
-
-	def test_preview_accepts_json_encoded_items_string(self):
-		"""frappe.call's default serialization sends list/dict RPC args as a JSON string
-		when the target has no type hint frappe's request layer can deserialize against.
-		get_stock_cap_preview must decode that itself.
+	def test_breach_message_withholds_stock_figures_without_item_read(self):
+		"""Same real-world path the ASN controller, Purchase Receipt handler, and portal
+		bulk upload all use: format_breaches(breaches, detailed=may_see_stock_figures()).
 		"""
 		with _as_user(PO_ONLY_USER):
-			preview = get_stock_cap_preview(json.dumps(self.items))
+			breaches, _accepted = breaches_for_asn_rows(self.items)
+			message = format_breaches(breaches, detailed=may_see_stock_figures())
 
-		self.assertEqual(len(preview), 1)
-		self.assertEqual(preview[0]["item_code"], ITEM)
+		self.assertEqual(len(breaches), 1)
+		self.assertIn(ITEM, message)
+		for withheld_text in ("branch", "on hand", "in transit"):
+			self.assertNotIn(withheld_text, message.lower())
 
-	def test_preview_skips_rows_without_a_purchase_order(self):
-		rows = [{"idx": 1, "item_code": ITEM, "qty": MAX_STOCK * 100}, *self.items]
+	def test_breach_message_includes_stock_figures_with_item_read(self):
+		with _as_user(FULL_USER):
+			breaches, _accepted = breaches_for_asn_rows(self.items)
+			message = format_breaches(breaches, detailed=may_see_stock_figures())
 
-		with _as_user(PO_ONLY_USER):
-			preview = get_stock_cap_preview(rows)
-
-		self.assertEqual(len(preview), 1)
+		self.assertEqual(len(breaches), 1)
+		self.assertIn(BRANCH, message)
+		for included_text in ("on hand", "in transit"):
+			self.assertIn(included_text, message.lower())
 
 	def test_permission_gate_rejects_caller_without_purchase_order_access(self):
 		with _as_user(NO_ACCESS_USER):
@@ -255,10 +225,10 @@ PR_MAX_STOCK = 5
 
 
 class TestBreachesForPurchaseReceipt(FrappeTestCase):
-	"""breaches_for_purchase_receipt is asn_module's third enforcement surface (the other
-	two, breaches_for_asn_rows and get_stock_cap_preview, are exercised above). The
-	Purchase Receipt handler's own tests mock this function out entirely, so nothing else
-	in the suite calls the real implementation end to end.
+	"""breaches_for_purchase_receipt is asn_module's second enforcement surface (the other,
+	breaches_for_asn_rows, is exercised above). The Purchase Receipt handler's own tests
+	mock this function out entirely, so nothing else in the suite calls the real
+	implementation end to end.
 	"""
 
 	@classmethod
