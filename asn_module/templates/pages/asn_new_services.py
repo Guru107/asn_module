@@ -717,7 +717,20 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
 		# in the same transaction (the bulk upload loop submits earlier invoice groups
 		# through this same function before a later group fails) that must not be
 		# discarded just because this one draft was rejected.
-		frappe.delete_doc(asn.doctype, asn.name, ignore_permissions=True)
+		#
+		# The delete itself can fail -- ASN.on_trash runs
+		# _validate_deletable_against_purchase_receipts, which can throw, and
+		# frappe.delete_doc can raise LinkExistsError independently of that check. Either
+		# one must not replace the original validation error with a raw traceback, which
+		# is exactly the outcome this whole except-branch exists to avoid. Swallow the
+		# cleanup failure (logged, not silent) and always raise the original error below.
+		try:
+			frappe.delete_doc(asn.doctype, asn.name, ignore_permissions=True)
+		except Exception:
+			frappe.log_error(
+				title="ASN portal submit: failed to delete orphaned draft",
+				message=frappe.get_traceback(),
+			)
 		# Render the block as a field-level portal error rather than a raw traceback.
 		raise PortalValidationError([error_entry(field="items_csv", message=str(exc))]) from exc
 	return asn
