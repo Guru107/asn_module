@@ -168,6 +168,12 @@ The portal inserts then submits, so the `before_submit` throw propagates. It is 
 
 New whitelisted `get_stock_cap_preview(items, asn_name=None)`. Each entry carries `purchase_order`, `item_code`, and `qty`, so a payload spanning several Purchase Orders is handled by the same grouping as a saved document. Access is gated per Purchase Order by the existing `_get_accessible_purchase_order`.
 
+> **Withdrawn.** `get_stock_cap_preview` was never built out as a client-facing feature and was
+> removed in `3bf9064` (`refactor: drop the unused stock cap preview endpoint and package facade`)
+> along with the rest of the unused preview call chain. No whitelisted preview endpoint exists on
+> this branch. The portal's only stock-cap-facing behaviour is the block on submit described just
+> above.
+
 **Disclosure:** portal responses and portal-facing messages expose Allowed Qty and a breach flag only. On Hand, In Transit Qty, and Maximum Stock are inventory levels and purchasing ceilings, and are never sent to a supplier. This applies to the block message and the save-time warning as well as the preview. Desk users receive the full Breach detail.
 
 ### Desk bulk upload (`bulk_upload.py` -> `create_bulk_asns_for_supplier`)
