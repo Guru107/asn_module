@@ -18,6 +18,7 @@ from asn_module.handlers.purchase_receipt import (
 	on_purchase_receipt_trash,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+from asn_module.utils.test_setup import make_test_breach
 
 
 class TestCreatePurchaseReceipt(FrappeTestCase):
@@ -339,17 +340,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 class TestPurchaseReceiptStockCap(FrappeTestCase):
 	def _breach(self):
-		return SimpleNamespace(
-			branch="Mumbai",
-			item_code="WIDGET",
-			row_idxs=(1,),
-			on_hand=95.0,
-			in_transit=0.0,
-			incoming=20.0,
-			projected=115.0,
-			cap=100.0,
-			allowed_qty=5.0,
-		)
+		return make_test_breach()
 
 	def test_submit_is_blocked_when_cap_is_breached(self):
 		doc = SimpleNamespace(name="PR-0001", is_return=0, branch="Mumbai", asn=None, items=[])

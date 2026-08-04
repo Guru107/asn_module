@@ -31,6 +31,7 @@ from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
+	make_test_breach,
 )
 
 
@@ -392,17 +393,7 @@ class TestBulkUploadStockCap(FrappeTestCase):
 		disable_hsn_validation()
 
 	def _breach(self):
-		return SimpleNamespace(
-			branch="Mumbai",
-			item_code="WIDGET",
-			row_idxs=(1,),
-			on_hand=95.0,
-			in_transit=0.0,
-			incoming=20.0,
-			projected=115.0,
-			cap=100.0,
-			allowed_qty=5.0,
-		)
+		return make_test_breach()
 
 	def setUp(self):
 		self.po, self.supplier, self.po_item = _bulk_fixture()

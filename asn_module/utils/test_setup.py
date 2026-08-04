@@ -5,6 +5,8 @@ from importlib import import_module
 
 import frappe
 
+from asn_module.stock_cap.models import Breach
+
 TEST_COMPANY_NAME = "_Test Company"
 TEST_COMPANY_ABBR = "_TC"
 
@@ -183,3 +185,46 @@ def build_purchase_order_with_mandatory_fields(
 	if not do_not_submit:
 		po.submit()
 	return po
+
+
+def make_test_breach(
+	*,
+	branch: str = "Mumbai",
+	item_code: str = "WIDGET",
+	row_idxs: tuple[int, ...] = (1,),
+	on_hand: float = 95.0,
+	in_transit: float = 0.0,
+	incoming: float = 20.0,
+	cap: float = 100.0,
+) -> Breach:
+	"""Build a real ``Breach`` for tests that stub a breach-producing function's return value.
+
+	Three call sites (the ASN controller, the Purchase Receipt handler, and the supplier
+	portal's bulk upload path) each hand-rolled an identical ``SimpleNamespace`` standing in
+	for a ``Breach``, and all three had drifted: none of them set ``baseline``, a field
+	``models.Breach`` gained when a float-precision bug in ``allowed_qty`` was fixed. A
+	``SimpleNamespace`` cannot catch that kind of drift -- it accepts whatever attributes are
+	handed to it, dataclass or no. A real ``Breach`` can: construction itself fails the
+	moment a field is renamed, added, or removed, so this fixture cannot go stale the way the
+	three copies it replaces did.
+
+	``baseline`` and ``projected`` are derived the same way ``evaluate()`` derives them
+	(``baseline = on_hand + in_transit``, since none of the current call sites need a
+	nonzero ``consumed`` contribution; ``projected = baseline + incoming``), so
+	``allowed_qty`` -- a computed property on ``Breach``, not a field a caller can just
+	declare -- comes out consistent with the rest of the fixture rather than needing to be
+	hand-computed and passed in separately, the way the old fixtures did.
+	"""
+	baseline = on_hand + in_transit
+	projected = baseline + incoming
+	return Breach(
+		branch=branch,
+		item_code=item_code,
+		row_idxs=row_idxs,
+		on_hand=on_hand,
+		in_transit=in_transit,
+		baseline=baseline,
+		incoming=incoming,
+		projected=projected,
+		cap=cap,
+	)

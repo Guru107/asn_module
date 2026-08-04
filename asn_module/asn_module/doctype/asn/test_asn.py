@@ -16,6 +16,7 @@ from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
+	make_test_breach,
 )
 
 IGNORE_TEST_RECORD_DEPENDENCIES = [
@@ -811,17 +812,7 @@ class TestASNStockCap(FrappeTestCase):
 		self.addCleanup(patcher.stop)
 
 	def _breach(self):
-		return SimpleNamespace(
-			branch="Mumbai",
-			item_code="WIDGET",
-			row_idxs=(1,),
-			on_hand=90.0,
-			in_transit=0.0,
-			incoming=20.0,
-			projected=110.0,
-			cap=100.0,
-			allowed_qty=10.0,
-		)
+		return make_test_breach(on_hand=90.0)
 
 	def test_submit_is_blocked_when_cap_is_breached(self):
 		asn = make_test_asn(qty=5)
