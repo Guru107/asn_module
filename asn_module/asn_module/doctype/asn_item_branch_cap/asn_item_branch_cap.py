@@ -14,6 +14,14 @@ class ASNItemBranchCap(Document):
 		self._warn_if_branch_has_no_cap_warehouses()
 
 	def _validate_non_negative_max_qty(self):
+		"""The sole non-negative check on ``max_qty``: the field no longer also carries the
+		JSON ``non_negative`` flag. Frappe's own ``_validate_non_negative()`` runs inside
+		``Document._validate()``, which ``run_before_save_methods()`` -- and therefore this
+		``validate()`` -- always calls first, so for a field already checked here the JSON
+		flag could never be the one to actually fire; it was dead weight duplicating this
+		message with a generic one. This check wins by construction, so keeping it alone
+		(and dropping the JSON flag) changes nothing observable, only removes the duplicate.
+		"""
 		if flt(self.max_qty) < 0:
 			frappe.throw(_("Max Qty cannot be negative."))
 

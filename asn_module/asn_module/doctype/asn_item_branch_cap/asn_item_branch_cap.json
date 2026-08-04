@@ -30,8 +30,7 @@
 			"fieldname": "max_qty",
 			"fieldtype": "Float",
 			"in_list_view": 1,
-			"label": "Max Qty",
-			"non_negative": 1
+			"label": "Max Qty"
 		}
 	],
 	"index_web_pages_for_search": 1,
