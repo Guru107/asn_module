@@ -700,6 +700,16 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
 	try:
 		asn.submit()
 	except frappe.ValidationError as exc:
+		# The insert above already committed a draft to the DB. PortalValidationError is
+		# caught and rendered as a form error by asn_new.py's get_context -- it never
+		# escapes the request -- so nothing will trigger Frappe's own rollback machinery;
+		# left alone, the request completes normally and the orphaned draft is committed
+		# right along with it. Delete exactly this document rather than rolling back the
+		# whole transaction: a caller may have already done other, unrelated work earlier
+		# in the same transaction (the bulk upload loop submits earlier invoice groups
+		# through this same function before a later group fails) that must not be
+		# discarded just because this one draft was rejected.
+		frappe.delete_doc(asn.doctype, asn.name, ignore_permissions=True)
 		# Render the block as a field-level portal error rather than a raw traceback.
 		raise PortalValidationError([error_entry(field="items_csv", message=str(exc))]) from exc
 	return asn
