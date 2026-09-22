@@ -68,6 +68,9 @@ class TestASNItemBranchCap(FrappeTestCase):
 			}
 		).insert(ignore_permissions=True)
 
+	def test_data_import_is_enabled(self):
+		self.assertTrue(frappe.get_meta("ASN Item Branch Cap").allow_import)
+
 	def test_document_is_named_after_branch_and_item(self):
 		self._configure_branch(BRANCH)
 		doc = _make_cap(BRANCH, ITEM)
