@@ -1,6 +1,5 @@
 import frappe
 from frappe.query_builder import DocType
-from frappe.query_builder.functions import Sum
 from frappe.utils import flt
 
 from asn_module.stock_cap.models import CapContext, Line
@@ -120,13 +119,18 @@ def _fetch_max_stock(branches: list[str], item_codes: list[str]) -> dict[tuple[s
 def _fetch_on_hand(
 	item_codes: list[str], warehouses: list[str], branch_by_warehouse: dict[str, str]
 ) -> dict[tuple[str, str], float]:
+	"""On-hand stock in Cap Warehouses, pooled to (branch, item_code).
+
+	``tabBin`` is unique on ``(item_code, warehouse)``, so a plain select of
+	``actual_qty`` (no ``SUM`` / ``GROUP BY``) is both correct and cheaper: the
+	``IN`` filters can seek that unique index instead of aggregating one-row groups.
+	"""
 	bin_table = DocType("Bin")
 	rows = (
 		frappe.qb.from_(bin_table)
-		.select(bin_table.item_code, bin_table.warehouse, Sum(bin_table.actual_qty).as_("qty"))
+		.select(bin_table.item_code, bin_table.warehouse, bin_table.actual_qty.as_("qty"))
 		.where(bin_table.item_code.isin(item_codes))
 		.where(bin_table.warehouse.isin(warehouses))
-		.groupby(bin_table.item_code, bin_table.warehouse)
 	).run(as_dict=True)
 
 	return _aggregate_by_branch(rows, branch_by_warehouse)
