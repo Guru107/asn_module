@@ -200,19 +200,19 @@ def _fetch_in_transit(
 			"""
 			SELECT
 				bm.branch AS branch,
-				lines.item_code AS item_code,
-				SUM(lines.line_qty) AS qty
+				line_rows.item_code AS item_code,
+				SUM(line_rows.line_qty) AS qty
 			FROM (
 				"""
 			+ line_union_sql
 			+ """
-			) lines
+			) line_rows
 			INNER JOIN (
 				"""
 			+ branch_map_sql
 			+ """
-			) bm ON bm.warehouse = lines.warehouse
-			GROUP BY bm.branch, lines.item_code
+			) bm ON bm.warehouse = line_rows.warehouse
+			GROUP BY bm.branch, line_rows.item_code
 			"""
 		)
 		rows = frappe.db.sql(query, [*line_params, *branch_map_params], as_dict=True)
@@ -237,16 +237,16 @@ def _fetch_in_transit(
 				GREATEST(po_totals.in_transit_qty - COALESCE(recv.qty, 0), 0) AS remaining
 			FROM (
 				SELECT
-					lines.purchase_order_item AS purchase_order_item,
-					lines.item_code AS item_code,
-					lines.warehouse AS warehouse,
-					SUM(lines.line_qty) AS in_transit_qty
+					line_rows.purchase_order_item AS purchase_order_item,
+					line_rows.item_code AS item_code,
+					line_rows.warehouse AS warehouse,
+					SUM(line_rows.line_qty) AS in_transit_qty
 				FROM (
 					"""
 		+ line_union_sql
 		+ """
-				) lines
-				GROUP BY lines.purchase_order_item, lines.item_code, lines.warehouse
+				) line_rows
+				GROUP BY line_rows.purchase_order_item, line_rows.item_code, line_rows.warehouse
 			) po_totals
 			LEFT JOIN (
 				"""
