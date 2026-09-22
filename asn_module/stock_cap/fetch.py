@@ -170,30 +170,51 @@ def _fetch_in_transit(
 	# fires when it does not, mirroring COALESCE's short-circuit exactly (a non-NULL
 	# poi.warehouse that simply isn't in the list correctly matches neither branch, same
 	# as the original never falling back to po.set_warehouse in that case).
+	#
+	# Build the statement with concatenation of %s placeholder runs only — never f-strings
+	# or .format() in the frappe.db.sql call — so values stay in `params`.
 	warehouse_clause = (
-		f"(poi.warehouse IN ({warehouse_placeholders}) "
-		f"OR (poi.warehouse IS NULL AND po.set_warehouse IN ({warehouse_placeholders})))"
+		"(poi.warehouse IN ("
+		+ warehouse_placeholders
+		+ ") OR (poi.warehouse IS NULL AND po.set_warehouse IN ("
+		+ warehouse_placeholders
+		+ ")))"
 	)
 
-	exclude_clauses = []
+	exclude_clause = ""
 	params: list = [*item_codes, *warehouses, *warehouses, *EXCLUDED_ASN_STATUSES]
 
 	if exclude_asn_name:
-		exclude_clauses.append("AND asn.name != %s")
+		exclude_clause = "AND asn.name != %s"
 		params.append(exclude_asn_name)
-
-	exclude_clause = "\n\t\t\t".join(exclude_clauses)
 
 	receiving_qty = {
 		po_item: qty for po_item, qty in (po_item_receiving_qty or {}).items() if qty and qty > 0
 	}
 
-	# Every interpolated fragment is a generated run of %s placeholders or a static
-	# clause; all values travel in `params`, never in the statement text.
-	# nosemgrep: frappe-sql-format-injection
+	from_and_where = (
+		"""
+		FROM `tabASN Item` ai
+		INNER JOIN `tabASN` asn ON asn.name = ai.parent
+		INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
+		INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+		WHERE ai.item_code IN ("""
+		+ item_placeholders
+		+ """)
+			AND """
+		+ warehouse_clause
+		+ """
+			AND asn.docstatus = 1
+			AND asn.status NOT IN ("""
+		+ status_placeholders
+		+ """)
+			"""
+		+ exclude_clause
+	)
+
 	if not receiving_qty:
-		rows = frappe.db.sql(
-			f"""
+		query = (
+			"""
 			SELECT
 				ai.item_code AS item_code,
 				COALESCE(poi.warehouse, po.set_warehouse) AS warehouse,
@@ -202,20 +223,13 @@ def _fetch_in_transit(
 					* CASE WHEN COALESCE(poi.conversion_factor, 0) > 0
 						THEN poi.conversion_factor ELSE 1 END
 				) AS qty
-			FROM `tabASN Item` ai
-			INNER JOIN `tabASN` asn ON asn.name = ai.parent
-			INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
-			INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
-			WHERE ai.item_code IN ({item_placeholders})
-				AND {warehouse_clause}
-				AND asn.docstatus = 1
-				AND asn.status NOT IN ({status_placeholders})
-				{exclude_clause}
+			"""
+			+ from_and_where
+			+ """
 			GROUP BY ai.item_code, COALESCE(poi.warehouse, po.set_warehouse)
-			""",
-			params,
-			as_dict=True,
+			"""
 		)
+		rows = frappe.db.sql(query, params, as_dict=True)
 		return _aggregate_by_branch(rows, branch_by_warehouse)
 
 	po_items = sorted(receiving_qty)
@@ -224,8 +238,8 @@ def _fetch_in_transit(
 	for po_item in po_items:
 		receiving_params.extend([po_item, receiving_qty[po_item]])
 
-	rows = frappe.db.sql(
-		f"""
+	query = (
+		"""
 		SELECT item_code, warehouse, SUM(remaining) AS qty
 		FROM (
 			SELECT
@@ -242,26 +256,21 @@ def _fetch_in_transit(
 						* CASE WHEN COALESCE(poi.conversion_factor, 0) > 0
 							THEN poi.conversion_factor ELSE 1 END
 					) AS in_transit_qty
-				FROM `tabASN Item` ai
-				INNER JOIN `tabASN` asn ON asn.name = ai.parent
-				INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
-				INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
-				WHERE ai.item_code IN ({item_placeholders})
-					AND {warehouse_clause}
-					AND asn.docstatus = 1
-					AND asn.status NOT IN ({status_placeholders})
-					{exclude_clause}
+				"""
+		+ from_and_where
+		+ """
 				GROUP BY ai.purchase_order_item, ai.item_code, COALESCE(poi.warehouse, po.set_warehouse)
 			) po_totals
 			LEFT JOIN (
-				{receiving_union}
+				"""
+		+ receiving_union
+		+ """
 			) recv ON recv.purchase_order_item = po_totals.purchase_order_item
 		) remainders
 		GROUP BY item_code, warehouse
-		""",
-		[*params, *receiving_params],
-		as_dict=True,
+		"""
 	)
+	rows = frappe.db.sql(query, [*params, *receiving_params], as_dict=True)
 
 	return _aggregate_by_branch(rows, branch_by_warehouse)
 
