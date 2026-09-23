@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import cint
 
 NAME_SEPARATOR = "::"
 
@@ -22,7 +22,7 @@ class ASNItemBranchCap(Document):
 		message with a generic one. This check wins by construction, so keeping it alone
 		(and dropping the JSON flag) changes nothing observable, only removes the duplicate.
 		"""
-		if flt(self.max_qty) < 0:
+		if cint(self.max_qty) < 0:
 			frappe.throw(_("Max Qty cannot be negative."))
 
 	def _validate_no_separator_in_keys(self):

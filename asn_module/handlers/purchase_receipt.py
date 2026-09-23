@@ -8,6 +8,7 @@ from frappe.utils import flt
 from asn_module.handlers.utils import attach_qr_to_doc
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
 from asn_module.stock_cap.messages import throw_stock_cap_exceeded
+from asn_module.stock_cap.precision import flt_qty
 from asn_module.traceability import emit_asn_item_transition
 
 
@@ -94,6 +95,7 @@ def _delivered_purchase_qty(row, po_factor: float | None) -> float:
 
 
 def _add_received_qty(asn_item_name: str, delta: float) -> None:
+	delta = flt_qty(delta)
 	if not delta:
 		return
 	frappe.db.sql(

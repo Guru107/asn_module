@@ -29,7 +29,7 @@
 		{
 			"description": "Largest quantity of this item allowed in this branch, in stock UOM. 0 means no cap.",
 			"fieldname": "max_qty",
-			"fieldtype": "Float",
+			"fieldtype": "Int",
 			"in_list_view": 1,
 			"label": "Max Qty"
 		}

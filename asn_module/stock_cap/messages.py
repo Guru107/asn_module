@@ -1,8 +1,8 @@
 import frappe
 from frappe import _
-from frappe.utils import flt
 
 from asn_module.stock_cap.models import Breach
+from asn_module.stock_cap.precision import flt_qty
 
 
 def may_see_stock_figures() -> bool:
@@ -21,11 +21,11 @@ def _detailed(breach: Breach) -> str:
 		breach.item_code,
 		breach.branch,
 		", ".join(str(idx) for idx in breach.row_idxs),
-		flt(breach.projected),
-		flt(breach.cap),
-		flt(breach.on_hand),
-		flt(breach.in_transit),
-		flt(breach.incoming),
+			flt_qty(breach.projected),
+			flt_qty(breach.cap),
+			flt_qty(breach.on_hand),
+			flt_qty(breach.in_transit),
+			flt_qty(breach.incoming),
 	)
 
 
@@ -40,12 +40,12 @@ def _redacted(breach: Breach) -> str:
 		return _("Item {0} (rows {1}): you may declare at most {2}.").format(
 			breach.item_code,
 			rows,
-			flt(breach.allowed_purchase_qty),
+				flt_qty(breach.allowed_purchase_qty),
 		)
 	return _("Item {0} (rows {1}): you may declare at most {2} in stock UOM.").format(
 		breach.item_code,
 		rows,
-		flt(breach.allowed_qty),
+			flt_qty(breach.allowed_qty),
 	)
 
 

@@ -1,6 +1,6 @@
 import frappe
 from frappe.query_builder import DocType
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from asn_module.stock_cap.models import CapContext, Line
 
@@ -105,7 +105,7 @@ def _fetch_cap_warehouses(branches: list[str]) -> dict[str, frozenset[str]]:
 	return {branch: frozenset(warehouses) for branch, warehouses in collected.items()}
 
 
-def _fetch_max_stock(branches: list[str], item_codes: list[str]) -> dict[tuple[str, str], float]:
+def _fetch_max_stock(branches: list[str], item_codes: list[str]) -> dict[tuple[str, str], int]:
 	"""Per-branch ceilings, keyed (branch, item_code).
 
 	Guarded on the table rather than a column: a site that has not yet migrated has no
@@ -128,12 +128,12 @@ def _fetch_max_stock(branches: list[str], item_codes: list[str]) -> dict[tuple[s
 	ceilings: dict[tuple[str, str], float] = {}
 	for row in rows:
 		key = (row.branch, row.item)
-		qty = flt(row.max_qty)
+		qty = cint(row.max_qty)
 		if key not in ceilings:
 			ceilings[key] = qty
 			continue
 		positives = [value for value in (ceilings[key], qty) if value > 0]
-		ceilings[key] = min(positives) if positives else 0.0
+		ceilings[key] = min(positives) if positives else 0
 	return ceilings
 
 

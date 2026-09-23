@@ -38,7 +38,7 @@ def _ensure_warehouse(name: str) -> str:
 	return full_name
 
 
-def _make_cap(branch: str, item: str, max_qty: float = 100.0):
+def _make_cap(branch: str, item: str, max_qty: int = 100):
 	return frappe.get_doc(
 		{"doctype": "ASN Item Branch Cap", "branch": branch, "item": item, "max_qty": max_qty}
 	).insert(ignore_permissions=True)
@@ -69,7 +69,9 @@ class TestASNItemBranchCap(FrappeTestCase):
 		).insert(ignore_permissions=True)
 
 	def test_data_import_is_enabled(self):
-		self.assertTrue(frappe.get_meta("ASN Item Branch Cap").allow_import)
+		meta = frappe.get_meta("ASN Item Branch Cap")
+		self.assertTrue(meta.allow_import)
+		self.assertEqual(meta.get_field("max_qty").fieldtype, "Int")
 
 	def test_document_is_named_after_branch_and_item(self):
 		self._configure_branch(BRANCH)

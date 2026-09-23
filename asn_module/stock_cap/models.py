@@ -1,5 +1,6 @@
-import math
 from dataclasses import dataclass
+
+from asn_module.stock_cap.precision import floor_qty
 
 
 @dataclass(frozen=True)
@@ -60,12 +61,11 @@ class Breach:
 		round-trips through addition and back and can silently lose a residual smaller than the
 		incoming quantity that absorbed it, certifying a figure that then breaches on re-evaluation.
 
-		Rounded down to 6 decimal places so the reported figure is never larger than the true
-		headroom: this margin absorbs any residual floating-point noise in the subtraction itself,
-		on top of (not instead of) using the exact baseline.
+		Rounded down to the Float precision from System Settings. Rounding up, the way
+		``flt`` stores a field, can certify a quantity that the same precision then refuses.
 		"""
 		headroom = max(self.cap - self.baseline, 0.0)
-		return math.floor(headroom * 1_000_000) / 1_000_000
+		return floor_qty(headroom)
 
 	@property
 	def allowed_purchase_qty(self) -> float:
@@ -76,4 +76,4 @@ class Breach:
 		"""
 		factor = self.conversion_factor if self.conversion_factor > 0 else 1.0
 		headroom = max(self.cap - self.baseline, 0.0)
-		return math.floor((headroom / factor) * 1_000_000) / 1_000_000
+		return floor_qty(headroom / factor)

@@ -5,6 +5,7 @@ from hypothesis import strategies as st
 from asn_module.property_tests import settings  # loads HYPOTHESIS_PROFILE
 from asn_module.stock_cap.evaluate import evaluate
 from asn_module.stock_cap.models import CapContext, Line
+from asn_module.stock_cap.precision import flt_qty
 
 BRANCH = "B"
 ITEM = "I"
@@ -40,8 +41,8 @@ class TestStockCapProperties(UnitTestCase):
 	@given(caps, quantities, quantities, quantities)
 	def test_breach_holds_exactly_when_projected_exceeds_cap(self, cap, on_hand, in_transit, qty):
 		breaches, _accepted = evaluate([_line(qty)], _context(cap, on_hand, in_transit))
-		projected = round(on_hand + in_transit + qty, 6)
-		self.assertEqual(bool(breaches), qty > 0 and projected > round(cap, 6))
+		projected = flt_qty(on_hand + in_transit + qty)
+		self.assertEqual(bool(breaches), qty > 0 and projected > flt_qty(cap))
 
 	@given(caps, quantities, quantities, quantities)
 	def test_allowed_qty_is_the_largest_non_breaching_quantity(self, cap, on_hand, in_transit, qty):

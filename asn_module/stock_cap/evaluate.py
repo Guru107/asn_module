@@ -1,8 +1,5 @@
 from asn_module.stock_cap.models import Breach, CapContext, Line
-
-# Stock quantities are compared at 6 decimal places, the same scale allowed_qty floors to.
-# A raw binary sum such as 1.1 + 2.2 is a hair above 3.3 and would refuse an exact cap total.
-QTY_DECIMALS = 6
+from asn_module.stock_cap.precision import flt_qty
 
 
 def _as_float(value) -> float:
@@ -12,10 +9,6 @@ def _as_float(value) -> float:
 		return 0.0
 
 
-def _round_qty(value) -> float:
-	return round(_as_float(value), QTY_DECIMALS)
-
-
 def _group_conversion_factor(group: list[Line]) -> float:
 	"""Purchase-to-stock factor when every line in the group shares one. Otherwise 0."""
 	factors = set()
@@ -23,7 +16,7 @@ def _group_conversion_factor(group: list[Line]) -> float:
 		factor = _as_float(getattr(line, "conversion_factor", 1) or 1)
 		if factor <= 0:
 			factor = 1.0
-		factors.add(round(factor, QTY_DECIMALS))
+		factors.add(flt_qty(factor))
 	if len(factors) == 1:
 		return factors.pop()
 	return 0.0
@@ -36,9 +29,9 @@ def evaluate(
 ) -> tuple[list[Breach], dict[tuple[str, str], float]]:
 	"""Decide which (branch, item) groups exceed their maximum.
 
-	Pure: no database access and no frappe imports, so the whole branch matrix is
-	testable without stock ledger fixtures. Every skip here is a documented
-	fail-open rule from the spec.
+	Every skip here is a documented fail-open rule from the spec. Quantities are compared
+	at the Float precision Frappe uses for fields that do not set their own, so a binary
+	sum such as 1.1 + 2.2 still counts as the cap 3.3.
 
 	Returns ``(breaches, accepted)``. ``accepted`` is the incoming quantity, keyed by
 	(branch, item_code), for every group that survived the same filters used to decide
@@ -77,7 +70,7 @@ def evaluate(
 		baseline = on_hand + in_transit + _as_float(consumed.get((branch, item_code)))
 		projected = baseline + incoming
 
-		if _round_qty(projected) <= _round_qty(cap):
+		if flt_qty(projected) <= flt_qty(cap):
 			continue
 
 		breaches.append(
