@@ -611,7 +611,9 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		later = SimpleNamespace(
 			branch=PR_BRANCH,
 			is_return=0,
-			items=[self._receipt_row(warehouse=po_item.warehouse, stock_qty=1, purchase_order_item="OTHER-POI")],
+			items=[
+				self._receipt_row(warehouse=po_item.warehouse, stock_qty=1, purchase_order_item="OTHER-POI")
+			],
 		)
 		self.assertEqual(breaches_for_purchase_receipt(later), [])
 

@@ -108,24 +108,40 @@ def _add_received_qty(asn_item_name: str, delta: float) -> None:
 	)
 
 
-def _record_linked_received_qty(doc, sign: int) -> list[str]:
-	mapping = json.loads(doc.asn_items or "{}")
+def _lines_with_delivered_qty(doc) -> list[tuple]:
+	"""Receipt rows paired with the purchase-UOM quantity each one delivers."""
 	items = getattr(doc, "items", None) or []
 	factors = _po_conversion_factors([getattr(row, "purchase_order_item", None) for row in items])
+	return [
+		(row, _delivered_purchase_qty(row, factors.get(getattr(row, "purchase_order_item", None))))
+		for row in items
+	]
+
+
+def _record_linked_received_qty(doc, sign: int) -> tuple[list[str], bool]:
+	"""Apply delivered qty for mapped rows.
+
+	Returns the mapped ASN Item names, in first-seen order, and whether any quantity was
+	written. Submit uses the names for transitions; cancel refreshes the ASN only when a
+	quantity changed.
+	"""
+	mapping = json.loads(getattr(doc, "asn_items", None) or "{}")
 	received_qty_by_asn_item: dict[str, float] = {}
-	for pr_item in items:
-		row_mapping = mapping.get(str(pr_item.idx)) or {}
-		asn_item_name = row_mapping.get("asn_item_name")
+	mapped_names: dict[str, None] = {}
+	for pr_item, delivered in _lines_with_delivered_qty(doc):
+		asn_item_name = (mapping.get(str(pr_item.idx)) or {}).get("asn_item_name")
 		if not asn_item_name:
 			continue
-		delivered = _delivered_purchase_qty(pr_item, factors.get(getattr(pr_item, "purchase_order_item", None)))
+		mapped_names.setdefault(asn_item_name, None)
 		if delivered:
-			received_qty_by_asn_item[asn_item_name] = received_qty_by_asn_item.get(asn_item_name, 0.0) + delivered
+			received_qty_by_asn_item[asn_item_name] = (
+				received_qty_by_asn_item.get(asn_item_name, 0.0) + delivered
+			)
 
 	for asn_item_name, qty in received_qty_by_asn_item.items():
 		_add_received_qty(asn_item_name, sign * qty)
 
-	return [doc.asn] if received_qty_by_asn_item else []
+	return list(mapped_names), bool(received_qty_by_asn_item)
 
 
 def _record_unlinked_received_qty(doc, sign: int) -> list[str]:
@@ -135,16 +151,12 @@ def _record_unlinked_received_qty(doc, sign: int) -> list[str]:
 	so the linked mapping never runs and ``received_qty`` stays 0. In-transit keeps the
 	full ASN quantity after the goods are already on hand.
 	"""
-	items = getattr(doc, "items", None) or []
-	factors = _po_conversion_factors([getattr(row, "purchase_order_item", None) for row in items])
 	delivered_by_po_item: dict[str, float] = {}
-	for row in items:
+	for row, delivered in _lines_with_delivered_qty(doc):
 		po_item = getattr(row, "purchase_order_item", None)
-		if not po_item:
+		if not po_item or delivered <= 0:
 			continue
-		delivered = _delivered_purchase_qty(row, factors.get(po_item))
-		if delivered > 0:
-			delivered_by_po_item[po_item] = delivered_by_po_item.get(po_item, 0.0) + delivered
+		delivered_by_po_item[po_item] = delivered_by_po_item.get(po_item, 0.0) + delivered
 
 	if not delivered_by_po_item:
 		return []
@@ -213,7 +225,8 @@ def on_purchase_receipt_cancel(doc, method=None):
 	"""
 	del method
 	if getattr(doc, "asn", None):
-		asn_names = _record_linked_received_qty(doc, sign=-1)
+		_mapped, updated = _record_linked_received_qty(doc, sign=-1)
+		asn_names = [doc.asn] if updated else []
 	else:
 		asn_names = _record_unlinked_received_qty(doc, sign=-1)
 	_refresh_asn_receipt_status(asn_names)
@@ -383,36 +396,28 @@ def on_purchase_receipt_submit(doc, method):
 	del method
 
 	if doc.asn:
-		_record_linked_received_qty(doc, sign=1)
+		mapped_names, _updated = _record_linked_received_qty(doc, sign=1)
 	else:
 		_refresh_asn_receipt_status(_record_unlinked_received_qty(doc, sign=1))
 		return
 
 	asn = frappe.get_doc("ASN", doc.asn)
-	asn_items_map = json.loads(getattr(doc, "asn_items", None) or "{}")
-	received_qty_by_asn_item = {}
-	for pr_item in getattr(doc, "items", None) or []:
-		mapping = asn_items_map.get(str(pr_item.idx)) or {}
-		asn_item_name = mapping.get("asn_item_name")
-		if asn_item_name:
-			received_qty_by_asn_item[asn_item_name] = True
-
 	asn.reload()
 	asn.update_receipt_status()
 
-	if not received_qty_by_asn_item:
+	if not mapped_names:
 		return
 
 	asn_item_codes = {
 		row.name: row.item_code
 		for row in frappe.get_all(
 			"ASN Item",
-			filters={"name": ["in", list(received_qty_by_asn_item)]},
+			filters={"name": ["in", mapped_names]},
 			fields=["name", "item_code"],
 		)
 	}
 
-	for asn_item_name in received_qty_by_asn_item:
+	for asn_item_name in mapped_names:
 		emit_asn_item_transition(
 			asn=asn.name,
 			asn_item=asn_item_name,

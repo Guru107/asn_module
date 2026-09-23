@@ -52,20 +52,23 @@ class Breach:
 	conversion_factor: float = 1.0
 
 	@property
-	def allowed_qty(self) -> float:
-		"""Largest additional quantity that would not breach. The only figure suppliers may see.
+	def _headroom(self) -> float:
+		"""Stock units still under the cap, from the baseline evaluate() stored.
 
-		Declare exactly this quantity and it will not be refused, so it must be computed from the
-		exact inputs, not re-derived from a lossy expression. It is ``cap - baseline``, using the
-		``baseline`` evaluate() already had on hand -- never ``projected - incoming``, which
-		round-trips through addition and back and can silently lose a residual smaller than the
-		incoming quantity that absorbed it, certifying a figure that then breaches on re-evaluation.
-
-		Rounded down to the Float precision from System Settings. Rounding up, the way
-		``flt`` stores a field, can certify a quantity that the same precision then refuses.
+		Never ``projected - incoming``: that round-trip can absorb a residual smaller than
+		the incoming quantity and then certify a figure that breaches on re-evaluation.
 		"""
-		headroom = max(self.cap - self.baseline, 0.0)
-		return floor_qty(headroom)
+		return max(self.cap - self.baseline, 0.0)
+
+	@property
+	def allowed_qty(self) -> float:
+		"""Largest additional stock quantity that would not breach. The only figure suppliers may see.
+
+		Declare exactly this quantity and it will not be refused. Floored to the Float precision
+		from System Settings: rounding up, the way ``flt`` stores a field, can certify a quantity
+		that the same precision then refuses.
+		"""
+		return floor_qty(self._headroom)
 
 	@property
 	def allowed_purchase_qty(self) -> float:
@@ -75,5 +78,4 @@ class Breach:
 		to 0, and this falls back to stock units so the figure is not a false purchase qty.
 		"""
 		factor = self.conversion_factor if self.conversion_factor > 0 else 1.0
-		headroom = max(self.cap - self.baseline, 0.0)
-		return floor_qty(headroom / factor)
+		return floor_qty(self._headroom / factor)
