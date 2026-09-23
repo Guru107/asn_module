@@ -207,3 +207,19 @@ class TestASNItemBranchCap(FrappeTestCase):
 
 		persisted_max_qty = frappe.db.get_value("ASN Item Branch Cap", doc.name, "max_qty")
 		self.assertEqual(persisted_max_qty, 0)
+
+	def test_editing_maximum_stock_records_a_version(self):
+		self._configure_branch(BRANCH)
+		doc = _make_cap(BRANCH, ITEM, max_qty=100)
+		frappe.db.delete("Version", {"ref_doctype": doc.doctype, "docname": doc.name})
+
+		doc.max_qty = 40
+		doc.save(ignore_permissions=True, ignore_version=False)
+
+		rows = frappe.get_all(
+			"Version",
+			filters={"ref_doctype": doc.doctype, "docname": doc.name},
+			fields=["data"],
+		)
+		self.assertEqual(len(rows), 1)
+		self.assertIn("max_qty", rows[0].data)
