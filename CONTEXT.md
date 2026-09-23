@@ -41,7 +41,7 @@ The warehouses configured against a Branch whose stock counts toward that branch
 _Avoid_: selected warehouses, configured warehouses
 
 **Maximum Stock**:
-The per-branch ceiling for an item, held in `ASN Item Branch Cap.max_qty`, keyed by (item, branch), and expressed in the item's stock UOM. A single branch may hold up to this quantity; the company-wide total across branches is deliberately uncapped. Zero or an absent row means the item is uncapped.
+The per-branch ceiling for an item, held in `ASN Item Branch Cap.max_qty`, keyed by (item, branch), and expressed in the item's stock UOM. Stock Cap always compares Projected Stock to this stored value. Cap Populate may overwrite `max_qty` from a Sales Schedule; rows it does not write stay manually maintained. Zero or an absent row means the item is uncapped. The company-wide total across branches is deliberately uncapped.
 _Avoid_: max stock, stock limit, cap (unqualified), `Item.custom_max_stock` (retired)
 
 **Projected Stock**:
@@ -63,3 +63,13 @@ _Avoid_: running total, reserved capacity
 **Allowed Qty**:
 The largest additional quantity a line may declare without causing a Breach. The only cap-derived figure disclosed to suppliers; On Hand, In Transit Qty, and Maximum Stock are never shown outside the desk.
 _Avoid_: headroom, remaining capacity, available qty
+
+### Cap Populate
+
+**Cap Populate**:
+The instruction, owned outside this module, that may overwrite a Branch's Maximum Stock from a Sales Schedule. Stock Cap never reads that instruction. The terms it uses are defined in the `cap_populate` glossary.
+_Avoid_: sync caps, generate limits, import caps
+
+**Sales Schedule**:
+The plant-month demand document Cap Populate reads when it writes Maximum Stock. This module does not read it.
+_Avoid_: schedule (unqualified), forecast, plan, Purchase schedule, Selling schedule
