@@ -617,6 +617,112 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		self.assertEqual(breaches_for_purchase_receipt(later), [])
 
+	def test_unlinked_receipt_does_not_fill_a_closed_asn(self):
+		"""A receipt with no ASN link must leave a Closed shipment untouched.
+
+		In-transit already ignores Closed. Filling that shipment anyway keeps the open
+		one fully in transit, and a later receipt is blocked for stock already on hand.
+		"""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Unlinked Closed Tax",
+			item_code=PR_ITEM,
+			qty=15,
+		)
+		po_item = po.items[0]
+		closed = make_test_asn(purchase_order=po, qty=10)
+		closed.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			closed.submit()
+		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
+
+		open_asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
+		open_asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			open_asn.submit()
+
+		self.assertLess(closed.name, open_asn.name)
+		on_purchase_receipt_submit(
+			SimpleNamespace(
+				asn=None,
+				is_return=0,
+				name="PR-UNLINKED-CLOSED",
+				items=[
+					SimpleNamespace(
+						idx=1,
+						qty=PR_MAX_STOCK,
+						stock_qty=PR_MAX_STOCK,
+						rejected_qty=0,
+						conversion_factor=1,
+						purchase_order_item=po_item.name,
+						item_code=PR_ITEM,
+					)
+				],
+			),
+			"on_submit",
+		)
+
+		self.assertEqual(frappe.db.get_value("ASN Item", closed.items[0].name, "received_qty"), 0)
+		self.assertEqual(
+			frappe.db.get_value("ASN Item", open_asn.items[0].name, "received_qty"), PR_MAX_STOCK
+		)
+		later = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			items=[
+				self._receipt_row(warehouse=po_item.warehouse, stock_qty=1, purchase_order_item="OTHER-POI")
+			],
+		)
+		self.assertEqual(breaches_for_purchase_receipt(later), [])
+
+	def test_cancelling_an_unlinked_receipt_does_not_reduce_a_closed_asn(self):
+		"""Cancel reverses the open shipment, not a Closed one this receipt never filled.
+
+		The Closed shipment sorts after the open one and already has received quantity.
+		Walking every submitted line in reverse would take that quantity first.
+		"""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Unlinked Closed Cancel Tax",
+			item_code=PR_ITEM,
+			qty=15,
+		)
+		po_item = po.items[0]
+		open_asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
+		open_asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			open_asn.submit()
+
+		closed = make_test_asn(purchase_order=po, qty=10)
+		closed.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			closed.submit()
+		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
+		frappe.db.set_value("ASN Item", closed.items[0].name, "received_qty", 4, update_modified=False)
+
+		self.assertLess(open_asn.name, closed.name)
+		pr_doc = SimpleNamespace(
+			asn=None,
+			is_return=0,
+			name="PR-UNLINKED-CLOSED-CANCEL",
+			items=[
+				SimpleNamespace(
+					idx=1,
+					qty=PR_MAX_STOCK,
+					stock_qty=PR_MAX_STOCK,
+					rejected_qty=0,
+					conversion_factor=1,
+					purchase_order_item=po_item.name,
+					item_code=PR_ITEM,
+				)
+			],
+		)
+		on_purchase_receipt_submit(pr_doc, "on_submit")
+		on_purchase_receipt_cancel(pr_doc, "on_cancel")
+
+		self.assertEqual(frappe.db.get_value("ASN Item", closed.items[0].name, "received_qty"), 4)
+		self.assertEqual(frappe.db.get_value("ASN Item", open_asn.items[0].name, "received_qty"), 0)
+
 	def test_received_qty_uses_purchase_uom_when_the_receipt_uom_differs(self):
 		po = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,

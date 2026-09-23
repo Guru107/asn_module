@@ -7,6 +7,7 @@ from frappe.utils import flt
 
 from asn_module.handlers.utils import attach_qr_to_doc
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
+from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
 from asn_module.stock_cap.messages import throw_stock_cap_exceeded
 from asn_module.stock_cap.precision import flt_qty
 from asn_module.traceability import emit_asn_item_transition
@@ -150,6 +151,12 @@ def _record_unlinked_received_qty(doc, sign: int) -> list[str]:
 	The standard Purchase Order -> Create -> Purchase Receipt action leaves ``asn`` empty,
 	so the linked mapping never runs and ``received_qty`` stays 0. In-transit keeps the
 	full ASN quantity after the goods are already on hand.
+
+	Filling skips the same statuses in-transit ignores (Received and Closed). A Closed
+	shipment can still have unreceived quantity; recording it there would leave the open
+	shipment in transit. Cancel also skips Closed, so a closed shipment this receipt did
+	not fill is not reduced. It still sees Received: filling an open shipment moves it to
+	Received, and cancel has to reverse that.
 	"""
 	delivered_by_po_item: dict[str, float] = {}
 	for row, delivered in _lines_with_delivered_qty(doc):
@@ -166,7 +173,7 @@ def _record_unlinked_received_qty(doc, sign: int) -> list[str]:
 	placeholders = ", ".join(["%s"] * len(po_items))
 	asn_rows = frappe.db.sql(
 		"""
-		SELECT ai.name, ai.parent, ai.purchase_order_item, ai.qty, ai.received_qty
+		SELECT ai.name, ai.parent, ai.purchase_order_item, ai.qty, ai.received_qty, asn.status
 		FROM `tabASN Item` ai
 		INNER JOIN `tabASN` asn ON asn.name = ai.parent AND asn.docstatus = 1
 		WHERE ai.purchase_order_item IN ("""
@@ -185,6 +192,10 @@ def _record_unlinked_received_qty(doc, sign: int) -> list[str]:
 	parents: set[str] = set()
 	for po_item, delivered in delivered_by_po_item.items():
 		rows = rows_by_po_item.get(po_item) or []
+		# Fill skips Received and Closed. Cancel skips Closed only: the shipment this
+		# receipt filled is Received by the time cancel runs.
+		skipped = EXCLUDED_ASN_STATUSES if sign > 0 else ("Closed",)
+		rows = [row for row in rows if row.status not in skipped]
 		remaining = delivered
 		# Submit fills lines in document order. Cancel subtracts in reverse so a single
 		# receipt restores the lines it filled. Several receipts on one PO item can

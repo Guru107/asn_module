@@ -74,8 +74,11 @@ class Breach:
 	def allowed_purchase_qty(self) -> float:
 		"""``allowed_qty`` in the purchase UOM suppliers type.
 
-		``conversion_factor`` is stock units per purchase unit. A mixed-factor group sets it
-		to 0, and this falls back to stock units so the figure is not a false purchase qty.
+		``conversion_factor`` is the raw stock units per purchase unit. Divide headroom by
+		that factor, then floor to System Settings precision, so typing the result back in
+		and multiplying by the same raw factor still lands inside the cap. A mixed-factor
+		group sets the factor to 0, and this falls back to stock units so the figure is not
+		a false purchase qty.
 		"""
 		factor = self.conversion_factor if self.conversion_factor > 0 else 1.0
 		return floor_qty(self._headroom / factor)

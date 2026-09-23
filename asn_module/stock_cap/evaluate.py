@@ -10,13 +10,18 @@ def _as_float(value) -> float:
 
 
 def _group_conversion_factor(group: list[Line]) -> float:
-	"""Purchase-to-stock factor when every line in the group shares one. Otherwise 0."""
+	"""Purchase-to-stock factor when every line in the group shares one. Otherwise 0.
+
+	The value is the raw Purchase Order factor. Rounding it to System Settings precision
+	before dividing headroom offers a purchase quantity that submit then refuses, because
+	submit multiplies the typed quantity by this raw factor.
+	"""
 	factors = set()
 	for line in group:
 		factor = _as_float(getattr(line, "conversion_factor", 1) or 1)
 		if factor <= 0:
 			factor = 1.0
-		factors.add(flt_qty(factor))
+		factors.add(factor)
 	if len(factors) == 1:
 		return factors.pop()
 	return 0.0

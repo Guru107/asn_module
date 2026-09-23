@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from asn_module.stock_cap.evaluate import evaluate
 from asn_module.stock_cap.models import CapContext, Line
@@ -113,6 +114,24 @@ class TestStockCapEvaluate(unittest.TestCase):
 
 		breaches, _accepted = evaluate([_line(24, conversion_factor=12)], context)
 		self.assertEqual(breaches, [])
+
+	def test_reentering_allowed_purchase_qty_stays_within_cap_for_an_uneven_factor(self):
+		"""Factor 1.3333 and 10 stock units of room, at precision 3, may offer 7.5.
+
+		Dividing by the factor already rounded to 1.333 offers 7.501. Typing that back
+		in multiplies by the raw factor, 7.501 * 1.3333 = 10.001, which the same
+		precision treats as over the cap. The offered purchase quantity times the raw
+		factor must still be accepted.
+		"""
+		factor = 1.3333
+		context = _context(max_stock={(BRANCH, ITEM): 10.0})
+		with patch("asn_module.stock_cap.precision.system_float_precision", return_value=3):
+			breaches, _accepted = evaluate([_line(20, conversion_factor=factor)], context)
+			self.assertEqual(len(breaches), 1)
+			self.assertEqual(breaches[0].allowed_purchase_qty, 7.5)
+
+			reentered, _accepted = evaluate([_line(7.5 * factor, conversion_factor=factor)], context)
+			self.assertEqual(reentered, [])
 
 	def test_allowed_qty_is_zero_when_already_over_cap(self):
 		breaches, _accepted = evaluate([_line(5)], _context(on_hand={(BRANCH, ITEM): 200.0}))
