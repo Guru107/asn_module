@@ -704,33 +704,21 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
 	doc_payload["supplier_invoice_amount"] = header["supplier_invoice_amount"]
 	asn = frappe.get_doc(doc_payload)
 	asn.flags.ignore_permissions = True
-	asn.insert()
+	# Earlier invoice groups in this request are already submitted and must stay.
+	# A savepoint undoes only this draft when submit is refused. PortalValidationError
+	# is rendered as a form error, so the request itself commits; without the rollback
+	# the draft would commit with it and block the invoice number.
+	frappe.db.savepoint("asn_portal_submit")
 	try:
+		asn.insert()
 		asn.submit()
 	except frappe.ValidationError as exc:
-		# The insert above already committed a draft to the DB. PortalValidationError is
-		# caught and rendered as a form error by asn_new.py's get_context -- it never
-		# escapes the request -- so nothing will trigger Frappe's own rollback machinery;
-		# left alone, the request completes normally and the orphaned draft is committed
-		# right along with it. Delete exactly this document rather than rolling back the
-		# whole transaction: a caller may have already done other, unrelated work earlier
-		# in the same transaction (the bulk upload loop submits earlier invoice groups
-		# through this same function before a later group fails) that must not be
-		# discarded just because this one draft was rejected.
-		#
-		# The delete itself can fail -- ASN.on_trash runs
-		# _validate_deletable_against_purchase_receipts, which can throw, and
-		# frappe.delete_doc can raise LinkExistsError independently of that check. Either
-		# one must not replace the original validation error with a raw traceback, which
-		# is exactly the outcome this whole except-branch exists to avoid. Swallow the
-		# cleanup failure (logged, not silent) and always raise the original error below.
 		try:
-			frappe.delete_doc(asn.doctype, asn.name, ignore_permissions=True)
+			frappe.db.rollback(save_point="asn_portal_submit")
 		except Exception:
 			frappe.log_error(
-				title="ASN portal submit: failed to delete orphaned draft",
+				title="ASN portal submit: failed to roll back orphaned draft",
 				message=frappe.get_traceback(),
 			)
-		# Render the block as a field-level portal error rather than a raw traceback.
 		raise PortalValidationError([error_entry(field="items_csv", message=str(exc))]) from exc
 	return asn

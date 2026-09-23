@@ -30,9 +30,21 @@ def _detailed(breach: Breach) -> str:
 
 
 def _redacted(breach: Breach) -> str:
-	return _("Item {0} (rows {1}): you may declare at most {2} more.").format(
+	"""The figure is the total this document may declare, not an amount to add on top.
+
+	When the lines share one conversion factor it is in the purchase UOM the supplier types.
+	A mixed-factor group has no single purchase quantity, so the message says stock UOM.
+	"""
+	rows = ", ".join(str(idx) for idx in breach.row_idxs)
+	if breach.conversion_factor > 0:
+		return _("Item {0} (rows {1}): you may declare at most {2}.").format(
+			breach.item_code,
+			rows,
+			flt(breach.allowed_purchase_qty),
+		)
+	return _("Item {0} (rows {1}): you may declare at most {2} in stock UOM.").format(
 		breach.item_code,
-		", ".join(str(idx) for idx in breach.row_idxs),
+		rows,
 		flt(breach.allowed_qty),
 	)
 

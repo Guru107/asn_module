@@ -127,6 +127,32 @@ class TestStockCapFetch(FrappeTestCase):
 		self._make_settings()
 		self.assertEqual(fetch_cap_context([self._line()]).max_stock[(BRANCH, ITEM)], 100.0)
 
+	def test_duplicate_cap_rows_use_the_tighter_ceiling(self):
+		self._make_settings()
+		other = "_Test Fetch Item Duplicate"
+		if not frappe.db.exists("Item", other):
+			frappe.get_doc(
+				{
+					"doctype": "Item",
+					"item_code": other,
+					"item_name": other,
+					"item_group": frappe.db.get_value("Item Group", {}, "name"),
+					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
+				}
+			).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{"doctype": "ASN Item Branch Cap", "branch": BRANCH, "item": other, "max_qty": 4}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"ASN Item Branch Cap",
+			{"branch": BRANCH, "item": other},
+			"item",
+			ITEM,
+			update_modified=False,
+		)
+
+		self.assertEqual(fetch_cap_context([self._line()]).max_stock[(BRANCH, ITEM)], 4.0)
+
 	def test_cap_row_for_another_branch_is_not_returned(self):
 		self._make_settings()
 		other = "_Test Fetch Branch Other"

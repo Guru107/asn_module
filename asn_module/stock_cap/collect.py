@@ -49,7 +49,7 @@ def collect_lines_from_asn_rows(rows: list[dict]) -> list[Line]:
 	po_item_rows = frappe.get_all(
 		"Purchase Order Item",
 		filters={"name": ["in", po_item_names]},
-		fields=["name", "warehouse", "conversion_factor"],
+		fields=["name", "item_code", "warehouse", "conversion_factor"],
 		limit_page_length=0,
 	)
 	po_item_by_name = {row.name: row for row in po_item_rows}
@@ -65,13 +65,15 @@ def collect_lines_from_asn_rows(rows: list[dict]) -> list[Line]:
 		if not warehouse:
 			continue
 
+		factor = _conversion_factor(po_item.conversion_factor)
 		lines.append(
 			Line(
 				branch=purchase_order.branch,
-				item_code=row["item_code"],
+				item_code=po_item.item_code or row["item_code"],
 				warehouse=warehouse,
-				stock_qty=flt(row["qty"]) * _conversion_factor(po_item.conversion_factor),
+				stock_qty=flt(row["qty"]) * factor,
 				row_idx=int(row.get("idx") or 0),
+				conversion_factor=factor,
 			)
 		)
 
@@ -120,6 +122,7 @@ def collect_lines_from_purchase_receipt(doc) -> list[Line]:
 
 	lines = []
 	for row in doc.items or []:
+		factor = _conversion_factor(row.conversion_factor)
 		if flt(row.stock_qty) > 0 and row.warehouse:
 			lines.append(
 				Line(
@@ -128,10 +131,11 @@ def collect_lines_from_purchase_receipt(doc) -> list[Line]:
 					warehouse=row.warehouse,
 					stock_qty=flt(row.stock_qty),
 					row_idx=int(row.idx or 0),
+					conversion_factor=factor,
 				)
 			)
 
-		rejected_stock_qty = flt(row.rejected_qty) * _conversion_factor(row.conversion_factor)
+		rejected_stock_qty = flt(row.rejected_qty) * factor
 		if rejected_stock_qty > 0 and row.rejected_warehouse:
 			lines.append(
 				Line(
@@ -140,6 +144,7 @@ def collect_lines_from_purchase_receipt(doc) -> list[Line]:
 					warehouse=row.rejected_warehouse,
 					stock_qty=rejected_stock_qty,
 					row_idx=int(row.idx or 0),
+					conversion_factor=factor,
 				)
 			)
 

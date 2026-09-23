@@ -140,6 +140,8 @@ class ASN(WebsiteGenerator):
 			status = "Received"
 		elif any_received:
 			status = "Partially Received"
+		elif status in ("Received", "Partially Received"):
+			status = "Submitted"
 
 		for item in self.items:
 			frappe.db.set_value(
@@ -258,7 +260,14 @@ class ASN(WebsiteGenerator):
 			)
 
 	def _warn_stock_cap(self):
-		"""Surface cap breaches on save without blocking. Drafts must always be saveable."""
+		"""Surface cap breaches on save without blocking. Drafts must always be saveable.
+
+		Submit runs validate and then before_submit. The block is the submit message;
+		the orange warning would only repeat it.
+		"""
+		if getattr(self, "_action", None) == "submit":
+			return
+
 		breaches = breaches_for_asn_doc(self)
 		if not breaches:
 			return

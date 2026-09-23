@@ -121,7 +121,20 @@ def _fetch_max_stock(branches: list[str], item_codes: list[str]) -> dict[tuple[s
 		fields=["branch", "item", "max_qty"],
 		limit_page_length=0,
 	)
-	return {(row.branch, row.item): flt(row.max_qty) for row in rows}
+	# A Branch or Item rename can leave two rows for one pair. The name is no longer the
+	# key, and the composite index is not unique. Prefer the tighter positive ceiling so
+	# the higher one cannot silently win. Zero still means uncapped, so a zero row does
+	# not erase a real ceiling.
+	ceilings: dict[tuple[str, str], float] = {}
+	for row in rows:
+		key = (row.branch, row.item)
+		qty = flt(row.max_qty)
+		if key not in ceilings:
+			ceilings[key] = qty
+			continue
+		positives = [value for value in (ceilings[key], qty) if value > 0]
+		ceilings[key] = min(positives) if positives else 0.0
+	return ceilings
 
 
 def _fetch_on_hand(
@@ -350,11 +363,12 @@ def _in_transit_leg(
 	item_placeholders: str,
 	warehouse_filter: str,
 ) -> str:
+	"""One UNION leg. The item is the Purchase Order Item's code, so a mismatched ASN item code still counts."""
 	return (
 		"""
 		SELECT
 			ai.purchase_order_item AS purchase_order_item,
-			ai.item_code AS item_code,
+			poi.item_code AS item_code,
 			"""
 		+ warehouse_expr
 		+ """ AS warehouse,
@@ -365,7 +379,7 @@ def _in_transit_leg(
 		"""
 		+ joins
 		+ """
-		WHERE ai.item_code IN ("""
+		WHERE poi.item_code IN ("""
 		+ item_placeholders
 		+ """)
 			"""

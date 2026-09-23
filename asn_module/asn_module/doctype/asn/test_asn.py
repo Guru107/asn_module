@@ -819,6 +819,7 @@ class TestASNStockCap(FrappeTestCase):
 		with patch("asn_module.asn_module.doctype.asn.asn.breaches_for_asn_doc", return_value=[]):
 			asn.insert()
 
+		frappe.local.message_log = []
 		with patch(
 			"asn_module.asn_module.doctype.asn.asn.breaches_for_asn_doc",
 			return_value=[self._breach()],
@@ -828,6 +829,8 @@ class TestASNStockCap(FrappeTestCase):
 
 		self.assertIn("WIDGET", str(ctx.exception))
 		self.assertEqual(frappe.db.get_value("ASN", asn.name, "docstatus"), 0)
+		messages = " ".join(str(entry) for entry in frappe.local.message_log or [])
+		self.assertNotIn("Stock Cap Warning", messages)
 
 	def test_save_warns_but_succeeds_when_cap_is_breached(self):
 		asn = make_test_asn(qty=5)

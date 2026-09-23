@@ -19,8 +19,21 @@ def _context(**overrides) -> CapContext:
 	return CapContext(**defaults)
 
 
-def _line(qty: float, idx: int = 1, warehouse: str = WH, branch: str = BRANCH) -> Line:
-	return Line(branch=branch, item_code=ITEM, warehouse=warehouse, stock_qty=qty, row_idx=idx)
+def _line(
+	qty: float,
+	idx: int = 1,
+	warehouse: str = WH,
+	branch: str = BRANCH,
+	conversion_factor: float = 1.0,
+) -> Line:
+	return Line(
+		branch=branch,
+		item_code=ITEM,
+		warehouse=warehouse,
+		stock_qty=qty,
+		row_idx=idx,
+		conversion_factor=conversion_factor,
+	)
 
 
 class TestStockCapEvaluate(unittest.TestCase):
@@ -40,6 +53,12 @@ class TestStockCapEvaluate(unittest.TestCase):
 
 	def test_exactly_at_cap_is_allowed(self):
 		breaches, _accepted = evaluate([_line(80)], _context(on_hand={(BRANCH, ITEM): 20.0}))
+		self.assertEqual(breaches, [])
+
+	def test_binary_float_sum_that_lands_on_the_cap_is_allowed(self):
+		"""1.1 + 2.2 is 3.3000000000000003 in binary floats, which is still the cap 3.3."""
+		context = _context(max_stock={(BRANCH, ITEM): 3.3}, on_hand={(BRANCH, ITEM): 1.1})
+		breaches, _accepted = evaluate([_line(2.2)], context)
 		self.assertEqual(breaches, [])
 
 	def test_incoming_alone_breaches_cap(self):
@@ -84,6 +103,16 @@ class TestStockCapEvaluate(unittest.TestCase):
 	def test_allowed_qty_is_remaining_headroom(self):
 		breaches, _accepted = evaluate([_line(30)], _context(on_hand={(BRANCH, ITEM): 80.0}))
 		self.assertEqual(breaches[0].allowed_qty, 20.0)
+
+	def test_allowed_purchase_qty_is_stock_headroom_divided_by_conversion_factor(self):
+		"""Suppliers type the purchase UOM. A factor of 12 and 24 stock units of headroom is 2."""
+		context = _context(max_stock={(BRANCH, ITEM): 24.0})
+		breaches, _accepted = evaluate([_line(36, conversion_factor=12)], context)
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].allowed_purchase_qty, 2.0)
+
+		breaches, _accepted = evaluate([_line(24, conversion_factor=12)], context)
+		self.assertEqual(breaches, [])
 
 	def test_allowed_qty_is_zero_when_already_over_cap(self):
 		breaches, _accepted = evaluate([_line(5)], _context(on_hand={(BRANCH, ITEM): 200.0}))

@@ -1,11 +1,32 @@
 from asn_module.stock_cap.models import Breach, CapContext, Line
 
+# Stock quantities are compared at 6 decimal places, the same scale allowed_qty floors to.
+# A raw binary sum such as 1.1 + 2.2 is a hair above 3.3 and would refuse an exact cap total.
+QTY_DECIMALS = 6
+
 
 def _as_float(value) -> float:
 	try:
 		return float(value or 0)
 	except (TypeError, ValueError):
 		return 0.0
+
+
+def _round_qty(value) -> float:
+	return round(_as_float(value), QTY_DECIMALS)
+
+
+def _group_conversion_factor(group: list[Line]) -> float:
+	"""Purchase-to-stock factor when every line in the group shares one. Otherwise 0."""
+	factors = set()
+	for line in group:
+		factor = _as_float(getattr(line, "conversion_factor", 1) or 1)
+		if factor <= 0:
+			factor = 1.0
+		factors.add(round(factor, QTY_DECIMALS))
+	if len(factors) == 1:
+		return factors.pop()
+	return 0.0
 
 
 def evaluate(
@@ -56,7 +77,7 @@ def evaluate(
 		baseline = on_hand + in_transit + _as_float(consumed.get((branch, item_code)))
 		projected = baseline + incoming
 
-		if projected <= cap:
+		if _round_qty(projected) <= _round_qty(cap):
 			continue
 
 		breaches.append(
@@ -70,6 +91,7 @@ def evaluate(
 				incoming=incoming,
 				projected=projected,
 				cap=cap,
+				conversion_factor=_group_conversion_factor(group),
 			)
 		)
 

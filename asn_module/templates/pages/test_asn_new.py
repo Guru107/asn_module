@@ -937,7 +937,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 		)
 		with (
 			patch("asn_module.templates.pages.asn_new.frappe.get_doc", return_value=fake_asn),
-			patch("asn_module.templates.pages.asn_new_services.frappe.delete_doc") as delete_doc,
+			patch("asn_module.templates.pages.asn_new_services.frappe.db.rollback") as rollback,
 		):
 			with self.assertRaises(PortalValidationError) as ctx:
 				asn_new._insert_and_submit_asn(
@@ -953,15 +953,12 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 		self.assertEqual(ctx.exception.errors[0]["field"], "items_csv")
 		self.assertIn("Item ITEM-001: stock cap breached", ctx.exception.errors[0]["message"])
-		delete_doc.assert_called_once_with("ASN", "ASN-FAKE-0001", ignore_permissions=True)
+		rollback.assert_called_once_with(save_point="asn_portal_submit")
 
-	def test_insert_and_submit_asn_raises_original_error_when_cleanup_delete_fails(self):
-		"""The delete in the except branch is itself fallible -- ASN.on_trash validates
-		against linked Purchase Receipts and frappe.delete_doc can raise LinkExistsError
-		independently. Either must not replace the original validation error with a raw
-		traceback: that is exactly the outcome the surrounding except-branch exists to
-		prevent. The caller must still see the original PortalValidationError, and the
-		cleanup failure must be logged rather than swallowed silently.
+	def test_insert_and_submit_asn_raises_original_error_when_rollback_fails(self):
+		"""Rolling the draft back is itself fallible. That failure must not replace the
+		original validation error with a raw traceback. The caller still sees the portal
+		error, and the rollback failure is logged.
 		"""
 
 		def _raise_on_submit():
@@ -977,9 +974,9 @@ class TestASNNewPortalPage(FrappeTestCase):
 		with (
 			patch("asn_module.templates.pages.asn_new.frappe.get_doc", return_value=fake_asn),
 			patch(
-				"asn_module.templates.pages.asn_new_services.frappe.delete_doc",
-				side_effect=frappe.LinkExistsError("linked Purchase Receipt exists"),
-			) as delete_doc,
+				"asn_module.templates.pages.asn_new_services.frappe.db.rollback",
+				side_effect=frappe.ValidationError("savepoint missing"),
+			) as rollback,
 			patch("asn_module.templates.pages.asn_new_services.frappe.log_error") as log_error,
 		):
 			with self.assertRaises(PortalValidationError) as ctx:
@@ -996,7 +993,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 		self.assertEqual(ctx.exception.errors[0]["field"], "items_csv")
 		self.assertIn("Item ITEM-001: stock cap breached", ctx.exception.errors[0]["message"])
-		delete_doc.assert_called_once_with("ASN", "ASN-FAKE-0001", ignore_permissions=True)
+		rollback.assert_called_once_with(save_point="asn_portal_submit")
 		log_error.assert_called_once()
 
 	def test_request_supplier_invoice_amount_valid(self):

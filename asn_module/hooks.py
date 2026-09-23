@@ -160,6 +160,7 @@ doc_events = {
 	"Purchase Receipt": {
 		"before_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_before_submit",
 		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
+		"on_cancel": "asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",
 		"on_trash": "asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
 	},
 	"Quality Inspection": {

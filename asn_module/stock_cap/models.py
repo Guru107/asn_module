@@ -11,6 +11,7 @@ class Line:
 	warehouse: str
 	stock_qty: float
 	row_idx: int
+	conversion_factor: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class Breach:
 	incoming: float
 	projected: float
 	cap: float
+	conversion_factor: float = 1.0
 
 	@property
 	def allowed_qty(self) -> float:
@@ -64,3 +66,14 @@ class Breach:
 		"""
 		headroom = max(self.cap - self.baseline, 0.0)
 		return math.floor(headroom * 1_000_000) / 1_000_000
+
+	@property
+	def allowed_purchase_qty(self) -> float:
+		"""``allowed_qty`` in the purchase UOM suppliers type.
+
+		``conversion_factor`` is stock units per purchase unit. A mixed-factor group sets it
+		to 0, and this falls back to stock units so the figure is not a false purchase qty.
+		"""
+		factor = self.conversion_factor if self.conversion_factor > 0 else 1.0
+		headroom = max(self.cap - self.baseline, 0.0)
+		return math.floor((headroom / factor) * 1_000_000) / 1_000_000

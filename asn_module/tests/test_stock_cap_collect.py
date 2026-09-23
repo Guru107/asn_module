@@ -291,3 +291,24 @@ class TestStockCapCollectASN(FrappeTestCase):
 		]
 
 		self.assertEqual(collect_lines_from_asn_rows(rows), [])
+
+	def test_line_item_code_comes_from_the_purchase_order_item(self):
+		branch = _ensure_branch("_Test Stock Cap Collect Branch")
+		purchase_order = _create_purchase_order(qty=10)
+		po_item = purchase_order.items[0]
+		frappe.db.set_value("Purchase Order", purchase_order.name, "branch", branch)
+
+		rows = [
+			{
+				"idx": 1,
+				"purchase_order": purchase_order.name,
+				"purchase_order_item": po_item.name,
+				"item_code": "NOT-THE-PO-ITEM",
+				"qty": 2.0,
+			}
+		]
+
+		lines = collect_lines_from_asn_rows(rows)
+
+		self.assertEqual(len(lines), 1)
+		self.assertEqual(lines[0].item_code, po_item.item_code)

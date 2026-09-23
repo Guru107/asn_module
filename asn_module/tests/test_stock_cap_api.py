@@ -12,7 +12,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
 )
-from asn_module.handlers.purchase_receipt import on_purchase_receipt_submit
+from asn_module.handlers.purchase_receipt import on_purchase_receipt_cancel, on_purchase_receipt_submit
 from asn_module.stock_cap.api import breaches_for_asn_rows, breaches_for_purchase_receipt
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.utils.permissions import get_accessible_doc
@@ -573,3 +573,128 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 
 		self.assertEqual(breaches_for_purchase_receipt(doc), [])
+
+	def test_unlinked_receipt_submit_drains_in_transit(self):
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Unlinked Drain Tax",
+			item_code=PR_ITEM,
+			qty=10,
+		)
+		po_item = po.items[0]
+		asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		on_purchase_receipt_submit(
+			SimpleNamespace(
+				asn=None,
+				is_return=0,
+				name="PR-UNLINKED-DRAIN",
+				items=[
+					SimpleNamespace(
+						idx=1,
+						qty=PR_MAX_STOCK,
+						stock_qty=PR_MAX_STOCK,
+						rejected_qty=0,
+						conversion_factor=1,
+						purchase_order_item=po_item.name,
+						item_code=PR_ITEM,
+					)
+				],
+			),
+			"on_submit",
+		)
+
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), PR_MAX_STOCK)
+		later = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			items=[self._receipt_row(warehouse=po_item.warehouse, stock_qty=1, purchase_order_item="OTHER-POI")],
+		)
+		self.assertEqual(breaches_for_purchase_receipt(later), [])
+
+	def test_received_qty_uses_purchase_uom_when_the_receipt_uom_differs(self):
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API UOM Tax",
+			item_code=PR_ITEM,
+			qty=24,
+		)
+		po_item = po.items[0]
+		frappe.db.set_value("Purchase Order Item", po_item.name, "conversion_factor", 1)
+		asn = make_test_asn(purchase_order=po, qty=24)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		with (
+			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
+		):
+			on_purchase_receipt_submit(
+				SimpleNamespace(
+					asn=asn.name,
+					is_return=0,
+					name="PR-UOM-DRAIN",
+					asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
+					items=[
+						SimpleNamespace(
+							idx=1,
+							qty=2,
+							stock_qty=24,
+							rejected_qty=0,
+							conversion_factor=12,
+							purchase_order_item=po_item.name,
+							item_code=PR_ITEM,
+						)
+					],
+				),
+				"on_submit",
+			)
+
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 24)
+
+	def test_cancelling_a_receipt_puts_the_shipment_back_in_transit(self):
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Cancel Tax",
+			item_code=PR_ITEM,
+			qty=10,
+		)
+		asn = make_test_asn(purchase_order=po, qty=10)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		pr_doc = SimpleNamespace(
+			asn=asn.name,
+			is_return=0,
+			name="PR-CANCEL-DRAIN",
+			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, qty=10, rejected_qty=0, item_code=PR_ITEM)],
+		)
+		with (
+			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
+		):
+			on_purchase_receipt_submit(pr_doc, "on_submit")
+
+		asn.reload()
+		self.assertEqual(asn.status, "Received")
+		on_purchase_receipt_cancel(pr_doc, "on_cancel")
+
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 0)
+		asn.reload()
+		self.assertEqual(asn.status, "Submitted")
+		later = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			items=[self._receipt_row(warehouse=po.items[0].warehouse, stock_qty=1)],
+		)
+		self.assertEqual(len(breaches_for_purchase_receipt(later)), 1)
