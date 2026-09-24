@@ -1,17 +1,24 @@
+import json
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, nowdate, today
+from frappe.utils import add_days, flt, nowdate, today
 
 from asn_module.asn_module.doctype.asn.asn import (
 	get_item_transition_summary,
 	get_po_items,
 	get_purchase_order_items,
 )
-from asn_module.templates.pages.asn_new_services import fetch_purchase_order_items
+from asn_module.templates.pages.asn_new_services import (
+	ParsedBulkRow,
+	PortalValidationError,
+	create_bulk_asns_for_supplier,
+	fetch_purchase_order_items,
+)
+from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import (
 	TEST_COMPANY_NAME,
 	before_tests,
@@ -495,7 +502,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		with (
 			patch("asn_module.asn_module.doctype.asn.asn.frappe.get_all", return_value=[]),
-			patch("asn_module.asn_module.doctype.asn.asn._get_shipped_qty_by_po_item", return_value={}),
+			patch("asn_module.asn_module.doctype.asn.asn._unreceived_qty_by_po_item", return_value={}),
 		):
 			asn._validate_po_qty()
 
@@ -806,6 +813,471 @@ class TestASN(FrappeTestCase):
 			self.assertRaises(frappe.PermissionError),
 		):
 			get_item_transition_summary("ASN-0001")
+
+
+class TestRemainingQtyAfterReturn(FrappeTestCase):
+	"""A return frees further Shipped Qty on the same Purchase Order line.
+
+	The seam is saving an ASN, plus the quantity the desk picker and the supplier
+	portal offer. Over-receipt allowance stays at zero.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		before_tests()
+		disable_hsn_validation()
+		super().setUpClass()
+
+	def test_a_return_of_10_leaves_remaining_qty_at_10_and_refuses_11(self):
+		po, asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+
+		self.assertEqual(asn.status, "Received")
+		self.assertEqual(asn.items[0].received_qty, 100)
+		self.assertEqual(self._offered_qty(po), 10)
+		self.assertEqual(self._portal_remaining(po), 10)
+		self.assertEqual(self._portal_search_qty(po), 10)
+
+		refused = make_test_asn(purchase_order=po, qty=11)
+		with self.assertRaises(frappe.ValidationError) as raised:
+			refused.insert(ignore_permissions=True)
+
+		message = str(raised.exception)
+		self.assertIn("Shipped qty 11.0 exceeds remaining PO qty 10.0", message)
+
+		allowed = make_test_asn(purchase_order=po, qty=10)
+		allowed.insert(ignore_permissions=True)
+
+	def test_picker_and_portal_hide_the_line_when_remaining_qty_is_zero(self):
+		po = self._submitted_purchase_order(qty=100)
+		asn = make_test_asn(purchase_order=po, qty=100)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+		self._purchase_receipt(po, asn, qty=100)
+
+		self.assertEqual(get_purchase_order_items(po.name), [])
+		self.assertEqual(self._portal_remaining(po), 0)
+
+		open_po = self._submitted_purchase_order(qty=10)
+		make_test_asn(purchase_order=open_po, qty=10).insert(ignore_permissions=True)
+		self.assertEqual(get_purchase_order_items(open_po.name), [])
+		self.assertEqual(self._portal_remaining(open_po), 0)
+		self.assertEqual(self._portal_search_qty(open_po), 0)
+
+	def test_submit_refuses_again_after_the_return_is_cancelled(self):
+		po, asn, purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		draft = make_test_asn(purchase_order=po, qty=10)
+		draft.insert(ignore_permissions=True)
+
+		purchase_return.cancel()
+		po.reload()
+		asn.reload()
+
+		self.assertEqual(flt(po.items[0].received_qty), 100)
+		self.assertEqual(asn.status, "Received")
+		self.assertEqual(asn.items[0].received_qty, 100)
+		with self.assertRaises(frappe.ValidationError) as saved:
+			draft.save()
+		self.assertIn("exceeds remaining PO qty", str(saved.exception))
+		draft.reload()
+		with self.assertRaises(frappe.ValidationError) as submitted:
+			draft.submit()
+		self.assertIn("exceeds remaining PO qty", str(submitted.exception))
+
+	def test_a_draft_and_the_unreceived_part_of_an_open_shipment_consume_remaining_qty(self):
+		po = self._submitted_purchase_order(qty=10)
+		make_test_asn(purchase_order=po, qty=6).insert(ignore_permissions=True)
+		self.assertEqual(self._offered_qty(po), 4)
+		with self.assertRaises(frappe.ValidationError):
+			make_test_asn(purchase_order=po, qty=5).insert(ignore_permissions=True)
+
+		open_po = self._submitted_purchase_order(qty=100)
+		shipment = make_test_asn(purchase_order=open_po, qty=100)
+		shipment.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			shipment.submit()
+		self._purchase_receipt(open_po, shipment, qty=80)
+
+		self.assertEqual(self._offered_qty(open_po), 0)
+		with self.assertRaises(frappe.ValidationError):
+			make_test_asn(purchase_order=open_po, qty=1).insert(ignore_permissions=True)
+
+	def test_saving_an_existing_asn_does_not_count_its_own_shipped_qty_twice(self):
+		po = self._submitted_purchase_order(qty=10)
+		draft = make_test_asn(purchase_order=po, qty=6)
+		draft.insert(ignore_permissions=True)
+
+		draft.items[0].qty = 10
+		draft.save()
+
+		self.assertEqual(flt(draft.items[0].qty), 10)
+		self.assertEqual(self._offered_qty(po), 0)
+
+	def test_saving_a_partly_received_asn_does_not_count_its_receipt_twice(self):
+		po = self._submitted_purchase_order(qty=100)
+		draft = make_test_asn(purchase_order=po, qty=100)
+		draft.insert(ignore_permissions=True)
+		frappe.db.set_value("Purchase Order Item", po.items[0].name, "received_qty", 80)
+		draft.items[0].received_qty = 80
+
+		draft.save()
+		self.assertEqual(flt(draft.items[0].qty), 100)
+
+		draft.items[0].qty = 101
+		with self.assertRaises(frappe.ValidationError) as raised:
+			draft.save()
+		self.assertIn("Shipped qty 101", str(raised.exception))
+		self.assertIn("remaining PO qty 100", str(raised.exception))
+
+	def test_two_asn_lines_for_one_purchase_order_item_are_summed(self):
+		po = self._submitted_purchase_order(qty=10)
+		over = make_test_asn_with_two_items(purchase_order=po, qty=6)
+		with self.assertRaises(frappe.ValidationError) as raised:
+			over.insert(ignore_permissions=True)
+		self.assertIn("Shipped qty 12.0 exceeds remaining PO qty 10.0", str(raised.exception))
+
+		fitting = make_test_asn_with_two_items(purchase_order=po, qty=4)
+		fitting.items[1].qty = 6
+		fitting.insert(ignore_permissions=True)
+		self.assertEqual(self._offered_qty(po), 0)
+
+	def test_a_closed_shortfall_can_be_declared_again_and_an_unreceipted_close_frees_the_order(self):
+		po = self._submitted_purchase_order(qty=100)
+		shipment = make_test_asn(purchase_order=po, qty=100)
+		shipment.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			shipment.submit()
+		self._purchase_receipt(po, shipment, qty=80)
+		frappe.db.set_value("ASN", shipment.name, "status", "Closed", update_modified=False)
+
+		self.assertEqual(self._offered_qty(po), 20)
+		make_test_asn(purchase_order=po, qty=20).insert(ignore_permissions=True)
+		with self.assertRaises(frappe.ValidationError):
+			make_test_asn(purchase_order=po, qty=1).insert(ignore_permissions=True)
+
+		open_po = self._submitted_purchase_order(qty=100)
+		closed = make_test_asn(purchase_order=open_po, qty=100)
+		closed.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			closed.submit()
+		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
+
+		self.assertEqual(self._offered_qty(open_po), 100)
+		make_test_asn(purchase_order=open_po, qty=100).insert(ignore_permissions=True)
+
+	def test_an_unlinked_receipt_and_return_leave_remaining_qty_at_10(self):
+		po = self._submitted_purchase_order(qty=100)
+		receipt = self._purchase_receipt(po, None, qty=100)
+		self._purchase_return(receipt, qty=10)
+
+		self.assertEqual(self._offered_qty(po), 10)
+		self.assertEqual(self._portal_remaining(po), 10)
+		with self.assertRaises(frappe.ValidationError):
+			make_test_asn(purchase_order=po, qty=11).insert(ignore_permissions=True)
+		make_test_asn(purchase_order=po, qty=10).insert(ignore_permissions=True)
+
+	def test_rejected_quantity_consumes_remaining_qty_until_it_is_returned(self):
+		po = self._submitted_purchase_order(qty=100)
+		receipt = self._purchase_receipt(po, None, qty=90, rejected_qty=10)
+		po.reload()
+		self.assertEqual(flt(po.items[0].received_qty), 100)
+		self.assertEqual(self._offered_qty(po), 0)
+		with self.assertRaises(frappe.ValidationError):
+			make_test_asn(purchase_order=po, qty=10).insert(ignore_permissions=True)
+
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
+			make_purchase_return_against_rejected_warehouse,
+		)
+
+		rejected_return = make_purchase_return_against_rejected_warehouse(receipt.name)
+		self._submit_purchase_receipt(rejected_return)
+		po.reload()
+		self.assertEqual(flt(po.items[0].received_qty), 90)
+		self.assertEqual(self._offered_qty(po), 10)
+
+	def test_a_stock_updating_purchase_invoice_consumes_remaining_qty(self):
+		from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_invoice
+
+		po = self._submitted_purchase_order(qty=100)
+		invoice = make_purchase_invoice(po.name)
+		invoice.update_stock = 1
+		invoice.insert(ignore_permissions=True)
+		invoice.submit()
+		po.reload()
+
+		self.assertEqual(flt(po.items[0].received_qty), 100)
+		self.assertEqual(self._offered_qty(po), 0)
+		with self.assertRaises(frappe.ValidationError):
+			make_test_asn(purchase_order=po, qty=1).insert(ignore_permissions=True)
+
+	def test_a_stock_purchase_invoice_consumes_an_open_shipment_once(self):
+		from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_invoice
+
+		po = self._submitted_purchase_order(qty=100)
+		shipment = make_test_asn(purchase_order=po, qty=40)
+		shipment.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			shipment.submit()
+
+		invoice = make_purchase_invoice(po.name)
+		invoice.update_stock = 1
+		invoice.items[0].qty = 30
+		invoice.insert(ignore_permissions=True)
+		invoice.submit()
+		shipment.reload()
+
+		self.assertEqual(flt(shipment.items[0].received_qty), 30)
+		self.assertEqual(self._offered_qty(po), 60)
+		invoice.cancel()
+		shipment.reload()
+		po.reload()
+		self.assertEqual(flt(po.items[0].received_qty), 0)
+		self.assertEqual(flt(shipment.items[0].received_qty), 0)
+		self.assertEqual(self._offered_qty(po), 60)
+
+		invoice = make_purchase_invoice(po.name)
+		invoice.update_stock = 1
+		invoice.items[0].qty = 30
+		invoice.insert(ignore_permissions=True)
+		invoice.submit()
+		self.assertEqual(self._offered_qty(po), 60)
+		make_test_asn(purchase_order=po, qty=60).insert(ignore_permissions=True)
+		with self.assertRaises(frappe.ValidationError):
+			make_test_asn(purchase_order=po, qty=1).insert(ignore_permissions=True)
+
+	def test_a_stock_purchase_invoice_in_another_uom_records_purchase_uom(self):
+		from asn_module.handlers.purchase_invoice import on_purchase_invoice_submit
+
+		po = self._purchase_order_in_boxes(qty=10, conversion_factor=12)
+		shipment = make_test_asn(purchase_order=po, qty=10)
+		shipment.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			shipment.submit()
+
+		class _Invoice:
+			def __init__(self):
+				self.update_stock = 1
+				self.is_return = 0
+				self.items = [
+					frappe._dict(
+						purchase_receipt=None,
+						po_detail=po.items[0].name,
+						qty=48,
+						stock_qty=48,
+						conversion_factor=1,
+						rejected_qty=0,
+					)
+				]
+
+			def get(self, key, default=None):
+				return getattr(self, key, default)
+
+		on_purchase_invoice_submit(_Invoice())
+		frappe.db.set_value("Purchase Order Item", po.items[0].name, "received_qty", 4)
+		shipment.reload()
+
+		self.assertEqual(flt(shipment.items[0].received_qty), 4)
+		self.assertEqual(self._offered_qty(po), 0)
+
+	def test_a_closed_or_on_hold_purchase_order_accepts_no_shipped_qty(self):
+		for status in ("Closed", "On Hold"):
+			po = self._submitted_purchase_order(qty=10)
+			frappe.db.set_value("Purchase Order", po.name, "status", status, update_modified=False)
+
+			self.assertEqual(self._offered_qty(po), 0)
+			self.assertEqual(self._portal_remaining(po), 0)
+			with self.assertRaises(frappe.ValidationError) as raised:
+				make_test_asn(purchase_order=po, qty=1).insert(ignore_permissions=True)
+			self.assertIn("exceeds remaining PO qty 0", str(raised.exception))
+
+	def test_a_conversion_factor_other_than_one_still_uses_purchase_uom(self):
+		po = self._purchase_order_in_boxes(qty=10, conversion_factor=12)
+		self._purchase_receipt(po, None, qty=4)
+		po.reload()
+
+		self.assertEqual(flt(po.items[0].received_qty), 4)
+		self.assertEqual(flt(po.items[0].conversion_factor), 12)
+		self.assertEqual(self._offered_qty(po), 6)
+		with self.assertRaises(frappe.ValidationError) as raised:
+			make_test_asn(purchase_order=po, qty=7).insert(ignore_permissions=True)
+		self.assertIn("exceeds remaining PO qty 6", str(raised.exception))
+		make_test_asn(purchase_order=po, qty=6).insert(ignore_permissions=True)
+
+	def test_a_later_bulk_row_sees_what_an_earlier_row_took_after_a_return(self):
+		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		dates = get_fiscal_year_test_dates()
+		rows = [
+			self._bulk_row(po, row_number=1, invoice_no="REM-RET-1", qty=6, dates=dates),
+			self._bulk_row(po, row_number=2, invoice_no="REM-RET-2", qty=5, dates=dates),
+			self._bulk_row(po, row_number=3, invoice_no="REM-RET-3", qty=4, dates=dates),
+		]
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				return_value=([], {}),
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=po.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 2: qty 5 exceeds remaining PO qty 4.0.", messages)
+		self.assertFalse(any(message.startswith("Row 3:") for message in messages))
+
+	def _submitted_purchase_order(self, *, qty: float):
+		return build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Remaining Qty Return Tax",
+			qty=qty,
+		)
+
+	def _accept_and_return(self, *, ordered: float, accepted: float, returned: float):
+		po = self._submitted_purchase_order(qty=ordered)
+		asn = make_test_asn(purchase_order=po, qty=accepted)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		receipt = self._purchase_receipt(po, asn, qty=accepted)
+		purchase_return = self._purchase_return(receipt, qty=returned)
+		asn.reload()
+		po.reload()
+		self.assertEqual(flt(po.items[0].received_qty), ordered - returned)
+		return po, asn, purchase_return
+
+	def _purchase_receipt(self, po, asn, *, qty, rejected_qty=0):
+		row = {
+			"item_code": po.items[0].item_code,
+			"qty": qty,
+			"rate": po.items[0].rate,
+			"uom": po.items[0].uom,
+			"conversion_factor": po.items[0].conversion_factor or 1,
+			"purchase_order": po.name,
+			"purchase_order_item": po.items[0].name,
+			"warehouse": po.items[0].warehouse,
+		}
+		if rejected_qty:
+			row["rejected_qty"] = rejected_qty
+			row["rejected_warehouse"] = self._rejected_warehouse(po)
+		payload = {
+			"doctype": "Purchase Receipt",
+			"supplier": po.supplier,
+			"company": po.company,
+			"items": [row],
+		}
+		if asn:
+			payload["asn"] = asn.name
+			payload["asn_items"] = json.dumps({"1": {"asn_item_name": asn.items[0].name}})
+		receipt = frappe.get_doc(payload)
+		receipt.insert(ignore_permissions=True)
+		self._submit_purchase_receipt(receipt)
+		return receipt
+
+	def _purchase_return(self, receipt, *, qty):
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_return
+
+		purchase_return = make_purchase_return(receipt.name)
+		purchase_return.items[0].qty = -qty
+		purchase_return.items[0].received_qty = -qty
+		self._submit_purchase_receipt(purchase_return)
+		return purchase_return
+
+	def _submit_purchase_receipt(self, receipt):
+		with (
+			_mock_asn_attachments(),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+		):
+			receipt.submit()
+
+	def _rejected_warehouse(self, po) -> str:
+		name = frappe.db.get_value(
+			"Warehouse",
+			{"company": po.company, "is_group": 0, "name": ["!=", po.items[0].warehouse]},
+			"name",
+		)
+		if name:
+			return name
+		warehouse = frappe.get_doc(
+			{
+				"doctype": "Warehouse",
+				"warehouse_name": "_Test ASN Rejected Warehouse",
+				"company": po.company,
+			}
+		)
+		warehouse.insert(ignore_permissions=True)
+		return warehouse.name
+
+	def _purchase_order_in_boxes(self, *, qty: float, conversion_factor: float):
+		item_code = _ensure_item("_Test ASN Purchase UOM Item")
+		if not frappe.db.exists("UOM", "Box"):
+			frappe.get_doc({"doctype": "UOM", "uom_name": "Box"}).insert(ignore_permissions=True)
+		item = frappe.get_doc("Item", item_code)
+		if not any(row.uom == "Box" for row in item.get("uoms") or []):
+			item.append("uoms", {"uom": "Box", "conversion_factor": conversion_factor})
+			item.save(ignore_permissions=True)
+
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Remaining Qty UOM Tax",
+			item_code=item_code,
+			qty=qty,
+			do_not_submit=True,
+		)
+		po.items[0].uom = "Box"
+		po.items[0].conversion_factor = conversion_factor
+		po.items[0].stock_qty = qty * conversion_factor
+		po.save(ignore_permissions=True)
+		po.submit()
+		return po
+
+	def _bulk_row(self, po, *, row_number: int, invoice_no: str, qty: float, dates: dict):
+		po_item = po.items[0]
+		return ParsedBulkRow(
+			row_number=row_number,
+			supplier_invoice_no=invoice_no,
+			supplier_invoice_date=dates["supplier_invoice_date"],
+			expected_delivery_date=dates["expected_delivery_date"],
+			lr_no="",
+			lr_date="",
+			transporter_name="",
+			vehicle_number="",
+			driver_contact="",
+			supplier_invoice_amount=qty * float(po_item.rate or 1),
+			purchase_order=po.name,
+			sr_no=str(po_item.idx),
+			item_code=po_item.item_code,
+			qty=qty,
+			rate=float(po_item.rate or 1),
+		)
+
+	def _offered_qty(self, po) -> float:
+		offered = get_purchase_order_items(po.name)
+		if not offered:
+			return 0
+		return offered[0]["qty"]
+
+	def _portal_remaining(self, po) -> float:
+		_rows, remaining = fetch_purchase_order_items([po.name])
+		return remaining[po.items[0].name]
+
+	def _portal_search_qty(self, po) -> float:
+		from asn_module.templates.pages import asn_new_search
+
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user",
+				return_value=po.supplier,
+			),
+		):
+			rows = asn_new_search.search_purchase_order_items(purchase_order=po.name)
+		if not rows:
+			return 0
+		return rows[0]["remaining_qty"]
 
 
 _original_create_purchase_order = create_purchase_order

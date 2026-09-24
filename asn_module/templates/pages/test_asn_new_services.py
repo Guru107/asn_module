@@ -172,7 +172,7 @@ class TestServiceUtilities(FrappeTestCase):
 		with (
 			patch("asn_module.templates.pages.asn_new_services.frappe.get_all", return_value=rows),
 			patch(
-				"asn_module.asn_module.doctype.asn.asn._get_shipped_qty_by_po_item",
+				"asn_module.asn_module.doctype.asn.asn._unreceived_qty_by_po_item",
 				return_value={"POI-1": 3},
 			),
 		):

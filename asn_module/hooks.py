@@ -163,6 +163,10 @@ doc_events = {
 		"on_cancel": "asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",
 		"on_trash": "asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
 	},
+	"Purchase Invoice": {
+		"on_submit": "asn_module.handlers.purchase_invoice.on_purchase_invoice_submit",
+		"on_cancel": "asn_module.handlers.purchase_invoice.on_purchase_invoice_cancel",
+	},
 	"Quality Inspection": {
 		"on_submit": "asn_module.handlers.quality_inspection.on_quality_inspection_submit",
 	},

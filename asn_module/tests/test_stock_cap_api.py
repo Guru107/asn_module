@@ -917,22 +917,29 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		asn.reload()
 		return po, asn
 
-	def test_same_purchase_order_still_refuses_the_returned_quantity(self):
-		"""A return frees on-hand room. It does not free shipped quantity on the Purchase Order.
+	def test_same_purchase_order_accepts_the_returned_quantity(self):
+		"""A return of 10 leaves the original shipment Received and frees 10 on that order.
 
-		100 were accepted and 10 were returned. Another ASN for 10 against that same
-		Purchase Order is refused because the original 100 is still shipped.
+		The mocked receipt does not post ERPNext's net received quantity, so this sets the
+		figure a return of 10 would leave on the Purchase Order Item.
 		"""
+		# A previous test in this class can leave On Hand at 90. The original shipment
+		# is the full order, so it has to start from an empty bin to pass the Stock Cap.
+		self._set_on_hand(0)
 		po, asn = self._accept_shipment(qty=100, tax_description="_Test Stock Cap PR API Return PO Room Tax")
 		self.assertEqual(asn.status, "Received")
 		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
+		frappe.db.set_value(
+			"Purchase Order Item", po.items[0].name, "received_qty", 90, update_modified=False
+		)
 		self._set_on_hand(90)
 
 		replacement = make_test_asn(purchase_order=po, qty=10)
-		with self.assertRaises(frappe.ValidationError) as raised:
-			replacement.insert(ignore_permissions=True)
+		replacement.insert(ignore_permissions=True)
 
-		self.assertIn("exceeds remaining PO qty", str(raised.exception))
+		asn.reload()
+		self.assertEqual(asn.status, "Received")
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
 
 	def test_new_purchase_order_can_ship_the_returned_quantity_once_on_hand_drops(self):
 		"""The cap refuses 10 more while on-hand is still 100, and allows it at 90.

@@ -118,7 +118,7 @@ class TestASNNewSearch(FrappeTestCase):
 				],
 			),
 			patch(
-				"asn_module.asn_module.doctype.asn.asn._get_shipped_qty_by_po_item",
+				"asn_module.asn_module.doctype.asn.asn._unreceived_qty_by_po_item",
 				return_value={"POI-1": 2, "POI-2": 4},
 			),
 		):
@@ -211,7 +211,7 @@ class TestASNNewSearch(FrappeTestCase):
 				],
 			),
 			patch(
-				"asn_module.asn_module.doctype.asn.asn._get_shipped_qty_by_po_item",
+				"asn_module.asn_module.doctype.asn.asn._unreceived_qty_by_po_item",
 				return_value={"POI-1": 0, "POI-2": 0},
 			),
 		):
@@ -256,7 +256,7 @@ class TestASNNewSearch(FrappeTestCase):
 				],
 			),
 			patch(
-				"asn_module.asn_module.doctype.asn.asn._get_shipped_qty_by_po_item",
+				"asn_module.asn_module.doctype.asn.asn._unreceived_qty_by_po_item",
 				return_value={"POI-1": 5, "POI-2": 0},
 			),
 		):
@@ -298,7 +298,7 @@ class TestASNNewSearch(FrappeTestCase):
 				],
 			),
 			patch(
-				"asn_module.asn_module.doctype.asn.asn._get_shipped_qty_by_po_item",
+				"asn_module.asn_module.doctype.asn.asn._unreceived_qty_by_po_item",
 				return_value={"POI-1": 0},
 			),
 		):

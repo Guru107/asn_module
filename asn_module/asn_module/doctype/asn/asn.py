@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder import DocType
-from frappe.query_builder.functions import Sum
+from frappe.query_builder.functions import Function, Sum
 from frappe.utils import flt, today
 from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
@@ -245,8 +245,13 @@ class ASN(WebsiteGenerator):
 				continue
 
 			current_qty = sum(flt(row.qty) for row in rows)
-			remaining_qty = remaining_by_item.get(purchase_order_item, 0)
-			if flt(current_qty) <= flt(remaining_qty):
+			# Remaining Qty already subtracts the Purchase Order's net received quantity,
+			# which includes receipts against this ASN. Add back only the received quantity
+			# that this Shipped Qty still covers, so a partly received shipment can be saved
+			# again and an over-received line is not counted twice.
+			received_within_shipped = sum(min(flt(row.qty), max(flt(row.received_qty), 0)) for row in rows)
+			remaining_qty = flt(remaining_by_item.get(purchase_order_item, 0)) + received_within_shipped
+			if flt(current_qty) <= remaining_qty:
 				continue
 
 			row_numbers = ", ".join(str(row.idx) for row in rows)
@@ -310,21 +315,32 @@ class ASN(WebsiteGenerator):
 		return qr_file.file_url, barcode_file.file_url, scan_label
 
 
-def _get_shipped_qty_by_po_item(
+_PO_STATUSES_WITH_NO_SHIPPED_QTY = ("Closed", "On Hold")
+
+
+def _unreceived_qty_by_po_item(
 	purchase_order_item_names: Sequence[str], exclude_asn_name: str | None = None
 ) -> dict[str, float]:
+	"""Shipped Qty not yet received, on ASNs that are not Cancelled or Closed.
+
+	A line whose Received Qty already covers its Shipped Qty adds nothing. The ASN named
+	in ``exclude_asn_name`` is left out. Receipts against that ASN stay in the Purchase
+	Order's net received quantity; the save check adds them back for that document only.
+	"""
 	if not purchase_order_item_names:
 		return {}
 
 	asn_item = DocType("ASN Item")
 	asn = DocType("ASN")
+	unreceived = Function("GREATEST", asn_item.qty - Function("IFNULL", asn_item.received_qty, 0), 0)
 	query = (
 		frappe.qb.from_(asn_item)
 		.inner_join(asn)
 		.on(asn.name == asn_item.parent)
-		.select(asn_item.purchase_order_item, Sum(asn_item.qty).as_("qty"))
+		.select(asn_item.purchase_order_item, Sum(unreceived).as_("qty"))
 		.where(asn_item.purchase_order_item.isin(list(purchase_order_item_names)))
 		.where(asn.docstatus != 2)
+		.where(asn.status != "Closed")
 		.groupby(asn_item.purchase_order_item)
 	)
 	if exclude_asn_name:
@@ -334,24 +350,63 @@ def _get_shipped_qty_by_po_item(
 	return {row.purchase_order_item: flt(row.qty) for row in rows}
 
 
+def _net_received_and_blocked_po_items(
+	purchase_order_item_names: Sequence[str],
+) -> tuple[dict[str, float], set[str]]:
+	"""Net received quantity, and items whose Purchase Order accepts no new Shipped Qty.
+
+	ERPNext stores received quantity net of returns, in the line's purchase UOM. A
+	stock-updating Purchase Invoice is already included. Closed and On Hold orders accept
+	no new Shipped Qty.
+	"""
+	if not purchase_order_item_names:
+		return {}, set()
+
+	po_item = DocType("Purchase Order Item")
+	po = DocType("Purchase Order")
+	rows = (
+		frappe.qb.from_(po_item)
+		.inner_join(po)
+		.on(po.name == po_item.parent)
+		.select(po_item.name, po_item.received_qty, po.status)
+		.where(po_item.name.isin(list(purchase_order_item_names)))
+		.run(as_dict=True)
+	)
+
+	received: dict[str, float] = {}
+	blocked: set[str] = set()
+	for row in rows:
+		received[row.name] = flt(row.received_qty)
+		if row.status in _PO_STATUSES_WITH_NO_SHIPPED_QTY:
+			blocked.add(row.name)
+	return received, blocked
+
+
 def remaining_qty_by_purchase_order_item(
 	ordered_qty_by_name: dict[str, float], *, exclude_asn_name: str | None = None
 ) -> dict[str, float]:
-	"""Remaining Qty for each Purchase Order Item.
+	"""Remaining Qty for each Purchase Order Item, in the line's purchase UOM.
 
-	Ordered quantity minus Shipped Qty on ASNs that are not Cancelled. The ASN named
-	in ``exclude_asn_name`` is left out, so saving it does not count its own Shipped Qty twice.
+	Ordered quantity minus the Purchase Order Item's net received quantity, minus Shipped
+	Qty declared but not yet received on ASNs that are not Closed or Cancelled. The
+	over-receipt allowance is still zero. Never below zero. The ASN named in
+	``exclude_asn_name`` is left out of the unreceived sum. The save check then adds
+	back the received quantity already on that ASN, so its own receipts are not counted twice.
 	"""
 	if not ordered_qty_by_name:
 		return {}
 
-	shipped_qty_by_item = _get_shipped_qty_by_po_item(
-		list(ordered_qty_by_name), exclude_asn_name=exclude_asn_name
-	)
-	return {
-		name: flt(ordered_qty) - flt(shipped_qty_by_item.get(name, 0))
-		for name, ordered_qty in ordered_qty_by_name.items()
-	}
+	names = list(ordered_qty_by_name)
+	received_by_item, blocked = _net_received_and_blocked_po_items(names)
+	shipped_qty_by_item = _unreceived_qty_by_po_item(names, exclude_asn_name=exclude_asn_name)
+	remaining: dict[str, float] = {}
+	for name, ordered_qty in ordered_qty_by_name.items():
+		if name in blocked:
+			remaining[name] = 0
+			continue
+		qty = flt(ordered_qty) - flt(received_by_item.get(name, 0)) - flt(shipped_qty_by_item.get(name, 0))
+		remaining[name] = qty if qty > 0 else 0
+	return remaining
 
 
 @frappe.whitelist()
@@ -371,9 +426,7 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 	)
 
 	ordered_qty_by_name = {poi.purchase_order_item: flt(poi.qty) for poi in po_items}
-	remaining_by_item = remaining_qty_by_purchase_order_item(
-		ordered_qty_by_name, exclude_asn_name=asn_name
-	)
+	remaining_by_item = remaining_qty_by_purchase_order_item(ordered_qty_by_name, exclude_asn_name=asn_name)
 
 	result = []
 	for poi in po_items:
