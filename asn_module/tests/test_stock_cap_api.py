@@ -806,3 +806,168 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			items=[self._receipt_row(warehouse=po.items[0].warehouse, stock_qty=1)],
 		)
 		self.assertEqual(len(breaches_for_purchase_receipt(later)), 1)
+
+	def test_a_return_leaves_received_qty_unchanged(self):
+		"""Returning goods is its own transaction and does not unwind the ASN.
+
+		Ten arrived and were accepted. Sending two back must leave received_qty at 10
+		and the ASN Received, on submit and on cancel of the return.
+		"""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Return Tax",
+			item_code=PR_ITEM,
+			qty=10,
+		)
+		asn = make_test_asn(purchase_order=po, qty=10)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		receipt = SimpleNamespace(
+			asn=asn.name,
+			is_return=0,
+			name="PR-RETURN-ORIGINAL",
+			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, qty=10, rejected_qty=0, item_code=PR_ITEM)],
+		)
+		purchase_return = SimpleNamespace(
+			asn=asn.name,
+			is_return=1,
+			name="PR-RETURN-PARTIAL",
+			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, qty=-2, rejected_qty=0, item_code=PR_ITEM)],
+		)
+		with (
+			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
+		):
+			on_purchase_receipt_submit(receipt, "on_submit")
+			on_purchase_receipt_submit(purchase_return, "on_submit")
+
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 10)
+		asn.reload()
+		self.assertEqual(asn.status, "Received")
+
+		on_purchase_receipt_cancel(purchase_return, "on_cancel")
+
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 10)
+		asn.reload()
+		self.assertEqual(asn.status, "Received")
+
+	def _set_on_hand(self, qty: float) -> None:
+		name = frappe.db.get_value("Bin", {"item_code": PR_ITEM, "warehouse": self.warehouse}, "name")
+		if name:
+			frappe.db.set_value("Bin", name, "actual_qty", qty, update_modified=False)
+			return
+		frappe.get_doc(
+			{
+				"doctype": "Bin",
+				"item_code": PR_ITEM,
+				"warehouse": self.warehouse,
+				"actual_qty": qty,
+			}
+		).insert(ignore_permissions=True)
+
+	def _accept_shipment(self, *, qty: float, tax_description: str):
+		"""Submit an ASN for ``qty``, accept it all, then return 10 without changing received_qty."""
+		cap_name = f"{PR_BRANCH}::{PR_ITEM}"
+		frappe.db.set_value("ASN Item Branch Cap", cap_name, "max_qty", qty, update_modified=False)
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description=tax_description,
+			item_code=PR_ITEM,
+			warehouse=self.warehouse,
+			qty=qty,
+		)
+		frappe.db.set_value("Purchase Order", po.name, "branch", PR_BRANCH, update_modified=False)
+		frappe.db.set_value(
+			"Purchase Order Item", po.items[0].name, "conversion_factor", 1, update_modified=False
+		)
+		asn = make_test_asn(purchase_order=po, qty=qty)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		receipt = SimpleNamespace(
+			asn=asn.name,
+			is_return=0,
+			name=f"PR-ACCEPT-{frappe.generate_hash(length=6)}",
+			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, qty=qty, rejected_qty=0, item_code=PR_ITEM)],
+		)
+		purchase_return = SimpleNamespace(
+			asn=asn.name,
+			is_return=1,
+			name=f"PR-RETURN-{frappe.generate_hash(length=6)}",
+			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, qty=-10, rejected_qty=0, item_code=PR_ITEM)],
+		)
+		with (
+			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
+		):
+			on_purchase_receipt_submit(receipt, "on_submit")
+			on_purchase_receipt_submit(purchase_return, "on_submit")
+
+		asn.reload()
+		return po, asn
+
+	def test_same_purchase_order_still_refuses_the_returned_quantity(self):
+		"""A return frees on-hand room. It does not free shipped quantity on the Purchase Order.
+
+		100 were accepted and 10 were returned. Another ASN for 10 against that same
+		Purchase Order is refused because the original 100 is still shipped.
+		"""
+		po, asn = self._accept_shipment(qty=100, tax_description="_Test Stock Cap PR API Return PO Room Tax")
+		self.assertEqual(asn.status, "Received")
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
+		self._set_on_hand(90)
+
+		replacement = make_test_asn(purchase_order=po, qty=10)
+		with self.assertRaises(frappe.ValidationError) as raised:
+			replacement.insert(ignore_permissions=True)
+
+		self.assertIn("exceeds remaining PO qty", str(raised.exception))
+
+	def test_new_purchase_order_can_ship_the_returned_quantity_once_on_hand_drops(self):
+		"""The cap refuses 10 more while on-hand is still 100, and allows it at 90.
+
+		The original shipment stays Received, so it is not in transit. A new Purchase
+		Order supplies the quantity the original one will not.
+		"""
+		_po, asn = self._accept_shipment(
+			qty=100, tax_description="_Test Stock Cap PR API Return Cap Room Tax"
+		)
+		self.assertEqual(asn.status, "Received")
+		self._set_on_hand(100)
+
+		fresh_po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Stock Cap PR API Return Cap Room PO Tax",
+			item_code=PR_ITEM,
+			warehouse=self.warehouse,
+			qty=10,
+		)
+		frappe.db.set_value("Purchase Order", fresh_po.name, "branch", PR_BRANCH, update_modified=False)
+		frappe.db.set_value(
+			"Purchase Order Item", fresh_po.items[0].name, "conversion_factor", 1, update_modified=False
+		)
+		blocked = make_test_asn(purchase_order=fresh_po, qty=10)
+		blocked.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			with self.assertRaises(frappe.ValidationError) as raised:
+				blocked.submit()
+		self.assertIn("exceeds maximum", str(raised.exception))
+
+		self._set_on_hand(90)
+		blocked.reload()
+		with _mock_asn_attachments():
+			blocked.submit()
+
+		blocked.reload()
+		self.assertEqual(blocked.docstatus, 1)

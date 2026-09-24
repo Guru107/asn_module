@@ -232,9 +232,12 @@ def on_purchase_receipt_cancel(doc, method=None):
 
 	Submit adds to ``ASN Item.received_qty`` and may mark the ASN Received, which drops
 	it out of in-transit. Cancel reverses the stock ledger and must reverse that too.
-	A return is included: its quantity is negative, so submit and cancel swap direction.
+	A return is a separate transaction: the quantity that arrived stays received, so
+	cancelling the return does not change it either.
 	"""
 	del method
+	if getattr(doc, "is_return", 0):
+		return
 	if getattr(doc, "asn", None):
 		_mapped, updated = _record_linked_received_qty(doc, sign=-1)
 		asn_names = [doc.asn] if updated else []
@@ -403,8 +406,14 @@ def on_purchase_receipt_trash(doc, method):
 
 
 def on_purchase_receipt_submit(doc, method):
-	"""Update ASN receipt tracking and attach follow-up QR codes on submit."""
+	"""Update ASN receipt tracking and attach follow-up QR codes on submit.
+
+	A return does not record against the ASN. The supplier's shipment already arrived;
+	sending some of it back is its own transaction and leaves ``received_qty`` as it is.
+	"""
 	del method
+	if getattr(doc, "is_return", 0):
+		return
 
 	if doc.asn:
 		mapped_names, _updated = _record_linked_received_qty(doc, sign=1)

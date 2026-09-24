@@ -26,6 +26,14 @@ _Avoid_: delivered qty, accepted qty
 Shipped Qty minus Received Qty on submitted ASNs that are neither fully Received nor Closed. Stock that is promised but not yet on hand.
 _Avoid_: pending qty, open qty, outstanding qty
 
+**Closed**:
+An ASN that is finished and will take no further receipt, whether or not Received Qty covers Shipped Qty.
+_Avoid_: cancelled, fully received
+
+**Remaining Qty**:
+The further Shipped Qty the current user may declare against a Purchase Order Item. It matches what a Purchase Receipt by that user could still post on the line, after Shipped Qty declared but not yet received on ASNs that are not Closed or Cancelled.
+_Avoid_: open qty, pending qty, allowed qty, headroom
+
 ### Stock Cap
 
 **Stock Cap**:
