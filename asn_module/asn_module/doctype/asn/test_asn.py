@@ -909,20 +909,11 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po, _asn, _purchase_return = self._accept_and_return(
 			ordered=100, accepted=100, returned=10, item_code=item_code
 		)
-		with _over_receipt_allowance(item_code=item_code, item_allowance=0, stock_allowance=10):
-			self.assertEqual(self._offered_qty(po), 20)
-			with self.assertRaises(frappe.ValidationError) as raised:
-				make_test_asn(purchase_order=po, qty=21).insert(ignore_permissions=True)
-			self.assertIn("exceeds remaining PO qty 20.0", str(raised.exception))
-			make_test_asn(purchase_order=po, qty=20).insert(ignore_permissions=True)
+		self._assert_stock_settings_allowance_of_10_leaves_20(po)
 
 	def test_a_zero_item_allowance_falls_through_to_stock_settings(self):
 		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
-		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=0, stock_allowance=10):
-			self.assertEqual(self._offered_qty(po), 20)
-			with self.assertRaises(frappe.ValidationError):
-				make_test_asn(purchase_order=po, qty=21).insert(ignore_permissions=True)
-			make_test_asn(purchase_order=po, qty=20).insert(ignore_permissions=True)
+		self._assert_stock_settings_allowance_of_10_leaves_20(po)
 
 	def test_a_zero_percent_allowance_stops_at_ordered_minus_received_minus_declared(self):
 		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
@@ -1390,6 +1381,15 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 			qty=qty,
 			rate=float(po_item.rate or 1),
 		)
+
+	def _assert_stock_settings_allowance_of_10_leaves_20(self, po):
+		"""A zero Item allowance uses a 10% Stock Settings allowance: 20 is allowed, 21 is refused."""
+		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=0, stock_allowance=10):
+			self.assertEqual(self._offered_qty(po), 20)
+			with self.assertRaises(frappe.ValidationError) as raised:
+				make_test_asn(purchase_order=po, qty=21).insert(ignore_permissions=True)
+			self.assertIn("exceeds remaining PO qty 20.0", str(raised.exception))
+			make_test_asn(purchase_order=po, qty=20).insert(ignore_permissions=True)
 
 	def _offered_qty(self, po) -> float:
 		offered = get_purchase_order_items(po.name)

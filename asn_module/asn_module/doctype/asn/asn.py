@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import frappe
@@ -247,19 +248,13 @@ class ASN(WebsiteGenerator):
 			# received quantity that this Shipped Qty still covers, so a partly received
 			# shipment can be saved again and an over-received line is not counted twice.
 			received_within_shipped = sum(min(flt(row.qty), max(flt(row.received_qty), 0)) for row in rows)
-			item_qty = qty_state[purchase_order_item]
-			remaining_qty = flt(item_qty.remaining) + received_within_shipped
-			if item_qty.blocked:
-				exceeds = flt(current_qty) > remaining_qty
-			else:
-				would_be_qty = (
-					flt(item_qty.net_received)
-					- received_within_shipped
-					+ flt(item_qty.unreceived)
-					+ flt(current_qty)
-				)
-				exceeds = _exceeds_over_receipt_allowance(would_be_qty, po_qty, flt(item_qty.allowance))
-			if not exceeds:
+			po_line_qty = qty_state[purchase_order_item]
+			past_remaining, remaining_qty = po_line_qty.shipped_qty_past_remaining(
+				ordered_qty=po_qty,
+				shipped_qty=current_qty,
+				received_within_shipped=received_within_shipped,
+			)
+			if not past_remaining:
 				continue
 
 			row_numbers = ", ".join(str(row.idx) for row in rows)
@@ -358,18 +353,23 @@ def _unreceived_qty_by_po_item(
 	return {row.purchase_order_item: flt(row.qty) for row in rows}
 
 
-def _net_received_and_blocked_po_items(
-	purchase_order_item_names: Sequence[str],
-) -> tuple[dict[str, float], set[str], dict[str, str]]:
-	"""Net received quantity, lines that accept no new Shipped Qty, and each line's Item.
+@dataclass(frozen=True)
+class _PurchaseOrderLine:
+	"""What a Purchase Order line contributes to Remaining Qty.
 
-	ERPNext stores received quantity net of returns, in the line's purchase UOM. A
-	stock-updating Purchase Invoice is already included. Closed and On Hold orders accept
-	no new Shipped Qty. The Item is included because the over-receipt allowance lives on
-	the Item; a zero there is unset and the caller falls through to Stock Settings.
+	``net_received`` is ERPNext's figure, already net of returns and of a stock-updating
+	Purchase Invoice, in the line's purchase UOM. ``accepts_no_shipped_qty`` is a Closed
+	or On Hold order. ``item_code`` is how the over-receipt allowance is found.
 	"""
+
+	net_received: float
+	item_code: str | None
+	accepts_no_shipped_qty: bool
+
+
+def _purchase_order_lines(purchase_order_item_names: Sequence[str]) -> dict[str, _PurchaseOrderLine]:
 	if not purchase_order_item_names:
-		return {}, set(), {}
+		return {}
 
 	po_item = DocType("Purchase Order Item")
 	po = DocType("Purchase Order")
@@ -381,16 +381,14 @@ def _net_received_and_blocked_po_items(
 		.where(po_item.name.isin(list(purchase_order_item_names)))
 		.run(as_dict=True)
 	)
-
-	received: dict[str, float] = {}
-	item_code_by_name: dict[str, str] = {}
-	blocked: set[str] = set()
-	for row in rows:
-		received[row.name] = flt(row.received_qty)
-		item_code_by_name[row.name] = row.item_code
-		if row.status in _PO_STATUSES_WITH_NO_SHIPPED_QTY:
-			blocked.add(row.name)
-	return received, blocked, item_code_by_name
+	return {
+		row.name: _PurchaseOrderLine(
+			net_received=flt(row.received_qty),
+			item_code=row.item_code,
+			accepts_no_shipped_qty=row.status in _PO_STATUSES_WITH_NO_SHIPPED_QTY,
+		)
+		for row in rows
+	}
 
 
 def _over_receipt_allowance_percent(
@@ -431,40 +429,68 @@ def _exceeds_over_receipt_allowance(
 	return overflow_percent - allowance_percent > _OVER_RECEIPT_TOLERANCE_PERCENT
 
 
+@dataclass(frozen=True)
+class _PurchaseOrderItemQty:
+	"""Remaining Qty for one Purchase Order Item, and the figures save compares to it.
+
+	Displayed Remaining Qty stops at the allowance ceiling, or at zero when the order
+	accepts no new Shipped Qty. Save still needs net received, unreceived Shipped Qty,
+	and the allowance, because ERPNext's overflow test allows 0.01 percent past that ceiling.
+	"""
+
+	remaining: float
+	allowance: float
+	accepts_no_shipped_qty: bool
+	net_received: float
+	unreceived: float
+
+	def shipped_qty_past_remaining(
+		self, *, ordered_qty: float, shipped_qty: float, received_within_shipped: float
+	) -> tuple[bool, float]:
+		"""Whether this Shipped Qty is past Remaining Qty, and the Remaining Qty to state.
+
+		Receipts against this ASN are already inside net received. ``received_within_shipped``
+		adds back only what this Shipped Qty still covers, so a partly received shipment is
+		not refused for goods already receipted. A Closed or On Hold order stops there.
+		An open order uses the overflow test and does not consult the over-receive role.
+		"""
+		remaining_qty = flt(self.remaining) + received_within_shipped
+		if self.accepts_no_shipped_qty:
+			return flt(shipped_qty) > remaining_qty, remaining_qty
+		would_be_qty = (
+			flt(self.net_received) - received_within_shipped + flt(self.unreceived) + flt(shipped_qty)
+		)
+		past = _exceeds_over_receipt_allowance(would_be_qty, ordered_qty, flt(self.allowance))
+		return past, remaining_qty
+
+
 def _purchase_order_item_qty_state(
 	ordered_qty_by_name: dict[str, float], *, exclude_asn_name: str | None = None
-) -> dict[str, frappe._dict]:
-	"""Figures the save check needs beside the floored Remaining Qty.
-
-	Displayed Remaining Qty stops at the allowance ceiling. ERPNext's overflow test
-	still allows 0.01 percent past that ceiling, so save also needs net received,
-	unreceived Shipped Qty, and the allowance. A Closed or On Hold line stays blocked
-	and its Remaining Qty is zero whatever the allowance is.
-	"""
+) -> dict[str, _PurchaseOrderItemQty]:
 	if not ordered_qty_by_name:
 		return {}
 
 	names = list(ordered_qty_by_name)
-	received_by_item, blocked, item_code_by_name = _net_received_and_blocked_po_items(names)
+	lines = _purchase_order_lines(names)
 	shipped_qty_by_item = _unreceived_qty_by_po_item(names, exclude_asn_name=exclude_asn_name)
-	state: dict[str, frappe._dict] = {}
+	state: dict[str, _PurchaseOrderItemQty] = {}
 	stock_allowance: float | None = None
 	for name, ordered_qty in ordered_qty_by_name.items():
-		allowance, stock_allowance = _over_receipt_allowance_percent(
-			item_code_by_name.get(name), stock_allowance
+		line = lines.get(name) or _PurchaseOrderLine(
+			net_received=0, item_code=None, accepts_no_shipped_qty=False
 		)
-		net_received = flt(received_by_item.get(name, 0))
+		allowance, stock_allowance = _over_receipt_allowance_percent(line.item_code, stock_allowance)
 		unreceived = flt(shipped_qty_by_item.get(name, 0))
-		if name in blocked:
+		if line.accepts_no_shipped_qty:
 			remaining = 0
 		else:
-			qty = _ordered_qty_with_allowance(ordered_qty, allowance) - net_received - unreceived
+			qty = _ordered_qty_with_allowance(ordered_qty, allowance) - line.net_received - unreceived
 			remaining = qty if qty > 0 else 0
-		state[name] = frappe._dict(
+		state[name] = _PurchaseOrderItemQty(
 			remaining=remaining,
 			allowance=allowance,
-			blocked=name in blocked,
-			net_received=net_received,
+			accepts_no_shipped_qty=line.accepts_no_shipped_qty,
+			net_received=line.net_received,
 			unreceived=unreceived,
 		)
 	return state
