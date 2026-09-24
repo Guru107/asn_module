@@ -1065,6 +1065,95 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		self.assertEqual(remaining[po.items[0].name], 10)
 		self.assertEqual(self._portal_search_qty(po, asn_name=draft.name), 10)
 
+	def test_the_portal_leaves_out_only_this_suppliers_draft(self):
+		"""Ordered 10, this draft declares 6. Naming that draft, the portal still accepts 10.
+
+		A submitted shipment, or a draft that belongs to someone else, stays in the count.
+		"""
+		from pathlib import Path
+
+		from asn_module.templates.pages import asn_new
+
+		po = self._submitted_purchase_order(qty=10)
+		draft = make_test_asn(purchase_order=po, qty=6)
+		draft.insert(ignore_permissions=True)
+
+		frappe.db.set_value("ASN", draft.name, "supplier", f"Other-{po.supplier}")
+		self.assertEqual(self._portal_search_qty(po, asn_name=draft.name), 4)
+		self.assertEqual(self._portal_page_asn_name(po.supplier, draft.name), "")
+
+		frappe.db.set_value("ASN", draft.name, "supplier", po.supplier)
+		self.assertEqual(self._portal_search_qty(po, asn_name=draft.name), 10)
+		self.assertEqual(self._portal_page_asn_name(po.supplier, draft.name), draft.name)
+		created = self._portal_single_asn(po, qty=10, asn_name=draft.name)
+		self.assertEqual(created.asn_names, [draft.name])
+		self.assertEqual(flt(frappe.db.get_value("ASN Item", {"parent": draft.name}, "qty")), 10)
+
+		other = self._submitted_purchase_order(qty=10)
+		submitted = make_test_asn(purchase_order=other, qty=6)
+		submitted.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			submitted.submit()
+		self.assertEqual(self._portal_search_qty(other, asn_name=submitted.name), 4)
+		self.assertEqual(self._portal_page_asn_name(other.supplier, submitted.name), "")
+		with self.assertRaises(PortalValidationError) as raised:
+			self._portal_single_asn(other, qty=10, asn_name=submitted.name)
+		self.assertIn("exceeds remaining PO qty 4", str(raised.exception))
+
+		page = Path(asn_new.__file__).with_name("asn_new.html").read_text()
+		self.assertIn('name="asn_name"', page)
+		self.assertIn("asn_name=${encodeURIComponent", page)
+
+	def _portal_page_asn_name(self, supplier: str, asn_name: str) -> str:
+		from asn_module.templates.pages import asn_new
+
+		context = frappe._dict()
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace(method="GET", files={})),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value=supplier),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier",
+				return_value=[],
+			),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"asn_name": asn_name}),
+		):
+			asn_new.get_context(context)
+		return context.asn_name or ""
+
+	def _portal_single_asn(self, po, *, qty: float, asn_name: str):
+		from asn_module.templates.pages import asn_new
+		from asn_module.templates.pages.asn_new_services import ParsedSingleRow
+
+		po_item = po.items[0]
+		dates = get_fiscal_year_test_dates()
+		invoice_no = f"PORTAL-DRAFT-{frappe.generate_hash(length=6)}"
+		form = {
+			"asn_name": asn_name,
+			"supplier_invoice_no": invoice_no,
+			"supplier_invoice_date": dates["supplier_invoice_date"],
+			"expected_delivery_date": dates["expected_delivery_date"],
+			"supplier_invoice_amount": str(float(po_item.rate or 1) * qty),
+		}
+		row = ParsedSingleRow(
+			row_number=1,
+			purchase_order=po.name,
+			sr_no=str(po_item.idx),
+			item_code=po_item.item_code,
+			uom=po_item.uom,
+			qty=qty,
+			rate=float(po_item.rate or 1),
+		)
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", frappe._dict(form)),
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=[po.name]),
+			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=[row]),
+		):
+			return asn_new._create_single_asn(po.supplier)
+
 	def test_saving_an_existing_asn_does_not_count_its_own_shipped_qty_twice(self):
 		po = self._submitted_purchase_order(qty=10)
 		draft = make_test_asn(purchase_order=po, qty=6)

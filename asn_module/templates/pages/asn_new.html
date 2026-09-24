@@ -491,6 +491,7 @@
 					<form method="post" id="single-asn-form">
 						<input type="hidden" name="csrf_token" value="{{ frappe.session.csrf_token }}">
 						<input type="hidden" name="mode" value="single">
+						<input type="hidden" name="asn_name" value="{{ asn_name or '' }}">
 
 						<div class="mb-3">
 							<label class="form-label">{{ _("Supplier") }}</label>
@@ -1035,7 +1036,11 @@
 		let start = 0;
 
 		while (true) {
-			const url = `/api/method/asn_module.templates.pages.asn_new_search.search_purchase_order_items?purchase_order=${encodeURIComponent(po)}&txt=&start=${start}&page_len=${pageLen}`;
+			const editingAsn = (
+				document.querySelector('#single-asn-form input[name="asn_name"]')?.value || ""
+			).trim();
+			const asnQuery = editingAsn ? `&asn_name=${encodeURIComponent(editingAsn)}` : "";
+			const url = `/api/method/asn_module.templates.pages.asn_new_search.search_purchase_order_items?purchase_order=${encodeURIComponent(po)}&txt=&start=${start}&page_len=${pageLen}${asnQuery}`;
 			const response = await fetch(url, { credentials: "same-origin" });
 			const payload = await response.json();
 			const batch = Array.isArray(payload.message) ? payload.message : [];

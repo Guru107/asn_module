@@ -35,8 +35,32 @@ class TestStockCapMessages(FrappeTestCase):
 	def test_redacted_message_reports_allowed_qty(self):
 		self.assertEqual(BREACH.allowed_qty, 20.0)
 		message = format_breaches([BREACH], detailed=False)
+		self.assertIn("cannot take this quantity", message)
 		self.assertIn("at most 20", message)
-		self.assertNotIn("more", message)
+		self.assertNotIn("Stock Cap", message)
+
+	def test_a_full_stock_cap_tells_the_supplier_they_cannot_declare_any_more(self):
+		"""On hand already equals Maximum Stock. The supplier hears why, not the figures."""
+		breach = Breach(
+			branch="Nashik",
+			item_code="FG02SHR",
+			row_idxs=(1,),
+			on_hand=500.0,
+			in_transit=0.0,
+			baseline=500.0,
+			incoming=1.0,
+			projected=501.0,
+			cap=500.0,
+			conversion_factor=1.0,
+		)
+		message = format_breaches([breach], detailed=False)
+		self.assertIn("FG02SHR", message)
+		self.assertIn("as much of this item as it can take", message)
+		self.assertIn("cannot declare any more", message)
+		self.assertNotIn("Stock Cap", message)
+		self.assertNotIn("Nashik", message)
+		self.assertNotIn("500", message)
+		self.assertNotIn("0.0", message)
 
 	def test_empty_breach_list_produces_empty_message(self):
 		self.assertEqual(format_breaches([], detailed=True), "")
@@ -57,4 +81,4 @@ class TestStockCapMessages(FrappeTestCase):
 		message = format_breaches([breach], detailed=False)
 		self.assertIn("at most 2", message)
 		self.assertNotIn("24", message)
-		self.assertNotIn("more", message)
+		self.assertNotIn("Stock Cap", message)

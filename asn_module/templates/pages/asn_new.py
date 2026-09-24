@@ -9,6 +9,7 @@ from frappe.utils import cstr
 from frappe.website.utils import cleanup_page_name
 
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
+from asn_module.templates.pages.asn_new_search import supplier_draft_asn_name
 from asn_module.templates.pages.asn_new_services import (
 	BULK_CSV_HEADERS,
 	ParsedBulkRow,
@@ -52,6 +53,9 @@ def get_context(context):
 
 	context.supplier = supplier
 	context.open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
+	context.asn_name = (
+		supplier_draft_asn_name(supplier, (frappe.form_dict or {}).get("asn_name")) or ""
+	)
 
 	if not frappe.request or frappe.request.method != "POST":
 		return
@@ -119,7 +123,11 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			]
 		)
 
-	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(selected_purchase_orders)
+	draft_name = supplier_draft_asn_name(supplier, _request_value("asn_name"))
+	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(
+		selected_purchase_orders,
+		exclude_asn_name=draft_name,
+	)
 	running_remaining = dict(remaining_qty_by_name)
 	items = []
 	seen_po_sr: set[tuple[str, str]] = set()
@@ -178,6 +186,7 @@ def _create_single_asn(supplier: str) -> CreateResult:
 		)
 
 	asn = _insert_and_submit_asn(
+		asn_name=draft_name,
 		supplier=supplier,
 		header={
 			"supplier_invoice_no": _request_value("supplier_invoice_no"),
@@ -201,8 +210,8 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 	return CreateResult(asn_names=asn_names)
 
 
-def _insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
-	return insert_and_submit_asn(supplier=supplier, header=header, items=items)
+def _insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn_name: str | None = None):
+	return insert_and_submit_asn(supplier=supplier, header=header, items=items, asn_name=asn_name)
 
 
 def _parse_single_rows() -> list[ParsedSingleRow]:

@@ -742,10 +742,8 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[di
 	return errors
 
 
-def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
-	doc_payload = {
-		"doctype": "ASN",
-		"supplier": supplier,
+def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn_name: str | None = None):
+	header_fields = {
 		"supplier_invoice_no": header.get("supplier_invoice_no"),
 		"supplier_invoice_date": header.get("supplier_invoice_date"),
 		"expected_delivery_date": header.get("expected_delivery_date"),
@@ -754,10 +752,17 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
 		"transporter_name": header.get("transporter_name"),
 		"vehicle_number": header.get("vehicle_number"),
 		"driver_contact": header.get("driver_contact"),
-		"items": items,
+		"supplier_invoice_amount": header["supplier_invoice_amount"],
 	}
-	doc_payload["supplier_invoice_amount"] = header["supplier_invoice_amount"]
-	asn = frappe.get_doc(doc_payload)
+	if asn_name:
+		asn = frappe.get_doc("ASN", asn_name)
+		asn.supplier = supplier
+		asn.update(header_fields)
+		asn.items = []
+		for item in items:
+			asn.append("items", item)
+	else:
+		asn = frappe.get_doc({"doctype": "ASN", "supplier": supplier, "items": items, **header_fields})
 	asn.flags.ignore_permissions = True
 	# Earlier invoice groups in this request are already submitted and must stay.
 	# A savepoint undoes only this draft when submit is refused. PortalValidationError
@@ -765,7 +770,10 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
 	# the draft would commit with it and block the invoice number.
 	frappe.db.savepoint("asn_portal_submit")
 	try:
-		asn.insert()
+		if asn_name:
+			asn.save()
+		else:
+			asn.insert()
 		asn.submit()
 	except frappe.ValidationError as exc:
 		try:
