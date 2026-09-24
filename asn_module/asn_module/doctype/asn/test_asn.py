@@ -224,6 +224,33 @@ def make_test_asn_with_two_items(*, purchase_order=None, supplier=None, supplier
 
 
 @contextmanager
+def _over_receipt_allowance(*, item_code: str, item_allowance, stock_allowance, role=None):
+	"""Set the Item and Stock Settings allowances for one assertion, then put them back.
+
+	A zero Item allowance is what ERPNext treats as unset.
+	"""
+	previous_item = frappe.db.get_value("Item", item_code, "over_delivery_receipt_allowance")
+	previous_stock = frappe.db.get_single_value("Stock Settings", "over_delivery_receipt_allowance")
+	previous_role = frappe.db.get_single_value("Stock Settings", "role_allowed_to_over_deliver_receive")
+	frappe.db.set_value(
+		"Item", item_code, "over_delivery_receipt_allowance", item_allowance, update_modified=False
+	)
+	frappe.db.set_single_value("Stock Settings", "over_delivery_receipt_allowance", stock_allowance)
+	if role is not None:
+		frappe.db.set_single_value("Stock Settings", "role_allowed_to_over_deliver_receive", role)
+	frappe.clear_cache(doctype="Item")
+	try:
+		yield
+	finally:
+		frappe.db.set_value(
+			"Item", item_code, "over_delivery_receipt_allowance", previous_item, update_modified=False
+		)
+		frappe.db.set_single_value("Stock Settings", "over_delivery_receipt_allowance", previous_stock)
+		frappe.db.set_single_value("Stock Settings", "role_allowed_to_over_deliver_receive", previous_role)
+		frappe.clear_cache(doctype="Item")
+
+
+@contextmanager
 def _mock_asn_attachments():
 	def fake_save_file(filename, *_args, **_kwargs):
 		return SimpleNamespace(file_url=f"/files/{filename}")
@@ -818,8 +845,8 @@ class TestASN(FrappeTestCase):
 class TestRemainingQtyAfterReturn(FrappeTestCase):
 	"""A return frees further Shipped Qty on the same Purchase Order line.
 
-	The seam is saving an ASN, plus the quantity the desk picker and the supplier
-	portal offer. Over-receipt allowance stays at zero.
+	The seam is saving an ASN, plus the quantity the desk picker, the supplier
+	portal, and a bulk upload offer. Remaining Qty includes the over-receipt allowance.
 	"""
 
 	@classmethod
@@ -846,6 +873,116 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 
 		allowed = make_test_asn(purchase_order=po, qty=10)
 		allowed.insert(ignore_permissions=True)
+
+	def test_a_ten_percent_item_allowance_leaves_remaining_qty_at_20_and_refuses_21(self):
+		"""Item allowance wins over Stock Settings. 21 is refused; the message hides stock figures."""
+		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=10, stock_allowance=50):
+			self.assertEqual(self._offered_qty(po), 20)
+			self.assertEqual(self._portal_remaining(po), 20)
+			self.assertEqual(self._portal_search_qty(po), 20)
+
+			refused = make_test_asn(purchase_order=po, qty=21)
+			with self.assertRaises(frappe.ValidationError) as raised:
+				refused.insert(ignore_permissions=True)
+
+			message = str(raised.exception)
+			self.assertIn("Shipped qty 21.0 exceeds remaining PO qty 20.0", message)
+			for hidden in ("On Hand", "In Transit", "Maximum Stock"):
+				self.assertNotIn(hidden, message)
+
+			make_test_asn(purchase_order=po, qty=20).insert(ignore_permissions=True)
+
+	def test_submit_refuses_shipped_qty_past_the_allowance(self):
+		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=10, stock_allowance=0):
+			draft = make_test_asn(purchase_order=po, qty=20)
+			draft.insert(ignore_permissions=True)
+			draft.items[0].qty = 21
+			with self.assertRaises(frappe.ValidationError) as raised:
+				draft.submit()
+			self.assertIn("Shipped qty 21.0 exceeds remaining PO qty 20.0", str(raised.exception))
+
+	def test_stock_settings_allowance_is_used_when_the_item_has_none(self):
+		"""The Item column cannot store an unset allowance. Zero is what ERPNext reads as none."""
+		item_code = _ensure_item("_Test ASN Unset Allowance Item")
+		po, _asn, _purchase_return = self._accept_and_return(
+			ordered=100, accepted=100, returned=10, item_code=item_code
+		)
+		with _over_receipt_allowance(item_code=item_code, item_allowance=0, stock_allowance=10):
+			self.assertEqual(self._offered_qty(po), 20)
+			with self.assertRaises(frappe.ValidationError) as raised:
+				make_test_asn(purchase_order=po, qty=21).insert(ignore_permissions=True)
+			self.assertIn("exceeds remaining PO qty 20.0", str(raised.exception))
+			make_test_asn(purchase_order=po, qty=20).insert(ignore_permissions=True)
+
+	def test_a_zero_item_allowance_falls_through_to_stock_settings(self):
+		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=0, stock_allowance=10):
+			self.assertEqual(self._offered_qty(po), 20)
+			with self.assertRaises(frappe.ValidationError):
+				make_test_asn(purchase_order=po, qty=21).insert(ignore_permissions=True)
+			make_test_asn(purchase_order=po, qty=20).insert(ignore_permissions=True)
+
+	def test_a_zero_percent_allowance_stops_at_ordered_minus_received_minus_declared(self):
+		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=0, stock_allowance=0):
+			make_test_asn(purchase_order=po, qty=4).insert(ignore_permissions=True)
+			self.assertEqual(self._offered_qty(po), 6)
+			self.assertEqual(self._portal_remaining(po), 6)
+			with self.assertRaises(frappe.ValidationError) as raised:
+				make_test_asn(purchase_order=po, qty=7).insert(ignore_permissions=True)
+			self.assertIn("Shipped qty 7.0 exceeds remaining PO qty 6.0", str(raised.exception))
+
+	def test_a_desk_user_with_the_over_receive_role_is_refused_past_the_allowance(self):
+		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		with _over_receipt_allowance(
+			item_code=po.items[0].item_code,
+			item_allowance=10,
+			stock_allowance=0,
+			role="System Manager",
+		):
+			self.assertIn("System Manager", frappe.get_roles())
+			with self.assertRaises(frappe.ValidationError) as raised:
+				make_test_asn(purchase_order=po, qty=21).insert(ignore_permissions=True)
+			self.assertIn("Shipped qty 21.0 exceeds remaining PO qty 20.0", str(raised.exception))
+			make_test_asn(purchase_order=po, qty=20).insert(ignore_permissions=True)
+
+	def test_a_bulk_upload_starts_from_the_allowance_remaining_qty(self):
+		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		dates = get_fiscal_year_test_dates()
+		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=10, stock_allowance=0):
+			rows = [
+				self._bulk_row(po, row_number=2, invoice_no="ALLOW-1", qty=20, dates=dates),
+				self._bulk_row(po, row_number=3, invoice_no="ALLOW-2", qty=1, dates=dates),
+			]
+			with (
+				patch(
+					"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+					return_value=([], {}),
+				),
+				self.assertRaises(PortalValidationError) as raised,
+			):
+				create_bulk_asns_for_supplier(
+					supplier=po.supplier, rows=rows, insert_asn=lambda **kwargs: None
+				)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 3: qty 1 exceeds remaining PO qty 0.0.", messages)
+		self.assertFalse(any(message.startswith("Row 2:") for message in messages))
+
+	def test_shipped_qty_within_the_overflow_tolerance_is_allowed_and_past_it_is_refused(self):
+		"""ERPNext allows overflow percent minus the allowance up to 0.01.
+
+		20.005 is inside that tolerance. A further 0.01 crosses it. The displayed Remaining Qty stays 20.
+		"""
+		po, _asn, _purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
+		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=10, stock_allowance=0):
+			self.assertEqual(self._offered_qty(po), 20)
+			make_test_asn(purchase_order=po, qty=20.005).insert(ignore_permissions=True)
+			with self.assertRaises(frappe.ValidationError) as raised:
+				make_test_asn(purchase_order=po, qty=0.01).insert(ignore_permissions=True)
+			self.assertIn("exceeds remaining PO qty", str(raised.exception))
 
 	def test_picker_and_portal_hide_the_line_when_remaining_qty_is_zero(self):
 		po = self._submitted_purchase_order(qty=100)
@@ -1124,15 +1261,18 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		self.assertIn("Row 2: qty 5 exceeds remaining PO qty 4.0.", messages)
 		self.assertFalse(any(message.startswith("Row 3:") for message in messages))
 
-	def _submitted_purchase_order(self, *, qty: float):
+	def _submitted_purchase_order(self, *, qty: float, item_code: str | None = None):
 		return build_purchase_order_with_mandatory_fields(
 			create_purchase_order,
 			tax_description="_Test ASN Remaining Qty Return Tax",
 			qty=qty,
+			item_code=item_code or _ensure_item(),
 		)
 
-	def _accept_and_return(self, *, ordered: float, accepted: float, returned: float):
-		po = self._submitted_purchase_order(qty=ordered)
+	def _accept_and_return(
+		self, *, ordered: float, accepted: float, returned: float, item_code: str | None = None
+	):
+		po = self._submitted_purchase_order(qty=ordered, item_code=item_code)
 		asn = make_test_asn(purchase_order=po, qty=accepted)
 		asn.insert(ignore_permissions=True)
 		with _mock_asn_attachments():
