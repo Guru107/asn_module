@@ -31,7 +31,7 @@ An ASN that is finished and will take no further receipt, whether or not Receive
 _Avoid_: cancelled, fully received
 
 **Remaining Qty**:
-The further Shipped Qty the current user may declare against a Purchase Order Item. It matches what a Purchase Receipt by that user could still post on the line, after Shipped Qty declared but not yet received on ASNs that are not Closed or Cancelled.
+The further Shipped Qty that may be declared against a Purchase Order Item. It matches what a Purchase Receipt could still post on the line within the over-receipt allowance, after Shipped Qty declared but not yet received on ASNs that are not Closed or Cancelled. A supplier and a desk user get the same figure.
 _Avoid_: open qty, pending qty, allowed qty, headroom
 
 ### Stock Cap
