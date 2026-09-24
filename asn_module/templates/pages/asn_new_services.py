@@ -308,6 +308,7 @@ def parse_required_supplier_invoice_amount(
 
 def fetch_purchase_order_items(
 	purchase_orders: list[str],
+	exclude_asn_name: str | None = None,
 ) -> tuple[dict[tuple[str, str], list[frappe._dict]], dict[str, float]]:
 	if not purchase_orders:
 		return {}, {}
@@ -319,7 +320,9 @@ def fetch_purchase_order_items(
 		limit_page_length=0,
 	)
 	po_item_qty_by_name = {row.name: flt(row.qty) for row in rows}
-	remaining_qty_by_name = remaining_qty_by_purchase_order_item(po_item_qty_by_name)
+	remaining_qty_by_name = remaining_qty_by_purchase_order_item(
+		po_item_qty_by_name, exclude_asn_name=exclude_asn_name
+	)
 
 	rows_by_key: dict[tuple[str, str], list[frappe._dict]] = {}
 	for row in rows:
@@ -522,6 +525,102 @@ def validate_invoice_group_single_purchase_order(invoice_no: str, rows: list[Par
 		raise PortalValidationError(errors)
 
 
+def _invoice_header(row: ParsedBulkRow) -> dict:
+	return {
+		"supplier_invoice_no": row.supplier_invoice_no,
+		"supplier_invoice_date": row.supplier_invoice_date,
+		"expected_delivery_date": row.expected_delivery_date,
+		"lr_no": row.lr_no,
+		"lr_date": row.lr_date,
+		"transporter_name": row.transporter_name,
+		"vehicle_number": row.vehicle_number,
+		"driver_contact": row.driver_contact,
+		"supplier_invoice_amount": row.supplier_invoice_amount,
+	}
+
+
+def _accept_rows_within_remaining(
+	rows: list[ParsedBulkRow],
+	*,
+	rows_by_key: dict[tuple[str, str], list[frappe._dict]],
+	remaining_qty_by_name: dict[str, float],
+	invoices_that_do_not_consume: set[str] | None = None,
+) -> tuple[dict[str, list[tuple[ParsedBulkRow, frappe._dict]]], list[dict]]:
+	"""Take Remaining Qty in file order. A row that does not fit leaves the figure unchanged.
+
+	``invoices_that_do_not_consume`` are groups the Stock Cap has already refused. Their
+	rows are still checked, so a real excess is reported, but they are not created and
+	must not reduce what a later row sees.
+	"""
+	running_remaining = dict(remaining_qty_by_name)
+	does_not_consume = invoices_that_do_not_consume or set()
+	accepted: dict[str, list[tuple[ParsedBulkRow, frappe._dict]]] = {}
+	errors: list[dict] = []
+	for row in sorted(rows, key=lambda item: item.row_number):
+		try:
+			po_item = resolve_po_item(
+				purchase_order=row.purchase_order,
+				sr_no=row.sr_no,
+				item_code=row.item_code,
+				row_number=row.row_number,
+				invoice_no=row.supplier_invoice_no,
+				rows_by_key=rows_by_key,
+			)
+			validate_qty_within_remaining(
+				purchase_order_item=po_item.name,
+				qty=row.qty,
+				row_number=row.row_number,
+				invoice_no=row.supplier_invoice_no,
+				remaining_qty_by_name=running_remaining,
+			)
+		except PortalValidationError as exc:
+			errors.extend(exc.errors)
+			continue
+		if row.supplier_invoice_no in does_not_consume:
+			continue
+		running_remaining[po_item.name] = flt(running_remaining.get(po_item.name, 0)) - flt(row.qty)
+		accepted.setdefault(row.supplier_invoice_no, []).append((row, po_item))
+	return accepted, errors
+
+
+def _payloads_for_accepted_rows(
+	valid_groups: list[tuple[str, dict, list[ParsedBulkRow]]],
+	accepted_by_invoice: dict[str, list[tuple[ParsedBulkRow, frappe._dict]]],
+) -> list[tuple[dict, list[dict], list[dict]]]:
+	payloads: list[tuple[dict, list[dict], list[dict]]] = []
+	for invoice_no, header, _invoice_rows in valid_groups:
+		accepted = accepted_by_invoice.get(invoice_no) or []
+		if not accepted:
+			continue
+		items = []
+		cap_check_rows = []
+		for row, po_item in accepted:
+			item_rate = flt(row.rate) if row.rate is not None else flt(getattr(po_item, "rate", None))
+			items.append(
+				{
+					"purchase_order": row.purchase_order,
+					"purchase_order_item": po_item.name,
+					"item_code": row.item_code,
+					"uom": po_item.uom,
+					"qty": row.qty,
+					"rate": item_rate,
+				}
+			)
+			# Keyed by the real CSV row_number, not a position within this invoice
+			# group -- see _collect_stock_cap_errors for why that distinction matters.
+			cap_check_rows.append(
+				{
+					"idx": row.row_number,
+					"purchase_order": row.purchase_order,
+					"purchase_order_item": po_item.name,
+					"item_code": row.item_code,
+					"qty": row.qty,
+				}
+			)
+		payloads.append((header, items, cap_check_rows))
+	return payloads
+
+
 def create_bulk_asns_for_supplier(
 	supplier: str,
 	rows: list[ParsedBulkRow],
@@ -545,9 +644,8 @@ def create_bulk_asns_for_supplier(
 	validate_supplier_invoices_not_reused(supplier, sorted(invoice_groups.keys()))
 
 	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(all_purchase_orders)
-	running_remaining = dict(remaining_qty_by_name)
 	errors: list[dict] = []
-	asn_payloads: list[tuple[dict, list[dict], list[dict]]] = []
+	valid_groups: list[tuple[str, dict, list[ParsedBulkRow]]] = []
 
 	for invoice_no, invoice_rows in invoice_groups.items():
 		try:
@@ -558,65 +656,26 @@ def create_bulk_asns_for_supplier(
 			errors.extend(exc.errors)
 			continue
 
-		header = {
-			"supplier_invoice_no": invoice_rows[0].supplier_invoice_no,
-			"supplier_invoice_date": invoice_rows[0].supplier_invoice_date,
-			"expected_delivery_date": invoice_rows[0].expected_delivery_date,
-			"lr_no": invoice_rows[0].lr_no,
-			"lr_date": invoice_rows[0].lr_date,
-			"transporter_name": invoice_rows[0].transporter_name,
-			"vehicle_number": invoice_rows[0].vehicle_number,
-			"driver_contact": invoice_rows[0].driver_contact,
-			"supplier_invoice_amount": invoice_rows[0].supplier_invoice_amount,
-		}
-		items = []
-		cap_check_rows = []
-		for row in invoice_rows:
-			try:
-				po_item = resolve_po_item(
-					purchase_order=row.purchase_order,
-					sr_no=row.sr_no,
-					item_code=row.item_code,
-					row_number=row.row_number,
-					invoice_no=invoice_no,
-					rows_by_key=rows_by_key,
-				)
-				validate_qty_within_remaining(
-					purchase_order_item=po_item.name,
-					qty=row.qty,
-					row_number=row.row_number,
-					invoice_no=invoice_no,
-					remaining_qty_by_name=running_remaining,
-				)
-				running_remaining[po_item.name] = flt(running_remaining.get(po_item.name, 0)) - flt(row.qty)
-				item_rate = flt(row.rate) if row.rate is not None else flt(getattr(po_item, "rate", None))
-				items.append(
-					{
-						"purchase_order": row.purchase_order,
-						"purchase_order_item": po_item.name,
-						"item_code": row.item_code,
-						"uom": po_item.uom,
-						"qty": row.qty,
-						"rate": item_rate,
-					}
-				)
-				# Keyed by the real CSV row_number, not a position within this invoice
-				# group -- see _collect_stock_cap_errors for why that distinction matters.
-				cap_check_rows.append(
-					{
-						"idx": row.row_number,
-						"purchase_order": row.purchase_order,
-						"purchase_order_item": po_item.name,
-						"item_code": row.item_code,
-						"qty": row.qty,
-					}
-				)
-			except PortalValidationError as exc:
-				errors.extend(exc.errors)
-		if items:
-			asn_payloads.append((header, items, cap_check_rows))
+		valid_groups.append((invoice_no, _invoice_header(invoice_rows[0]), invoice_rows))
 
-	errors.extend(_collect_stock_cap_errors(asn_payloads))
+	candidate_rows = [row for _invoice_no, _header, invoice_rows in valid_groups for row in invoice_rows]
+	accepted_by_invoice, qty_errors = _accept_rows_within_remaining(
+		candidate_rows,
+		rows_by_key=rows_by_key,
+		remaining_qty_by_name=remaining_qty_by_name,
+	)
+	asn_payloads = _payloads_for_accepted_rows(valid_groups, accepted_by_invoice)
+	cap_errors = _collect_stock_cap_errors(asn_payloads)
+	breaching_invoices = {error["invoice_no"] for error in cap_errors if error.get("invoice_no")}
+	if breaching_invoices:
+		qty_errors = _accept_rows_within_remaining(
+			candidate_rows,
+			rows_by_key=rows_by_key,
+			remaining_qty_by_name=remaining_qty_by_name,
+			invoices_that_do_not_consume=breaching_invoices,
+		)[1]
+	errors.extend(qty_errors)
+	errors.extend(cap_errors)
 
 	if errors:
 		errors.append(error_entry(field="bulk", message=_("No ASNs created due to validation failures.")))

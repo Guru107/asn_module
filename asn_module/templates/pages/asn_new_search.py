@@ -47,6 +47,7 @@ def search_purchase_order_items(
 	txt: str = "",
 	start: int = 0,
 	page_len: int = 20,
+	asn_name: str | None = None,
 ) -> list[dict]:
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
@@ -62,7 +63,9 @@ def search_purchase_order_items(
 		fields=["name", "idx", "item_code", "item_name", "uom", "rate", "qty"],
 		limit_page_length=0,
 	)
-	remaining_by_item = remaining_qty_by_purchase_order_item({row.name: flt(row.qty) for row in rows})
+	remaining_by_item = remaining_qty_by_purchase_order_item(
+		{row.name: flt(row.qty) for row in rows}, exclude_asn_name=asn_name
+	)
 	filtered = []
 	for row in rows:
 		if txt:

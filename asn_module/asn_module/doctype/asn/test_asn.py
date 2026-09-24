@@ -526,13 +526,34 @@ class TestASN(FrappeTestCase):
 
 		get_all.assert_not_called()
 
-	def test_validate_po_qty_ignores_missing_purchase_order_item_qty(self):
-		asn = make_test_asn()
-		with (
-			patch("asn_module.asn_module.doctype.asn.asn.frappe.get_all", return_value=[]),
-			patch("asn_module.asn_module.doctype.asn.asn._unreceived_qty_by_po_item", return_value={}),
-		):
-			asn._validate_po_qty()
+	def test_save_refuses_shipped_qty_when_ordered_qty_is_zero(self):
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Zero Ordered Qty Tax",
+			qty=10,
+			do_not_submit=True,
+		)
+		frappe.db.set_value("Purchase Order Item", po.items[0].name, "qty", 0)
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			make_test_asn(purchase_order=po, qty=1).insert(ignore_permissions=True)
+
+		self.assertIn("Shipped qty 1.0 exceeds remaining PO qty 0", str(raised.exception))
+
+	def test_save_refuses_shipped_qty_when_the_purchase_order_item_is_missing(self):
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Missing PO Item Tax",
+			qty=10,
+			do_not_submit=True,
+		)
+		asn = make_test_asn(purchase_order=po, qty=1)
+		asn.items[0].purchase_order_item = "POI-MISSING"
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("Shipped qty 1.0 exceeds remaining PO qty 0", str(raised.exception))
 
 	def test_submit_sets_status_date_and_attachments(self):
 		asn = make_test_asn()
@@ -1031,6 +1052,19 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			make_test_asn(purchase_order=open_po, qty=1).insert(ignore_permissions=True)
 
+	def test_editing_a_draft_offers_the_same_remaining_qty_on_the_desk_and_the_portal(self):
+		"""Ordered 10, this draft declares 6. Leaving the draft out, both doors offer 10."""
+		po = self._submitted_purchase_order(qty=10)
+		draft = make_test_asn(purchase_order=po, qty=6)
+		draft.insert(ignore_permissions=True)
+
+		offered = get_purchase_order_items(po.name, draft.name)
+		_rows, remaining = fetch_purchase_order_items([po.name], exclude_asn_name=draft.name)
+
+		self.assertEqual(offered[0]["qty"], 10)
+		self.assertEqual(remaining[po.items[0].name], 10)
+		self.assertEqual(self._portal_search_qty(po, asn_name=draft.name), 10)
+
 	def test_saving_an_existing_asn_does_not_count_its_own_shipped_qty_twice(self):
 		po = self._submitted_purchase_order(qty=10)
 		draft = make_test_asn(purchase_order=po, qty=6)
@@ -1402,7 +1436,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		_rows, remaining = fetch_purchase_order_items([po.name])
 		return remaining[po.items[0].name]
 
-	def _portal_search_qty(self, po) -> float:
+	def _portal_search_qty(self, po, asn_name: str | None = None) -> float:
 		from asn_module.templates.pages import asn_new_search
 
 		with (
@@ -1415,7 +1449,9 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 				return_value=po.supplier,
 			),
 		):
-			rows = asn_new_search.search_purchase_order_items(purchase_order=po.name)
+			rows = asn_new_search.search_purchase_order_items(
+				purchase_order=po.name, asn_name=asn_name
+			)
 		if not rows:
 			return 0
 		return rows[0]["remaining_qty"]

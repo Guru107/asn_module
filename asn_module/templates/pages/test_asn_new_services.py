@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -425,6 +426,97 @@ class TestBulkUploadStockCap(FrappeTestCase):
 
 		messages = [error.get("message", "") for error in raised.exception.errors]
 		self.assertIn("Row 2: qty 9 exceeds remaining PO qty 4.0.", messages)
+		self.assertFalse(any(message.startswith("Row 3:") for message in messages))
+
+	def test_a_later_file_row_sees_what_an_earlier_row_took_across_invoices(self):
+		"""Ordered 10 on the second line. File order takes 6 before the earlier invoice's 5."""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Bulk File Order Tax",
+			qty=10,
+			item_count=2,
+			unique_items=True,
+		)
+		first_line, second_line = po.items[0], po.items[1]
+		rows = [
+			_bulk_row(po, first_line, row_number=1, invoice_no="FILE-INV-A", qty=1),
+			_bulk_row(po, second_line, row_number=2, invoice_no="FILE-INV-B", qty=6),
+			_bulk_row(po, second_line, row_number=3, invoice_no="FILE-INV-A", qty=5),
+		]
+		rows[0] = replace(rows[0], supplier_invoice_amount=1000)
+		rows[2] = replace(rows[2], supplier_invoice_amount=1000)
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				return_value=([], {}),
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=po.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 3: qty 5 exceeds remaining PO qty 4.0.", messages)
+		self.assertFalse(any(message.startswith("Row 2:") for message in messages))
+
+	def test_a_stock_cap_refusal_does_not_consume_remaining_qty_for_a_later_row(self):
+		"""Ordered 10. Row 1 is refused by the Stock Cap, so row 2 is judged against 10."""
+		rows = [
+			_bulk_row(self.po, self.po_item, row_number=1, invoice_no="CAP-REM-1", qty=6),
+			_bulk_row(self.po, self.po_item, row_number=2, invoice_no="CAP-REM-2", qty=11),
+		]
+
+		def fake_breaches(payload_rows, exclude_asn_name=None, consumed=None):
+			if payload_rows and payload_rows[0]["idx"] == 1:
+				return [self._breach()], {}
+			return [], {}
+
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				side_effect=fake_breaches,
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=self.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 2: qty 11 exceeds remaining PO qty 10.0.", messages)
+		self.assertFalse(any("remaining PO qty 4" in message for message in messages))
+
+	def test_a_stock_cap_refusal_keeps_a_real_remaining_qty_error_on_the_same_invoice(self):
+		"""Ordered 10 on each line. The cap refuses the invoice, and the other line still exceeds 10."""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Bulk Cap Remaining Tax",
+			qty=10,
+			item_count=2,
+			unique_items=True,
+		)
+		capped_line, other_line = po.items[0], po.items[1]
+		rows = [
+			_bulk_row(po, capped_line, row_number=1, invoice_no="CAP-SAME-A", qty=6),
+			_bulk_row(po, other_line, row_number=2, invoice_no="CAP-SAME-A", qty=11),
+			_bulk_row(po, capped_line, row_number=3, invoice_no="CAP-SAME-B", qty=6),
+		]
+		rows[0] = replace(rows[0], supplier_invoice_amount=1000)
+		rows[1] = replace(rows[1], supplier_invoice_amount=1000)
+
+		def fake_breaches(payload_rows, exclude_asn_name=None, consumed=None):
+			if payload_rows and payload_rows[0]["idx"] == 1:
+				return [self._breach()], {}
+			return [], {}
+
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				side_effect=fake_breaches,
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=po.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 2: qty 11 exceeds remaining PO qty 10.0.", messages)
 		self.assertFalse(any(message.startswith("Row 3:") for message in messages))
 
 	def test_breach_prevents_any_asn_from_being_created(self):

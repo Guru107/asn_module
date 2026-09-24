@@ -236,13 +236,12 @@ class ASN(WebsiteGenerator):
 			fields=["name", "qty"],
 		)
 		po_qty_by_item = {row.name: flt(row.qty) for row in po_items}
+		for name in purchase_order_item_names:
+			po_qty_by_item.setdefault(name, 0)
 		qty_state = _purchase_order_item_qty_state(po_qty_by_item, exclude_asn_name=self.name or None)
 
 		for purchase_order_item, rows in rows_by_purchase_order_item.items():
-			po_qty = po_qty_by_item.get(purchase_order_item)
-			if not po_qty:
-				continue
-
+			po_qty = po_qty_by_item[purchase_order_item]
 			current_qty = sum(flt(row.qty) for row in rows)
 			# Net received already includes receipts against this ASN. Add back only the
 			# received quantity that this Shipped Qty still covers, so a partly received
