@@ -187,6 +187,11 @@ def build_purchase_order_with_mandatory_fields(
 	return po
 
 
+def message_log_text() -> str:
+	"""Flatten Frappe's message log the way a save warning and a submit block are asserted."""
+	return " ".join(str(entry) for entry in frappe.local.message_log or [])
+
+
 def make_test_breach(
 	*,
 	branch: str = "Mumbai",

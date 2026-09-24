@@ -25,6 +25,7 @@ from asn_module.utils.test_setup import (
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
 	make_test_breach,
+	message_log_text,
 )
 
 IGNORE_TEST_RECORD_DEPENDENCIES = [
@@ -1479,8 +1480,7 @@ class TestASNStockCap(FrappeTestCase):
 
 		self.assertIn("WIDGET", str(ctx.exception))
 		self.assertEqual(frappe.db.get_value("ASN", asn.name, "docstatus"), 0)
-		messages = " ".join(str(entry) for entry in frappe.local.message_log or [])
-		self.assertNotIn("Stock Cap Warning", messages)
+		self.assertNotIn("Stock Cap Warning", message_log_text())
 
 	def test_save_warns_but_succeeds_when_cap_is_breached(self):
 		asn = make_test_asn(qty=5)
@@ -1492,8 +1492,7 @@ class TestASNStockCap(FrappeTestCase):
 			asn.insert()
 
 		self.assertTrue(frappe.db.exists("ASN", asn.name))
-		messages = " ".join(str(m) for m in frappe.local.message_log or [])
-		self.assertIn("WIDGET", messages)
+		self.assertIn("WIDGET", message_log_text())
 
 	def test_submit_succeeds_when_no_breach(self):
 		asn = make_test_asn(qty=5)

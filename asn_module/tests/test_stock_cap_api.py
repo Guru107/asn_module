@@ -20,6 +20,7 @@ from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
+	message_log_text,
 )
 
 BRANCH = "_Test API Access Branch"
@@ -917,29 +918,60 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		asn.reload()
 		return po, asn
 
-	def test_same_purchase_order_accepts_the_returned_quantity(self):
-		"""A return of 10 leaves the original shipment Received and frees 10 on that order.
+	def _assert_desk_breach_at_maximum_stock(self, message: str) -> None:
+		"""Desk text when On Hand is at Maximum Stock and the Received shipment is not In Transit Qty."""
+		self.assertIn("On hand 100", message)
+		self.assertIn("in transit 0", message)
+		self.assertIn("exceeds maximum 100", message)
 
-		The mocked receipt does not post ERPNext's net received quantity, so this sets the
-		figure a return of 10 would leave on the Purchase Order Item.
-		"""
-		# A previous test in this class can leave On Hand at 90. The original shipment
-		# is the full order, so it has to start from an empty bin to pass the Stock Cap.
-		self._set_on_hand(0)
-		po, asn = self._accept_shipment(qty=100, tax_description="_Test Stock Cap PR API Return PO Room Tax")
-		self.assertEqual(asn.status, "Received")
-		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
-		frappe.db.set_value(
-			"Purchase Order Item", po.items[0].name, "received_qty", 90, update_modified=False
-		)
-		self._set_on_hand(90)
-
-		replacement = make_test_asn(purchase_order=po, qty=10)
-		replacement.insert(ignore_permissions=True)
-
+	def _assert_original_shipment_stays_received(self, asn) -> None:
 		asn.reload()
 		self.assertEqual(asn.status, "Received")
 		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
+
+	def _order_with_returned_qty(self, *, tax_description: str, on_hand: float):
+		"""100 accepted and 10 returned. The line's net received quantity is 90.
+
+		The mocked receipt does not post ERPNext's net received quantity, so this sets
+		the figure a return of 10 would leave on the Purchase Order Item. On Hand is
+		cleared first: a previous test in this class can leave it at 90, and the
+		original shipment is the full order.
+		"""
+		self._set_on_hand(0)
+		po, asn = self._accept_shipment(qty=100, tax_description=tax_description)
+		self._assert_original_shipment_stays_received(asn)
+		frappe.db.set_value(
+			"Purchase Order Item", po.items[0].name, "received_qty", 90, update_modified=False
+		)
+		self._set_on_hand(on_hand)
+		return po, asn
+
+	def _submit_refused_at_maximum_stock(self, asn) -> str:
+		with _mock_asn_attachments():
+			with self.assertRaises(frappe.ValidationError) as raised:
+				asn.submit()
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "docstatus"), 0)
+		return str(raised.exception)
+
+	def _submit_once_on_hand_falls(self, asn) -> None:
+		self._set_on_hand(90)
+		asn.reload()
+		with _mock_asn_attachments():
+			asn.submit()
+		asn.reload()
+		self.assertEqual(asn.docstatus, 1)
+
+	def test_same_purchase_order_accepts_the_returned_quantity(self):
+		"""A return of 10 leaves the original shipment Received and frees 10 on that order."""
+		po, asn = self._order_with_returned_qty(
+			tax_description="_Test Stock Cap PR API Return PO Room Tax",
+			on_hand=90,
+		)
+
+		further_asn = make_test_asn(purchase_order=po, qty=10)
+		further_asn.insert(ignore_permissions=True)
+
+		self._assert_original_shipment_stays_received(asn)
 
 	def test_new_purchase_order_can_ship_the_returned_quantity_once_on_hand_drops(self):
 		"""The cap refuses 10 more while on-hand is still 100, and allows it at 90.
@@ -966,18 +998,10 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		blocked = make_test_asn(purchase_order=fresh_po, qty=10)
 		blocked.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			with self.assertRaises(frappe.ValidationError) as raised:
-				blocked.submit()
-		self.assertIn("exceeds maximum", str(raised.exception))
+		refusal = self._submit_refused_at_maximum_stock(blocked)
+		self.assertIn("exceeds maximum", refusal)
 
-		self._set_on_hand(90)
-		blocked.reload()
-		with _mock_asn_attachments():
-			blocked.submit()
-
-		blocked.reload()
-		self.assertEqual(blocked.docstatus, 1)
+		self._submit_once_on_hand_falls(blocked)
 
 	def test_replacement_on_the_same_order_waits_for_on_hand_to_fall(self):
 		"""Remaining Qty allows 10 back onto the same order. The Stock Cap does not.
@@ -986,47 +1010,24 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		submits once On Hand has fallen by the returned 10. The original shipment stays
 		Received, so the desk warning counts it as On Hand, not In Transit Qty.
 		"""
-		self._set_on_hand(0)
-		po, asn = self._accept_shipment(
-			qty=100, tax_description="_Test Stock Cap PR API Replacement Cap Tax"
+		po, asn = self._order_with_returned_qty(
+			tax_description="_Test Stock Cap PR API Replacement Cap Tax",
+			on_hand=100,
 		)
-		self.assertEqual(asn.status, "Received")
-		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
-		frappe.db.set_value(
-			"Purchase Order Item", po.items[0].name, "received_qty", 90, update_modified=False
-		)
-		self._set_on_hand(100)
 
 		frappe.local.message_log = []
-		replacement = make_test_asn(purchase_order=po, qty=10)
-		replacement.insert(ignore_permissions=True)
+		further_asn = make_test_asn(purchase_order=po, qty=10)
+		further_asn.insert(ignore_permissions=True)
 
-		self.assertEqual(frappe.db.get_value("ASN", replacement.name, "docstatus"), 0)
-		warning = " ".join(str(entry) for entry in frappe.local.message_log or [])
+		self.assertEqual(frappe.db.get_value("ASN", further_asn.name, "docstatus"), 0)
+		warning = message_log_text()
 		self.assertIn("Stock Cap Warning", warning)
-		self.assertIn("On hand 100", warning)
-		self.assertIn("in transit 0", warning)
-		self.assertIn("exceeds maximum 100", warning)
+		self._assert_desk_breach_at_maximum_stock(warning)
 
 		frappe.local.message_log = []
-		with _mock_asn_attachments():
-			with self.assertRaises(frappe.ValidationError) as raised:
-				replacement.submit()
-		refusal = str(raised.exception)
-		self.assertIn("On hand 100", refusal)
-		self.assertIn("in transit 0", refusal)
-		self.assertIn("exceeds maximum 100", refusal)
-		self.assertEqual(frappe.db.get_value("ASN", replacement.name, "docstatus"), 0)
-		blocked_log = " ".join(str(entry) for entry in frappe.local.message_log or [])
-		self.assertNotIn("Stock Cap Warning", blocked_log)
+		refusal = self._submit_refused_at_maximum_stock(further_asn)
+		self._assert_desk_breach_at_maximum_stock(refusal)
+		self.assertNotIn("Stock Cap Warning", message_log_text())
 
-		self._set_on_hand(90)
-		replacement.reload()
-		with _mock_asn_attachments():
-			replacement.submit()
-
-		replacement.reload()
-		self.assertEqual(replacement.docstatus, 1)
-		asn.reload()
-		self.assertEqual(asn.status, "Received")
-		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
+		self._submit_once_on_hand_falls(further_asn)
+		self._assert_original_shipment_stays_received(asn)
