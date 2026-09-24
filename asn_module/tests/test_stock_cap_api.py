@@ -190,7 +190,9 @@ class TestStockCapAccessControlAndRedaction(FrappeTestCase):
 
 		self.assertEqual(len(breaches), 1)
 		self.assertIn(ITEM, message)
-		for withheld_text in ("branch", "on hand", "in transit"):
+		self.assertIn("cannot take this quantity", message)
+		self.assertNotIn(BRANCH, message)
+		for withheld_text in ("on hand", "in transit"):
 			self.assertNotIn(withheld_text, message.lower())
 
 	def test_breach_message_includes_stock_figures_with_item_read(self):

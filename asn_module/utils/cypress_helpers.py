@@ -480,3 +480,232 @@ def seed_stock_cap_context():
 		"breaching_qty": flt(po_item.qty) * 0.6,
 		"passing_qty": flt(po_item.qty) / 4,
 	}
+
+
+def _ensure_cypress_item(item_code: str) -> None:
+	if frappe.db.exists("Item", item_code):
+		return
+	item_doc = {
+		"doctype": "Item",
+		"item_code": item_code,
+		"item_name": item_code,
+		"item_group": frappe.db.get_value("Item Group", {}, "name") or "All Item Groups",
+		"stock_uom": frappe.db.get_value("UOM", {}, "name") or "Nos",
+		"inspection_required_before_purchase": 0,
+	}
+	if frappe.db.has_column("Item", "gst_hsn_code"):
+		existing_hsn_code = frappe.db.get_value("GST HSN Code", {}, "name")
+		if existing_hsn_code:
+			item_doc["gst_hsn_code"] = existing_hsn_code
+	frappe.get_doc(item_doc).insert(ignore_permissions=True)
+
+
+def _ensure_cypress_warehouse(warehouse_name: str) -> str:
+	from asn_module.asn_module.doctype.asn.test_asn import _ensure_company
+
+	company = _ensure_company()
+	abbr = frappe.get_cached_value("Company", company, "abbr")
+	warehouse = f"{warehouse_name} - {abbr}"
+	if not frappe.db.exists("Warehouse", warehouse):
+		frappe.get_doc(
+			{
+				"doctype": "Warehouse",
+				"warehouse_name": warehouse_name,
+				"company": company,
+				"is_group": 0,
+			}
+		).insert(ignore_permissions=True)
+	return warehouse
+
+
+def _drop_cypress_asns(item_code: str) -> None:
+	"""Remove earlier Cypress ASNs for this item so a rerun starts from a known quantity."""
+	names = frappe.get_all(
+		"ASN Item",
+		filters={"item_code": item_code},
+		pluck="parent",
+		distinct=True,
+	)
+	for name in names:
+		doc = frappe.get_doc("ASN", name)
+		doc.flags.ignore_permissions = True
+		if doc.docstatus == 1:
+			doc.cancel()
+		elif doc.docstatus == 0:
+			doc.delete()
+
+
+def _portal_e2e_supplier():
+	return _ensure_supplier_portal_user(
+		supplier_name="Test Supplier E2E",
+		portal_email="supplier_e2e@test.com",
+		portal_password="supplier_e2e",
+	)
+
+
+def _insert_cypress_asn(*, supplier: str, purchase_order, qty: float, submit: bool = False):
+	from frappe.utils import add_days, today
+
+	from asn_module.asn_module.doctype.asn.test_asn import real_asn_attachment_context
+
+	po_item = purchase_order.items[0]
+	asn = frappe.get_doc(
+		{
+			"doctype": "ASN",
+			"supplier": supplier,
+			"supplier_invoice_no": f"CY-{frappe.generate_hash(length=8)}",
+			"supplier_invoice_date": today(),
+			"expected_delivery_date": add_days(today(), 1),
+			"supplier_invoice_amount": flt(qty) * flt(po_item.rate),
+			"items": [
+				{
+					"purchase_order": purchase_order.name,
+					"purchase_order_item": po_item.name,
+					"item_code": po_item.item_code,
+					"qty": qty,
+					"uom": po_item.uom,
+					"rate": po_item.rate,
+				}
+			],
+		}
+	)
+	asn.flags.ignore_permissions = True
+	asn.insert()
+	if submit:
+		with real_asn_attachment_context():
+			asn.submit()
+	return asn
+
+
+def _cypress_purchase_order(*, supplier: str, qty: float, item_code: str, warehouse: str, branch: str | None):
+	from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+	from asn_module.utils.test_setup import build_purchase_order_with_mandatory_fields
+
+	po = build_purchase_order_with_mandatory_fields(
+		create_purchase_order,
+		tax_description="asn_module portal e2e",
+		qty=qty,
+		supplier=supplier,
+		item_code=item_code,
+		warehouse=warehouse,
+	)
+	if branch:
+		frappe.db.set_value("Purchase Order", po.name, "branch", branch)
+	return po
+
+
+@frappe.whitelist()
+def seed_portal_draft_remaining_context():
+	"""Ordered 10, this supplier's draft declares 6. Another supplier has a draft too.
+
+	The create page should offer the draft's quantity back only when that draft is the
+	one being edited.
+	"""
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
+	supplier, portal_user, portal_password = _portal_e2e_supplier()
+	other_supplier, _other_user, _other_password = _ensure_supplier_portal_user(
+		supplier_name="Other Cypress Supplier",
+		portal_email="other_supplier_e2e@test.com",
+		portal_password="other_supplier_e2e",
+	)
+	item_code = "_Cypress Portal Draft Item"
+	other_item = "_Cypress Other Draft Item"
+	_ensure_cypress_item(item_code)
+	_ensure_cypress_item(other_item)
+	_drop_cypress_asns(item_code)
+	_drop_cypress_asns(other_item)
+	warehouse = _ensure_cypress_warehouse("_Cypress Portal Draft Warehouse")
+	po = _cypress_purchase_order(
+		supplier=supplier.name,
+		qty=10,
+		item_code=item_code,
+		warehouse=warehouse,
+		branch=None,
+	)
+	other_po = _cypress_purchase_order(
+		supplier=other_supplier.name,
+		qty=6,
+		item_code=other_item,
+		warehouse=warehouse,
+		branch=None,
+	)
+	draft = _insert_cypress_asn(supplier=supplier.name, purchase_order=po, qty=6)
+	other_draft = _insert_cypress_asn(supplier=other_supplier.name, purchase_order=other_po, qty=6)
+	submitted_po = _cypress_purchase_order(
+		supplier=supplier.name,
+		qty=10,
+		item_code=item_code,
+		warehouse=warehouse,
+		branch=None,
+	)
+	submitted = _insert_cypress_asn(
+		supplier=supplier.name, purchase_order=submitted_po, qty=6, submit=True
+	)
+	return {
+		"portal_user": portal_user,
+		"portal_password": portal_password,
+		"purchase_order": po.name,
+		"draft_name": draft.name,
+		"other_draft_name": other_draft.name,
+		"submitted_purchase_order": submitted_po.name,
+		"submitted_asn_name": submitted.name,
+	}
+
+
+@frappe.whitelist()
+def seed_portal_branch_capacity_context(already_full: int = 0):
+	"""A portal purchase order whose branch can take 4, or nothing when already full."""
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
+	from frappe.utils import cint
+
+	supplier, portal_user, portal_password = _portal_e2e_supplier()
+	branch = "_Cypress Portal Cap Branch"
+	item_code = "_Cypress Portal Cap Item"
+	if not frappe.db.exists("Branch", branch):
+		frappe.get_doc({"doctype": "Branch", "branch": branch}).insert(ignore_permissions=True)
+	_ensure_cypress_item(item_code)
+	_drop_cypress_asns(item_code)
+	warehouse = _ensure_cypress_warehouse("_Cypress Portal Cap Warehouse")
+	po = _cypress_purchase_order(
+		supplier=supplier.name,
+		qty=10,
+		item_code=item_code,
+		warehouse=warehouse,
+		branch=branch,
+	)
+	po_item = po.items[0]
+	frappe.db.delete("ASN Stock Cap Warehouse", {"warehouse": po_item.warehouse})
+	if frappe.db.exists("ASN Stock Cap Settings", branch):
+		frappe.delete_doc("ASN Stock Cap Settings", branch, force=True)
+	frappe.get_doc(
+		{
+			"doctype": "ASN Stock Cap Settings",
+			"branch": branch,
+			"enabled": 1,
+			"warehouses": [{"warehouse": po_item.warehouse}],
+		}
+	).insert(ignore_permissions=True)
+	cap_qty = 4
+	frappe.db.delete("ASN Item Branch Cap", {"branch": branch, "item": item_code})
+	frappe.get_doc(
+		{
+			"doctype": "ASN Item Branch Cap",
+			"branch": branch,
+			"item": item_code,
+			"max_qty": cap_qty,
+		}
+	).insert(ignore_permissions=True)
+	if cint(already_full):
+		_insert_cypress_asn(supplier=supplier.name, purchase_order=po, qty=cap_qty, submit=True)
+	return {
+		"portal_user": portal_user,
+		"portal_password": portal_password,
+		"purchase_order": po.name,
+		"cap_qty": cap_qty,
+	}
