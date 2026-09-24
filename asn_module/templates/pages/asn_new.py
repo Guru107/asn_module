@@ -53,9 +53,7 @@ def get_context(context):
 
 	context.supplier = supplier
 	context.open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
-	context.asn_name = (
-		supplier_draft_asn_name(supplier, (frappe.form_dict or {}).get("asn_name")) or ""
-	)
+	context.asn_name = supplier_draft_asn_name(supplier, (frappe.form_dict or {}).get("asn_name")) or ""
 
 	if not frappe.request or frappe.request.method != "POST":
 		return

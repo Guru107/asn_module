@@ -64,8 +64,7 @@ def _redacted(breach: Breach) -> str:
 			"Item {0} (rows {1}): the branch cannot take this quantity. You may declare at most {2}."
 		).format(breach.item_code, rows, _qty_text(allowed))
 	return _(
-		"Item {0} (rows {1}): the branch cannot take this quantity. "
-		"You may declare at most {2} in stock UOM."
+		"Item {0} (rows {1}): the branch cannot take this quantity. You may declare at most {2} in stock UOM."
 	).format(breach.item_code, rows, _qty_text(allowed))
 
 

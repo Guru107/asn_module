@@ -641,9 +641,7 @@ def seed_portal_draft_remaining_context():
 		warehouse=warehouse,
 		branch=None,
 	)
-	submitted = _insert_cypress_asn(
-		supplier=supplier.name, purchase_order=submitted_po, qty=6, submit=True
-	)
+	submitted = _insert_cypress_asn(supplier=supplier.name, purchase_order=submitted_po, qty=6, submit=True)
 	return {
 		"portal_user": portal_user,
 		"portal_password": portal_password,

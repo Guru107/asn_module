@@ -292,9 +292,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		# Class teardown is the only rollback, and a later test in this class writes
 		# Bin.actual_qty. The next test would otherwise inherit that on-hand quantity.
-		bin_name = frappe.db.get_value(
-			"Bin", {"item_code": PR_ITEM, "warehouse": self.warehouse}, "name"
-		)
+		bin_name = frappe.db.get_value("Bin", {"item_code": PR_ITEM, "warehouse": self.warehouse}, "name")
 		if bin_name:
 			frappe.db.set_value("Bin", bin_name, "actual_qty", 0, update_modified=False)
 

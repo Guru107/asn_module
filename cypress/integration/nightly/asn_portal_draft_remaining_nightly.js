@@ -2,7 +2,9 @@ function openPurchaseOrder(poName) {
 	cy.intercept("GET", "**/search_purchase_order_items*").as("poItems");
 	cy.get("#single-po-input", { timeout: 20000 }).clear().type(poName);
 	cy.get("#add-po-btn").click();
-	cy.wait("@poItems").its("request.url").should("include", `purchase_order=${encodeURIComponent(poName)}`);
+	cy.wait("@poItems")
+		.its("request.url")
+		.should("include", `purchase_order=${encodeURIComponent(poName)}`);
 	cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
 }
 
@@ -23,11 +25,11 @@ context("Portal Remaining Qty while editing a draft", () => {
 	let seeded;
 
 	before(() => {
-		cy.seed_context("asn_module.utils.cypress_helpers.seed_portal_draft_remaining_context").then(
-			(data) => {
-				seeded = data;
-			}
-		);
+		cy.seed_context(
+			"asn_module.utils.cypress_helpers.seed_portal_draft_remaining_context"
+		).then((data) => {
+			seeded = data;
+		});
 	});
 
 	beforeEach(() => {
@@ -36,7 +38,10 @@ context("Portal Remaining Qty while editing a draft", () => {
 
 	it("offers the draft's quantity back while that draft is being edited", () => {
 		visitCreatePage(seeded.draft_name);
-		cy.get("form#single-asn-form input[name='asn_name']").should("have.value", seeded.draft_name);
+		cy.get("form#single-asn-form input[name='asn_name']").should(
+			"have.value",
+			seeded.draft_name
+		);
 		openPurchaseOrder(seeded.purchase_order);
 		// Ordered 10, this draft declares 6. Leaving it out offers 10.
 		expectRemaining(10);
@@ -97,11 +102,11 @@ context("Portal submit updates the draft being edited", () => {
 	let seeded;
 
 	before(() => {
-		cy.seed_context("asn_module.utils.cypress_helpers.seed_portal_draft_remaining_context").then(
-			(data) => {
-				seeded = data;
-			}
-		);
+		cy.seed_context(
+			"asn_module.utils.cypress_helpers.seed_portal_draft_remaining_context"
+		).then((data) => {
+			seeded = data;
+		});
 	});
 
 	beforeEach(() => {

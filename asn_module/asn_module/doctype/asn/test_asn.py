@@ -1112,7 +1112,9 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 
 		context = frappe._dict()
 		with (
-			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace(method="GET", files={})),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace(method="GET", files={})
+			),
 			patch(
 				"asn_module.templates.pages.asn_new.frappe.session",
 				SimpleNamespace(user="supplier@example.com"),
@@ -1541,9 +1543,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 				return_value=po.supplier,
 			),
 		):
-			rows = asn_new_search.search_purchase_order_items(
-				purchase_order=po.name, asn_name=asn_name
-			)
+			rows = asn_new_search.search_purchase_order_items(purchase_order=po.name, asn_name=asn_name)
 		if not rows:
 			return 0
 		return rows[0]["remaining_qty"]
