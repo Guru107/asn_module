@@ -978,3 +978,55 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		blocked.reload()
 		self.assertEqual(blocked.docstatus, 1)
+
+	def test_replacement_on_the_same_order_waits_for_on_hand_to_fall(self):
+		"""Remaining Qty allows 10 back onto the same order. The Stock Cap does not.
+
+		Submit is refused while On Hand is still at Maximum Stock, and the same ASN
+		submits once On Hand has fallen by the returned 10. The original shipment stays
+		Received, so the desk warning counts it as On Hand, not In Transit Qty.
+		"""
+		self._set_on_hand(0)
+		po, asn = self._accept_shipment(
+			qty=100, tax_description="_Test Stock Cap PR API Replacement Cap Tax"
+		)
+		self.assertEqual(asn.status, "Received")
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
+		frappe.db.set_value(
+			"Purchase Order Item", po.items[0].name, "received_qty", 90, update_modified=False
+		)
+		self._set_on_hand(100)
+
+		frappe.local.message_log = []
+		replacement = make_test_asn(purchase_order=po, qty=10)
+		replacement.insert(ignore_permissions=True)
+
+		self.assertEqual(frappe.db.get_value("ASN", replacement.name, "docstatus"), 0)
+		warning = " ".join(str(entry) for entry in frappe.local.message_log or [])
+		self.assertIn("Stock Cap Warning", warning)
+		self.assertIn("On hand 100", warning)
+		self.assertIn("in transit 0", warning)
+		self.assertIn("exceeds maximum 100", warning)
+
+		frappe.local.message_log = []
+		with _mock_asn_attachments():
+			with self.assertRaises(frappe.ValidationError) as raised:
+				replacement.submit()
+		refusal = str(raised.exception)
+		self.assertIn("On hand 100", refusal)
+		self.assertIn("in transit 0", refusal)
+		self.assertIn("exceeds maximum 100", refusal)
+		self.assertEqual(frappe.db.get_value("ASN", replacement.name, "docstatus"), 0)
+		blocked_log = " ".join(str(entry) for entry in frappe.local.message_log or [])
+		self.assertNotIn("Stock Cap Warning", blocked_log)
+
+		self._set_on_hand(90)
+		replacement.reload()
+		with _mock_asn_attachments():
+			replacement.submit()
+
+		replacement.reload()
+		self.assertEqual(replacement.docstatus, 1)
+		asn.reload()
+		self.assertEqual(asn.status, "Received")
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 100)
