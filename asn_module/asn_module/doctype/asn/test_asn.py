@@ -11,6 +11,7 @@ from asn_module.asn_module.doctype.asn.asn import (
 	get_po_items,
 	get_purchase_order_items,
 )
+from asn_module.templates.pages.asn_new_services import fetch_purchase_order_items
 from asn_module.utils.test_setup import (
 	TEST_COMPANY_NAME,
 	before_tests,
@@ -726,6 +727,43 @@ class TestASN(FrappeTestCase):
 		self.assertEqual(items[0]["purchase_order"], po.name)
 		self.assertEqual(items[0]["purchase_order_item"], po.items[0].name)
 		self.assertEqual(items[0]["qty"], 4)
+
+	def test_desk_and_portal_offer_the_same_remaining_qty_ignoring_cancelled_asns(self):
+		"""Ordered 10, 4 still shipped, 9 withdrawn. Both doors offer 6, and 7 is refused."""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Remaining Qty Tax",
+			qty=10,
+			do_not_submit=True,
+		)
+		withdrawn = make_test_asn(purchase_order=po, qty=9)
+		withdrawn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			withdrawn.submit()
+		withdrawn.cancel()
+		shipped = make_test_asn(purchase_order=po, qty=4)
+		shipped.insert(ignore_permissions=True)
+
+		offered = get_purchase_order_items(po.name)
+		_rows, remaining = fetch_purchase_order_items([po.name])
+
+		self.assertEqual(len(offered), 1)
+		self.assertEqual(offered[0]["qty"], 6)
+		self.assertEqual(remaining[po.items[0].name], 6)
+
+	def test_desk_hides_a_line_when_remaining_qty_is_zero_and_portal_reports_zero(self):
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Remaining Qty Tax",
+			qty=10,
+			do_not_submit=True,
+		)
+		make_test_asn(purchase_order=po, qty=10).insert(ignore_permissions=True)
+
+		self.assertEqual(get_purchase_order_items(po.name), [])
+
+		_rows, remaining = fetch_purchase_order_items([po.name])
+		self.assertEqual(remaining[po.items[0].name], 0)
 
 	def test_get_po_items_filters_results_by_purchase_order_and_search_text(self):
 		po = create_purchase_order(item_code=_ensure_item(), do_not_submit=True)

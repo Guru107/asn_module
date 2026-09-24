@@ -8,7 +8,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from asn_module.asn_module.doctype.asn.asn import _get_shipped_qty_by_po_item
+from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
 from asn_module.stock_cap.api import breaches_for_asn_rows
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
@@ -319,11 +319,7 @@ def fetch_purchase_order_items(
 		limit_page_length=0,
 	)
 	po_item_qty_by_name = {row.name: flt(row.qty) for row in rows}
-	shipped_qty_by_item = _get_shipped_qty_by_po_item([row.name for row in rows])
-	remaining_qty_by_name = {
-		name: flt(po_item_qty_by_name.get(name, 0)) - flt(shipped_qty_by_item.get(name, 0))
-		for name in po_item_qty_by_name
-	}
+	remaining_qty_by_name = remaining_qty_by_purchase_order_item(po_item_qty_by_name)
 
 	rows_by_key: dict[tuple[str, str], list[frappe._dict]] = {}
 	for row in rows:

@@ -235,8 +235,8 @@ class ASN(WebsiteGenerator):
 			fields=["name", "qty"],
 		)
 		po_qty_by_item = {row.name: flt(row.qty) for row in po_items}
-		existing_qty_by_item = _get_shipped_qty_by_po_item(
-			purchase_order_item_names, exclude_asn_name=self.name or None
+		remaining_by_item = remaining_qty_by_purchase_order_item(
+			po_qty_by_item, exclude_asn_name=self.name or None
 		)
 
 		for purchase_order_item, rows in rows_by_purchase_order_item.items():
@@ -245,8 +245,7 @@ class ASN(WebsiteGenerator):
 				continue
 
 			current_qty = sum(flt(row.qty) for row in rows)
-			already_shipped = existing_qty_by_item.get(purchase_order_item, 0)
-			remaining_qty = flt(po_qty) - flt(already_shipped)
+			remaining_qty = remaining_by_item.get(purchase_order_item, 0)
 			if flt(current_qty) <= flt(remaining_qty):
 				continue
 
@@ -335,6 +334,26 @@ def _get_shipped_qty_by_po_item(
 	return {row.purchase_order_item: flt(row.qty) for row in rows}
 
 
+def remaining_qty_by_purchase_order_item(
+	ordered_qty_by_name: dict[str, float], *, exclude_asn_name: str | None = None
+) -> dict[str, float]:
+	"""Remaining Qty for each Purchase Order Item.
+
+	Ordered quantity minus Shipped Qty on ASNs that are not Cancelled. The ASN named
+	in ``exclude_asn_name`` is left out, so saving it does not count its own Shipped Qty twice.
+	"""
+	if not ordered_qty_by_name:
+		return {}
+
+	shipped_qty_by_item = _get_shipped_qty_by_po_item(
+		list(ordered_qty_by_name), exclude_asn_name=exclude_asn_name
+	)
+	return {
+		name: flt(ordered_qty) - flt(shipped_qty_by_item.get(name, 0))
+		for name, ordered_qty in ordered_qty_by_name.items()
+	}
+
+
 @frappe.whitelist()
 def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -> list[dict]:
 	_get_accessible_purchase_order(purchase_order)
@@ -351,14 +370,14 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 		],
 	)
 
-	shipped_qty_by_item = _get_shipped_qty_by_po_item(
-		[poi.purchase_order_item for poi in po_items], exclude_asn_name=asn_name
+	ordered_qty_by_name = {poi.purchase_order_item: flt(poi.qty) for poi in po_items}
+	remaining_by_item = remaining_qty_by_purchase_order_item(
+		ordered_qty_by_name, exclude_asn_name=asn_name
 	)
 
 	result = []
 	for poi in po_items:
-		already_shipped = shipped_qty_by_item.get(poi.purchase_order_item, 0)
-		remaining_qty = flt(poi.qty) - flt(already_shipped)
+		remaining_qty = remaining_by_item.get(poi.purchase_order_item, 0)
 		if remaining_qty <= 0:
 			continue
 

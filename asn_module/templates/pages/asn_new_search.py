@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from asn_module.asn_module.doctype.asn.asn import _get_shipped_qty_by_po_item
+from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
 
 
@@ -62,7 +62,7 @@ def search_purchase_order_items(
 		fields=["name", "idx", "item_code", "item_name", "uom", "rate", "qty"],
 		limit_page_length=0,
 	)
-	shipped_qty_by_item = _get_shipped_qty_by_po_item([row.name for row in rows])
+	remaining_by_item = remaining_qty_by_purchase_order_item({row.name: flt(row.qty) for row in rows})
 	filtered = []
 	for row in rows:
 		if txt:
@@ -73,7 +73,7 @@ def search_purchase_order_items(
 			]
 			if not any(txt in value for value in haystack):
 				continue
-		remaining_qty = flt(row.qty) - flt(shipped_qty_by_item.get(row.name, 0))
+		remaining_qty = remaining_by_item.get(row.name, 0)
 		if remaining_qty <= 0:
 			continue
 		filtered.append(

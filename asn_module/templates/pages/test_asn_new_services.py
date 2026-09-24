@@ -172,7 +172,7 @@ class TestServiceUtilities(FrappeTestCase):
 		with (
 			patch("asn_module.templates.pages.asn_new_services.frappe.get_all", return_value=rows),
 			patch(
-				"asn_module.templates.pages.asn_new_services._get_shipped_qty_by_po_item",
+				"asn_module.asn_module.doctype.asn.asn._get_shipped_qty_by_po_item",
 				return_value={"POI-1": 3},
 			),
 		):
@@ -406,6 +406,26 @@ class TestBulkUploadStockCap(FrappeTestCase):
 			_bulk_row(self.po, self.po_item, row_number=1, invoice_no="CAP-INV-1", qty=1),
 			_bulk_row(self.po, self.po_item, row_number=2, invoice_no="CAP-INV-2", qty=1),
 		]
+
+	def test_a_refused_row_does_not_consume_remaining_qty_for_a_later_row(self):
+		"""Ordered 10. Row 6 is taken, row 9 is refused, and row 4 still fits in what is left."""
+		rows = [
+			_bulk_row(self.po, self.po_item, row_number=1, invoice_no="REM-INV-1", qty=6),
+			_bulk_row(self.po, self.po_item, row_number=2, invoice_no="REM-INV-2", qty=9),
+			_bulk_row(self.po, self.po_item, row_number=3, invoice_no="REM-INV-3", qty=4),
+		]
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				return_value=([], {}),
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=self.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 2: qty 9 exceeds remaining PO qty 4.0.", messages)
+		self.assertFalse(any(message.startswith("Row 3:") for message in messages))
 
 	def test_breach_prevents_any_asn_from_being_created(self):
 		inserted = []
