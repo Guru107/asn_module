@@ -136,36 +136,18 @@ def disable_hsn_validation() -> None:
 		frappe.db.set_single_value("GST Settings", "validate_hsn_code", 0)
 
 
-def build_purchase_order_with_mandatory_fields(
-	create_purchase_order_fn, *, tax_description, do_not_submit=False, **kwargs
-):
-	"""Build a real Purchase Order fixture that satisfies this bench's mandatory fields.
+def apply_purchase_order_site_requirements(po, *, tax_description: str):
+	"""Fill Purchase Order fields this site marks mandatory, and only those.
 
-	This bench has ``custom_order_type`` and a ``taxes`` row as mandatory on Purchase
-	Order (Property Setters/Custom Fields imported from production) that the plain
-	``create_purchase_order`` test helper -- typically
-	``asn_module.asn_module.doctype.asn.test_asn.create_purchase_order`` -- does not set,
-	and that india_compliance's HSN validation would otherwise also reject. Fill the
-	mandatory fields in only when the current site's metadata actually requires them, so
-	this keeps working whether or not those customisations are present.
-
-	``create_purchase_order_fn`` is passed in rather than imported here so callers that
-	need to route through a locally captured or ``unittest.mock.patch(..., side_effect=)``
-	reference -- e.g. to transparently patch a module-global ``create_purchase_order`` --
-	can do so without this helper importing ``test_asn`` (and risking an import cycle).
-
-	:param tax_description: Description for the synthetic tax row, when one is needed.
-		Callers should use a description that identifies which test suite created it.
-	:param do_not_submit: When ``True``, insert but do not submit the Purchase Order.
+	``custom_order_type`` and a ``taxes`` row are mandatory here because of Property
+	Setters and Custom Fields imported from production. A site without those
+	customisations leaves the document unchanged.
 	"""
-	po = create_purchase_order_fn(do_not_save=True, **kwargs)
-
-	meta = po.meta
-	order_type_field = meta.get_field("custom_order_type")
+	order_type_field = po.meta.get_field("custom_order_type")
 	if order_type_field and order_type_field.reqd and not po.get("custom_order_type"):
 		po.custom_order_type = "Material"
 
-	taxes_field = meta.get_field("taxes")
+	taxes_field = po.meta.get_field("taxes")
 	if taxes_field and taxes_field.reqd and not po.get("taxes"):
 		tax_account = frappe.db.get_value("Account", {"company": po.company, "is_group": 0}, "name")
 		if tax_account:
@@ -180,7 +162,25 @@ def build_purchase_order_with_mandatory_fields(
 					"tax_amount": 0,
 				},
 			)
+	return po
 
+
+def build_purchase_order_with_mandatory_fields(
+	create_purchase_order_fn, *, tax_description, do_not_submit=False, **kwargs
+):
+	"""Build a real Purchase Order fixture that satisfies this bench's mandatory fields.
+
+	``create_purchase_order_fn`` is passed in rather than imported here so callers that
+	need to route through a locally captured or ``unittest.mock.patch(..., side_effect=)``
+	reference -- e.g. to transparently patch a module-global ``create_purchase_order`` --
+	can do so without this helper importing ``test_asn`` (and risking an import cycle).
+
+	:param tax_description: Description for the synthetic tax row, when one is needed.
+		Callers should use a description that identifies which test suite created it.
+	:param do_not_submit: When ``True``, insert but do not submit the Purchase Order.
+	"""
+	po = create_purchase_order_fn(do_not_save=True, **kwargs)
+	apply_purchase_order_site_requirements(po, tax_description=tax_description)
 	po.insert(ignore_permissions=True)
 	if not do_not_submit:
 		po.submit()

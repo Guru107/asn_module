@@ -325,6 +325,9 @@ def create_purchase_order(**kwargs):
 	po.set_missing_values()
 
 	if not kwargs.get("do_not_save"):
+		from asn_module.utils.test_setup import apply_purchase_order_site_requirements
+
+		apply_purchase_order_site_requirements(po, tax_description="_Test ASN Purchase Order Tax")
 		po.insert(ignore_permissions=True)
 		if not kwargs.get("do_not_submit"):
 			po.submit()
