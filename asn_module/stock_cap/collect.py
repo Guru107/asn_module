@@ -58,7 +58,7 @@ def collect_lines_from_asn_rows(rows: list[dict]) -> list[Line]:
 	for row in usable:
 		purchase_order = po_by_name.get(row["purchase_order"])
 		po_item = po_item_by_name.get(row["purchase_order_item"])
-		if not purchase_order or not po_item or not purchase_order.branch:
+		if not purchase_order or not po_item:
 			continue
 
 		warehouse = po_item.warehouse or purchase_order.set_warehouse
@@ -68,7 +68,7 @@ def collect_lines_from_asn_rows(rows: list[dict]) -> list[Line]:
 		factor = _conversion_factor(po_item.conversion_factor)
 		lines.append(
 			Line(
-				branch=purchase_order.branch,
+				branch=purchase_order.branch or "",
 				item_code=po_item.item_code or row["item_code"],
 				warehouse=warehouse,
 				stock_qty=flt(row["qty"]) * factor,
@@ -116,10 +116,7 @@ def collect_lines_from_purchase_receipt(doc) -> list[Line]:
 	if getattr(doc, "is_return", 0):
 		return []
 
-	branch = getattr(doc, "branch", None)
-	if not branch:
-		return []
-
+	branch = getattr(doc, "branch", None) or ""
 	lines = []
 	for row in doc.items or []:
 		factor = _conversion_factor(row.conversion_factor)

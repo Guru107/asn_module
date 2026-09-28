@@ -44,6 +44,7 @@ def get_context(context):
 	context.single_errors = []
 	context.bulk_errors = []
 	context.bulk_success = None
+	context.bulk_submitted_names = ""
 	context.bulk_csv_headers = BULK_CSV_HEADERS
 
 	user = frappe.session.user
@@ -78,10 +79,14 @@ def get_context(context):
 			return
 		raise PortalValidationError([error_entry(field="mode", message=_("Invalid submit mode."))])
 	except PortalValidationError as exc:
+		errors = list(exc.errors)
+		created = tuple(getattr(exc, "created_asn_names", ()) or ())
+		if context.active_tab == "bulk" and created:
+			context.bulk_submitted_names = ", ".join(created)
 		if context.active_tab == "bulk":
-			context.bulk_errors = exc.errors
+			context.bulk_errors = errors
 		else:
-			context.single_errors = exc.errors
+			context.single_errors = errors
 	except FrappeValidationError as exc:
 		msg = cstr(getattr(exc, "message", None) or (exc.args[0] if exc.args else "") or exc).strip()
 		if not msg:
@@ -109,7 +114,12 @@ def _create_single_asn(supplier: str) -> CreateResult:
 				)
 			]
 		)
-	validate_supplier_invoices_not_reused(supplier, [_request_value("supplier_invoice_no")])
+	draft_name = supplier_draft_asn_name(supplier, _request_value("asn_name"))
+	validate_supplier_invoices_not_reused(
+		supplier,
+		[_request_value("supplier_invoice_no")],
+		exclude_asn_name=draft_name,
+	)
 	rows = _parse_single_rows()
 	if not rows:
 		raise PortalValidationError(
@@ -121,7 +131,6 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			]
 		)
 
-	draft_name = supplier_draft_asn_name(supplier, _request_value("asn_name"))
 	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(
 		selected_purchase_orders,
 		exclude_asn_name=draft_name,

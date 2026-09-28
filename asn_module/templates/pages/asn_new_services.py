@@ -47,6 +47,7 @@ INVOICE_GROUP_FIELDS = (
 @dataclass
 class PortalValidationError(Exception):
 	errors: list[dict]
+	created_asn_names: tuple[str, ...] = ()
 
 	def __str__(self):
 		return "\n".join(error.get("message", "") for error in self.errors)
@@ -180,8 +181,15 @@ def parse_bulk_csv_content(content: bytes) -> list[ParsedBulkRow]:
 	return rows
 
 
-def validate_supplier_invoices_not_reused(supplier: str, invoice_numbers: list[str]):
-	"""Raise PortalValidationError if any invoice number is already on a non-cancelled ASN."""
+def validate_supplier_invoices_not_reused(
+	supplier: str, invoice_numbers: list[str], exclude_asn_name: str | None = None
+):
+	"""Raise PortalValidationError if any invoice number is already on a non-cancelled ASN.
+
+	``exclude_asn_name`` is the draft being resumed. The ASN controller already ignores
+	that document in its own uniqueness check. This gate has to do the same, or the
+	supplier cannot submit the draft under the invoice number already stored on it.
+	"""
 	errors: list[dict] = []
 	for raw in invoice_numbers:
 		inv = (raw or "").strip()
@@ -192,6 +200,8 @@ def validate_supplier_invoices_not_reused(supplier: str, invoice_numbers: list[s
 			"supplier_invoice_no": inv,
 			"docstatus": ("!=", 2),
 		}
+		if exclude_asn_name:
+			filters["name"] = ("!=", exclude_asn_name)
 		if not frappe.db.exists("ASN", filters):
 			continue
 		errors.append(
@@ -684,7 +694,15 @@ def create_bulk_asns_for_supplier(
 	insert_asn = insert_asn or insert_and_submit_asn
 	asn_names = []
 	for header, items, _cap_check_rows in asn_payloads:
-		asn = insert_asn(supplier=supplier, header=header, items=items)
+		try:
+			asn = insert_asn(supplier=supplier, header=header, items=items)
+		except PortalValidationError as exc:
+			# Names only. The portal commits this request and says which ASNs stayed.
+			# The desk caller rethrows, and that rolls the request back, so those
+			# ASNs do not stay submitted there.
+			if asn_names:
+				exc.created_asn_names = tuple(asn_names)
+			raise
 		asn_names.append(asn.name)
 	return asn_names
 
@@ -696,9 +714,10 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[di
 	value reads honestly, where an out-parameter can silently go unused by a caller that
 	forgets to pass one in.
 
-	Runs in the validation phase so the function keeps its all-or-nothing contract: the
-	insert loop that follows has no error handling, and partially-submitted ASNs cannot
-	be rolled back cleanly. Headroom accepted by an earlier breach-free group is carried
+	Runs in the validation phase so a breach is refused before any ASN is inserted.
+	A submit that still fails after that rolls back only the group that failed.
+	Earlier groups in the same request stay submitted, and the error names them.
+	Headroom accepted by an earlier breach-free group is carried
 	forward so one upload cannot drive an item past its maximum across several ASNs,
 	mirroring how running_remaining already guards the PO quantity check. A group that
 	produced any breach contributes nothing to ``consumed`` -- only ``accepted``, the exact

@@ -105,6 +105,41 @@ def _fetch_cap_warehouses(branches: list[str]) -> dict[str, frozenset[str]]:
 	return {branch: frozenset(warehouses) for branch, warehouses in collected.items()}
 
 
+def cap_branch_by_warehouse(warehouses: list[str]) -> dict[str, str]:
+	"""Enabled cap branch that lists each warehouse, keyed by warehouse.
+
+	Matched on ``ASN Stock Cap Settings.branch``, not the settings document name, for the
+	same reason ``_fetch_cap_warehouses`` is: a Branch rename leaves the document name
+	stale while the ``branch`` field is current. A warehouse belongs to one branch. If two
+	enabled rows still name it, the name that sorts first wins so the choice does not
+	depend on query order.
+	"""
+	names = sorted({warehouse for warehouse in warehouses if warehouse})
+	if not names or not frappe.db.table_exists("ASN Stock Cap Settings"):
+		return {}
+
+	settings = DocType("ASN Stock Cap Settings")
+	warehouse_row = DocType("ASN Stock Cap Warehouse")
+	rows = (
+		frappe.qb.from_(warehouse_row)
+		.inner_join(settings)
+		.on(settings.name == warehouse_row.parent)
+		.select(settings.branch.as_("branch"), warehouse_row.warehouse)
+		.where(warehouse_row.warehouse.isin(names))
+		.where(settings.enabled == 1)
+		.where(warehouse_row.parenttype == "ASN Stock Cap Settings")
+	).run(as_dict=True)
+
+	owners: dict[str, str] = {}
+	for row in rows:
+		if not row.warehouse or not row.branch:
+			continue
+		current = owners.get(row.warehouse)
+		if current is None or row.branch < current:
+			owners[row.warehouse] = row.branch
+	return owners
+
+
 def _fetch_max_stock(branches: list[str], item_codes: list[str]) -> dict[tuple[str, str], int]:
 	"""Per-branch ceilings, keyed (branch, item_code).
 

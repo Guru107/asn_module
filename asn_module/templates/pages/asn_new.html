@@ -613,7 +613,11 @@
 					{% endif %}
 					{% if bulk_errors %}
 					<div class="alert alert-danger" role="alert">
+						{% if bulk_submitted_names %}
+						<strong>{{ _("Created and submitted {0}. The remaining invoices were not created.").format(bulk_submitted_names) }}</strong>
+						{% else %}
 						<strong>{{ _("Bulk upload failed. No ASNs created.") }}</strong>
+						{% endif %}
 						<ul class="mb-0 mt-2">
 							{% for error in bulk_errors %}
 							<li>

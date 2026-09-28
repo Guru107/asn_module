@@ -73,9 +73,15 @@ class TestStockCapCollectPurchaseReceipt(FrappeTestCase):
 		)
 		self.assertEqual(len(collect_lines_from_purchase_receipt(doc)), 1)
 
-	def test_receipt_without_branch_produces_no_lines(self):
+	def test_receipt_without_branch_still_produces_a_line(self):
+		"""The header branch can be blank. The line still has to exist so the cap can
+		place the warehouse on the branch that lists it.
+		"""
 		doc = SimpleNamespace(branch=None, is_return=0, items=[_receipt_row()])
-		self.assertEqual(collect_lines_from_purchase_receipt(doc), [])
+		lines = collect_lines_from_purchase_receipt(doc)
+		self.assertEqual(len(lines), 1)
+		self.assertEqual(lines[0].branch, "")
+		self.assertEqual(lines[0].warehouse, "Main - MC")
 
 	def test_rejected_qty_treats_zero_conversion_factor_as_one(self):
 		doc = SimpleNamespace(

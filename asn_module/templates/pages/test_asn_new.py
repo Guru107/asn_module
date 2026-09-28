@@ -12,6 +12,7 @@ from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	ParsedSingleRow,
 	PortalValidationError,
+	error_entry,
 	resolve_po_item,
 	validate_no_duplicate_po_sr_no,
 	validate_supplier_invoices_not_reused,
@@ -291,6 +292,35 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertTrue(context.single_errors)
 		self.assertEqual(context.single_errors[0]["field"], "mode")
 
+	def test_get_context_names_asns_already_submitted_when_a_later_bulk_group_fails(self):
+		context = SimpleNamespace()
+
+		def _boom(*_a, **_k):
+			raise PortalValidationError(
+				[error_entry(field="items_csv", message="Stock Cap Exceeded for WIDGET")],
+				created_asn_names=("ASN-0001",),
+			)
+
+		request = SimpleNamespace(method="POST", files={})
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"mode": "bulk"}),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
+			),
+			patch("asn_module.templates.pages.asn_new._create_bulk_asns", side_effect=_boom),
+			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
+		):
+			asn_new.get_context(context)
+
+		self.assertEqual(context.bulk_submitted_names, "ASN-0001")
+		self.assertIn("Stock Cap Exceeded", context.bulk_errors[0]["message"])
+
 	def test_get_context_maps_frappe_validation_error_to_bulk_errors(self):
 		context = SimpleNamespace()
 
@@ -404,6 +434,15 @@ class TestASNNewPortalPage(FrappeTestCase):
 		msgs = " ".join(e.get("message", "") for e in ctx.exception.errors)
 		self.assertIn("INV-DUP", msgs)
 
+	def test_resuming_a_draft_does_not_treat_its_own_invoice_as_reused(self):
+		def exists(_doctype, filters):
+			if filters.get("name") == ("!=", "ASN-DRAFT"):
+				return None
+			return "ASN-DRAFT"
+
+		with patch("asn_module.templates.pages.asn_new_services.frappe.db.exists", side_effect=exists):
+			validate_supplier_invoices_not_reused("Supp-001", ["INV-1"], exclude_asn_name="ASN-DRAFT")
+
 	def test_service_rejects_duplicate_po_sr_no_in_same_invoice_group(self):
 		rows = [
 			ParsedBulkRow(
@@ -514,6 +553,28 @@ class TestASNNewPortalPage(FrappeTestCase):
 			with self.assertRaises(PortalValidationError) as ctx:
 				asn_new._create_single_asn("Supp-001")
 		self.assertEqual(ctx.exception.errors[0]["field"], "selected_purchase_orders")
+
+	def test_create_single_asn_leaves_the_resumed_draft_out_of_the_invoice_check(self):
+		seen = {}
+
+		def capture(*_args, **kwargs):
+			seen["exclude"] = kwargs.get("exclude_asn_name")
+
+		with (
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001"]),
+			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
+			patch(
+				"asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused",
+				side_effect=capture,
+			),
+			patch("asn_module.templates.pages.asn_new.supplier_draft_asn_name", return_value="ASN-DRAFT"),
+			patch("asn_module.templates.pages.asn_new._request_value", return_value="INV-1"),
+			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=[]),
+			self.assertRaises(PortalValidationError),
+		):
+			asn_new._create_single_asn("Supp-001")
+
+		self.assertEqual(seen["exclude"], "ASN-DRAFT")
 
 	def test_create_single_asn_rejects_empty_rows(self):
 		with (

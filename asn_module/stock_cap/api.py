@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from asn_module.stock_cap.collect import (
 	asn_rows_from_doc,
 	collect_lines_from_asn_rows,
@@ -5,8 +7,8 @@ from asn_module.stock_cap.collect import (
 	purchase_order_item_receiving_qty,
 )
 from asn_module.stock_cap.evaluate import evaluate
-from asn_module.stock_cap.fetch import fetch_cap_context
-from asn_module.stock_cap.models import Breach
+from asn_module.stock_cap.fetch import cap_branch_by_warehouse, fetch_cap_context
+from asn_module.stock_cap.models import Breach, Line
 
 
 def breaches_for_asn_rows(
@@ -22,7 +24,7 @@ def breaches_for_asn_rows(
 	dict back in as the next call's ``consumed`` rather than re-deriving it themselves, so
 	the cap-warehouse / cap-is-set / positive-qty filters live in exactly one place.
 	"""
-	lines = collect_lines_from_asn_rows(rows)
+	lines = _lines_on_owning_branch(collect_lines_from_asn_rows(rows))
 	if not lines:
 		return [], {}
 
@@ -56,7 +58,7 @@ def breaches_for_purchase_receipt(doc) -> list[Breach]:
 	negative in-transit to a sibling. A sibling item on the same ASN that this receipt does
 	not cover is untouched, since it is keyed by a different Purchase Order Item entirely.
 	"""
-	lines = collect_lines_from_purchase_receipt(doc)
+	lines = _lines_on_owning_branch(collect_lines_from_purchase_receipt(doc))
 	if not lines:
 		return []
 
@@ -64,3 +66,27 @@ def breaches_for_purchase_receipt(doc) -> list[Breach]:
 	context = fetch_cap_context(lines, po_item_receiving_qty=receiving_qty)
 	breaches, _accepted = evaluate(lines, context)
 	return breaches
+
+
+def _lines_on_owning_branch(lines: list[Line]) -> list[Line]:
+	"""Place each line on the branch that lists its warehouse as a cap warehouse.
+
+	The document branch and the Purchase Order branch can be blank, or can name a
+	different branch from the one that will actually hold the stock. In-transit already
+	books the warehouse to its configured branch. The submit check has to use that same
+	branch, or the goods land with no ceiling and then reserve headroom afterwards.
+	A warehouse that no enabled branch lists keeps the branch the line already carries,
+	and the evaluator skips it.
+	"""
+	owners = cap_branch_by_warehouse([line.warehouse for line in lines])
+	if not owners:
+		return lines
+
+	placed = []
+	for line in lines:
+		owner = owners.get(line.warehouse)
+		if not owner or owner == line.branch:
+			placed.append(line)
+			continue
+		placed.append(replace(line, branch=owner))
+	return placed

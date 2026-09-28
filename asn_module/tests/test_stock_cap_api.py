@@ -205,6 +205,29 @@ class TestStockCapAccessControlAndRedaction(FrappeTestCase):
 		for included_text in ("on hand", "in transit"):
 			self.assertIn(included_text, message.lower())
 
+	def test_asn_is_checked_against_the_branch_that_owns_the_warehouse(self):
+		"""The Purchase Order header names a different branch from the one that lists the
+		line warehouse. The shipment still reserves that warehouse, so the owning branch's
+		ceiling applies.
+		"""
+		other = "_Test API Access Header Branch"
+		if not frappe.db.exists("Branch", other):
+			frappe.get_doc({"doctype": "Branch", "branch": other}).insert(ignore_permissions=True)
+		frappe.db.set_value("Purchase Order", self.po.name, "branch", other)
+
+		breaches, _accepted = breaches_for_asn_rows(self.items)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].branch, BRANCH)
+
+	def test_asn_without_a_purchase_order_branch_is_checked_against_the_warehouse_owner(self):
+		frappe.db.set_value("Purchase Order", self.po.name, "branch", None)
+
+		breaches, _accepted = breaches_for_asn_rows(self.items)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].branch, BRANCH)
+
 	def test_permission_gate_rejects_caller_without_purchase_order_access(self):
 		with _as_user(NO_ACCESS_USER):
 			with self.assertRaises(frappe.PermissionError):
@@ -296,6 +319,21 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		if bin_name:
 			frappe.db.set_value("Bin", bin_name, "actual_qty", 0, update_modified=False)
 
+	def _submit_with_room(self, asn):
+		"""Submit a fixture shipment that is larger than the ceiling the assertion measures.
+
+		The warehouse is a cap warehouse, so the shipment is checked. The ceiling is raised
+		only for this submit and put back, so the later receipt assertion still sees it.
+		"""
+		cap_name = f"{PR_BRANCH}::{PR_ITEM}"
+		previous = frappe.db.get_value("ASN Item Branch Cap", cap_name, "max_qty")
+		frappe.db.set_value("ASN Item Branch Cap", cap_name, "max_qty", 100000, update_modified=False)
+		try:
+			with _mock_asn_attachments():
+				asn.submit()
+		finally:
+			frappe.db.set_value("ASN Item Branch Cap", cap_name, "max_qty", previous, update_modified=False)
+
 	def _receipt_row(self, **overrides):
 		defaults = {
 			"idx": 1,
@@ -324,6 +362,49 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		self.assertEqual(breaches[0].branch, PR_BRANCH)
 		self.assertEqual(breaches[0].item_code, PR_ITEM)
 		self.assertEqual(breaches[0].cap, PR_MAX_STOCK)
+
+	def test_receipt_is_checked_against_the_branch_that_owns_the_warehouse(self):
+		"""The header branch is not the branch that lists this warehouse. The goods still
+		land in that cap warehouse, so the ceiling of the owning branch applies.
+		"""
+		other = "_Test API PR Header Branch"
+		if not frappe.db.exists("Branch", other):
+			frappe.get_doc({"doctype": "Branch", "branch": other}).insert(ignore_permissions=True)
+		doc = SimpleNamespace(
+			branch=other,
+			is_return=0,
+			asn=None,
+			items=[self._receipt_row(stock_qty=PR_MAX_STOCK * 2)],
+		)
+
+		breaches = breaches_for_purchase_receipt(doc)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].branch, PR_BRANCH)
+		self.assertEqual(breaches[0].cap, PR_MAX_STOCK)
+
+	def test_receipt_without_a_header_branch_is_checked_against_the_warehouse_owner(self):
+		doc = SimpleNamespace(
+			branch=None,
+			is_return=0,
+			asn=None,
+			items=[self._receipt_row(stock_qty=PR_MAX_STOCK * 2)],
+		)
+
+		breaches = breaches_for_purchase_receipt(doc)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].branch, PR_BRANCH)
+
+	def test_receipt_into_a_warehouse_no_branch_owns_is_not_capped(self):
+		doc = SimpleNamespace(
+			branch=None,
+			is_return=0,
+			asn=None,
+			items=[self._receipt_row(warehouse="_Test Warehouse Nobody Caps", stock_qty=PR_MAX_STOCK * 2)],
+		)
+
+		self.assertEqual(breaches_for_purchase_receipt(doc), [])
 
 	def test_receipt_within_cap_returns_no_breach(self):
 		doc = SimpleNamespace(
@@ -391,11 +472,9 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		old behaviour) would drop all 10 shipped units instead of just the 3 this receipt
 		takes, letting a receipt that genuinely breaches the ceiling through unrefused.
 
-		The Purchase Order built here is never given a ``branch``, so the ASN's own
-		before_submit cap check (which needs the Purchase Order's branch to derive any
-		lines at all -- see collect.py:collect_lines_from_asn_rows) is a no-op and does
-		not block the 10-unit shipment; only breaches_for_purchase_receipt, exercised
-		directly below, is under test here.
+		The 10-unit shipment is larger than the ceiling. It is submitted with the ceiling
+		lifted, then the ceiling is put back, so only the receipt check below is measuring
+		the undelivered remainder.
 		"""
 		po = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,
@@ -407,8 +486,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		asn = make_test_asn(purchase_order=po, qty=10)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		self._submit_with_room(asn)
 
 		doc = SimpleNamespace(
 			branch=PR_BRANCH,
@@ -434,9 +512,8 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		undelivered quantity from in-transit -- only the receiving quantity this receipt
 		actually covers comes off.
 
-		As in test_partial_receipt_breach_from_the_undelivered_remainder_is_refused, the
-		Purchase Order is never given a ``branch``, so neither ASN's own before_submit cap
-		check blocks its shipment; breaches_for_purchase_receipt is exercised directly.
+		Each shipment is submitted with the ceiling lifted, then the ceiling is set to 12
+		before the receipt check.
 		"""
 		po = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,
@@ -448,13 +525,11 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		asn_a = make_test_asn(purchase_order=po, qty=8)
 		asn_a.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn_a.submit()
+		self._submit_with_room(asn_a)
 
 		asn_b = make_test_asn(purchase_order=po, qty=8)
 		asn_b.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn_b.submit()
+		self._submit_with_room(asn_b)
 
 		# setUp's cap of PR_MAX_STOCK (5) would already breach on ASN A's 8 units alone,
 		# which would make this test indistinguishable from the simpler single-ASN
@@ -522,8 +597,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		asn = make_test_asn(purchase_order=po, qty=10)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		self._submit_with_room(asn)
 
 		asn_item_name = self._receive_with_partial_rejection(asn=asn, accepted=6, rejected=4)
 
@@ -550,8 +624,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		asn_a = make_test_asn(purchase_order=po_a, qty=10)
 		asn_a.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn_a.submit()
+		self._submit_with_room(asn_a)
 
 		self._receive_with_partial_rejection(asn=asn_a, accepted=6, rejected=4)
 
@@ -641,14 +714,12 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		po_item = po.items[0]
 		closed = make_test_asn(purchase_order=po, qty=10)
 		closed.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			closed.submit()
+		self._submit_with_room(closed)
 		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
 
 		open_asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
 		open_asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			open_asn.submit()
+		self._submit_with_room(open_asn)
 
 		self.assertLess(closed.name, open_asn.name)
 		on_purchase_receipt_submit(
@@ -704,8 +775,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		closed = make_test_asn(purchase_order=po, qty=10)
 		closed.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			closed.submit()
+		self._submit_with_room(closed)
 		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
 		frappe.db.set_value("ASN Item", closed.items[0].name, "received_qty", 4, update_modified=False)
 
@@ -743,8 +813,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		frappe.db.set_value("Purchase Order Item", po_item.name, "conversion_factor", 1)
 		asn = make_test_asn(purchase_order=po, qty=24)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		self._submit_with_room(asn)
 
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
@@ -784,8 +853,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		asn = make_test_asn(purchase_order=po, qty=10)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		self._submit_with_room(asn)
 
 		pr_doc = SimpleNamespace(
 			asn=asn.name,
@@ -830,8 +898,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		asn = make_test_asn(purchase_order=po, qty=10)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		self._submit_with_room(asn)
 
 		receipt = SimpleNamespace(
 			asn=asn.name,

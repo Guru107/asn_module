@@ -557,6 +557,36 @@ class TestBulkUploadStockCap(FrappeTestCase):
 		self.assertEqual(len(names), len(inserted))
 		self.assertTrue(names)
 
+	def test_a_later_submit_failure_names_the_asns_already_submitted(self):
+		"""Validation passed for both invoices. The second submit is refused. The first
+		ASN is already submitted, so the error must name it and must not say nothing was created.
+		"""
+
+		def insert_asn(**kwargs):
+			if kwargs["header"]["supplier_invoice_no"] == "CAP-INV-2":
+				raise PortalValidationError(
+					[error_entry(field="items_csv", message="Stock Cap Exceeded for WIDGET")]
+				)
+			return SimpleNamespace(name="ASN-0001")
+
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				return_value=([], {}),
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(
+				supplier=self.supplier,
+				rows=self._two_groups_same_item(),
+				insert_asn=insert_asn,
+			)
+
+		self.assertEqual(raised.exception.created_asn_names, ("ASN-0001",))
+		messages = " ".join(error.get("message", "") for error in raised.exception.errors)
+		self.assertNotIn("No ASNs created", messages)
+		self.assertNotIn("ASN-0001", messages)
+
 	def test_consumed_headroom_is_carried_across_groups(self):
 		seen_consumed = []
 
