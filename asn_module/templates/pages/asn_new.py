@@ -62,10 +62,9 @@ def get_context(context):
 	try:
 		if mode == "single":
 			result = _create_single_asn(supplier)
-			route = frappe.db.get_value("ASN", result.asn_names[0], "route") or _default_asn_route(
-				result.asn_names[0]
-			)
-			frappe.local.flags.redirect_location = f"/{route.lstrip('/')}"
+			asn_name = result.asn_names[0]
+			stored_route = frappe.db.get_value("ASN", asn_name, "route")
+			frappe.local.flags.redirect_location = f"/{_portal_asn_route(asn_name, stored_route)}"
 			raise frappe.Redirect
 		if mode == "bulk":
 			result = _create_bulk_asns(supplier)
@@ -331,3 +330,16 @@ def _safe_get(values: list[str], idx: int) -> str:
 
 def _default_asn_route(asn_name: str) -> str:
 	return f"asn/{cleanup_page_name(asn_name).replace('_', '-')}"
+
+
+def _portal_asn_route(asn_name: str, stored_route: str | None = None) -> str:
+	"""Detail path under /asn/…, even when WebsiteGenerator stored a bare slug.
+
+	With an empty DocType-level route, WebsiteGenerator.make_route() returns only the
+	scrubbed name (e.g. asn-0002). Portal links and the post-submit redirect still need
+	the asn/ prefix so they do not collide with other top-level website pages.
+	"""
+	route = (stored_route or "").strip().strip("/")
+	if route.startswith("asn/"):
+		return route
+	return _default_asn_route(asn_name)

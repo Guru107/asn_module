@@ -435,6 +435,10 @@ class TestASN(FrappeTestCase):
 		self.assertTrue(context.can_cancel_portal)
 		self.assertFalse(context.can_delete_portal)
 
+	def test_make_route_keeps_detail_pages_under_asn_prefix(self):
+		asn = frappe.get_doc({"doctype": "ASN", "name": "ASN-0002"})
+		self.assertEqual(asn.make_route(), "asn/asn-0002")
+
 	def test_purge_scan_codes_noops_when_doctype_missing(self):
 		asn = make_test_asn()
 		asn.name = "ASN-NO-SCAN-CODE"
