@@ -124,7 +124,7 @@ jobs:
         run: |
           chmod +x scripts/run_ephemeral_e2e.sh
           MODE="smoke"
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             MODE="ci"
           fi
           scripts/run_ephemeral_e2e.sh "$MODE"
