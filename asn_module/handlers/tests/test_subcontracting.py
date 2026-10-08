@@ -324,7 +324,7 @@ class TestSubcontractingHandlers(FrappeTestCase):
 
 	def test_create_receipt_integration_creates_real_draft_subcontracting_receipt(self):
 		sco = self._make_integration_subcontracting_order()
-		with patch("erpnext.controllers.subcontracting_controller.get_incoming_rate", return_value=5):
+		with patch("erpnext.controllers.subcontracting_controller._get_incoming_rate", return_value=5):
 			result = create_receipt_from_subcontracting_order(
 				source_doctype="Subcontracting Order",
 				source_name=sco.name,
