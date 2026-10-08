@@ -124,7 +124,7 @@ jobs:
         run: |
           chmod +x scripts/run_ephemeral_e2e.sh
           MODE="smoke"
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             MODE="ci"
           fi
           scripts/run_ephemeral_e2e.sh "$MODE"
@@ -134,9 +134,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cypress-artifacts-frappe${{ matrix.frappe_version }}
+          # bench run-ui-tests writes under the app checkout in the bench, not GITHUB_WORKSPACE.
           path: |
-            ${{ github.workspace }}/cypress/videos
-            ${{ github.workspace }}/cypress/screenshots
+            /home/runner/frappe-bench/apps/asn_module/cypress/videos
+            /home/runner/frappe-bench/apps/asn_module/cypress/screenshots
           if-no-files-found: ignore
 
       - name: Upload bench serve log
