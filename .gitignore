@@ -58,6 +58,9 @@ cypress/screenshots/
 # Aider AI Chat
 .aider*
 
+# Codegraph code index
+.codegraph/
+
 .coverage
 coverage.xml
 .hypothesis/

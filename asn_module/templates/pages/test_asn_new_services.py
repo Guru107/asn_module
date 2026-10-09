@@ -1,12 +1,15 @@
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from asn_module.asn_module.doctype.asn.test_asn import _resolve_test_company, create_purchase_order
 from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	PortalValidationError,
+	create_bulk_asns_for_supplier,
 	enforce_bulk_limits,
 	error_entry,
 	fetch_purchase_order_items,
@@ -25,6 +28,12 @@ from asn_module.templates.pages.asn_new_services import (
 	validate_selected_purchase_orders,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+from asn_module.utils.test_setup import (
+	before_tests,
+	build_purchase_order_with_mandatory_fields,
+	disable_hsn_validation,
+	make_test_breach,
+)
 
 
 def _test_dates():
@@ -164,7 +173,7 @@ class TestServiceUtilities(FrappeTestCase):
 		with (
 			patch("asn_module.templates.pages.asn_new_services.frappe.get_all", return_value=rows),
 			patch(
-				"asn_module.templates.pages.asn_new_services._get_shipped_qty_by_po_item",
+				"asn_module.asn_module.doctype.asn.asn._unreceived_qty_by_po_item",
 				return_value={"POI-1": 3},
 			),
 		):
@@ -346,3 +355,446 @@ class TestValidateSelectedPurchaseOrders(FrappeTestCase):
 				supplier="Supp-001",
 				selected_purchase_orders=["PO-0001", "PO-INVALID"],
 			)
+
+
+def _bulk_fixture():
+	"""A real submitted PO plus the supplier, so bulk validation has something to resolve."""
+	po = build_purchase_order_with_mandatory_fields(
+		create_purchase_order,
+		tax_description="_Test ASN Bulk Stock Cap Tax",
+	)
+	return po, po.supplier, po.items[0]
+
+
+def _bulk_row(po, po_item, *, row_number, invoice_no, qty):
+	return ParsedBulkRow(
+		row_number=row_number,
+		supplier_invoice_no=invoice_no,
+		supplier_invoice_date=_test_dates()["supplier_invoice_date"],
+		expected_delivery_date=_test_dates()["expected_delivery_date"],
+		lr_no="",
+		lr_date="",
+		transporter_name="",
+		vehicle_number="",
+		driver_contact="",
+		supplier_invoice_amount=qty * float(po_item.rate or 1),
+		purchase_order=po.name,
+		sr_no=str(po_item.idx),
+		item_code=po_item.item_code,
+		qty=qty,
+		rate=float(po_item.rate or 1),
+	)
+
+
+class TestBulkUploadStockCap(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		disable_hsn_validation()
+
+	def _breach(self):
+		return make_test_breach()
+
+	def setUp(self):
+		self.po, self.supplier, self.po_item = _bulk_fixture()
+
+	def _one_group(self):
+		return [_bulk_row(self.po, self.po_item, row_number=1, invoice_no="CAP-INV-1", qty=1)]
+
+	def _two_groups_same_item(self):
+		return [
+			_bulk_row(self.po, self.po_item, row_number=1, invoice_no="CAP-INV-1", qty=1),
+			_bulk_row(self.po, self.po_item, row_number=2, invoice_no="CAP-INV-2", qty=1),
+		]
+
+	def test_a_refused_row_does_not_consume_remaining_qty_for_a_later_row(self):
+		"""Ordered 10. Row 6 is taken, row 9 is refused, and row 4 still fits in what is left."""
+		rows = [
+			_bulk_row(self.po, self.po_item, row_number=1, invoice_no="REM-INV-1", qty=6),
+			_bulk_row(self.po, self.po_item, row_number=2, invoice_no="REM-INV-2", qty=9),
+			_bulk_row(self.po, self.po_item, row_number=3, invoice_no="REM-INV-3", qty=4),
+		]
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				return_value=([], {}),
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=self.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 2: qty 9 exceeds remaining PO qty 4.0.", messages)
+		self.assertFalse(any(message.startswith("Row 3:") for message in messages))
+
+	def test_a_later_file_row_sees_what_an_earlier_row_took_across_invoices(self):
+		"""Ordered 10 on the second line. File order takes 6 before the earlier invoice's 5."""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Bulk File Order Tax",
+			qty=10,
+			item_count=2,
+			unique_items=True,
+		)
+		first_line, second_line = po.items[0], po.items[1]
+		rows = [
+			_bulk_row(po, first_line, row_number=1, invoice_no="FILE-INV-A", qty=1),
+			_bulk_row(po, second_line, row_number=2, invoice_no="FILE-INV-B", qty=6),
+			_bulk_row(po, second_line, row_number=3, invoice_no="FILE-INV-A", qty=5),
+		]
+		rows[0] = replace(rows[0], supplier_invoice_amount=1000)
+		rows[2] = replace(rows[2], supplier_invoice_amount=1000)
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				return_value=([], {}),
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=po.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 3: qty 5 exceeds remaining PO qty 4.0.", messages)
+		self.assertFalse(any(message.startswith("Row 2:") for message in messages))
+
+	def test_a_stock_cap_refusal_does_not_consume_remaining_qty_for_a_later_row(self):
+		"""Ordered 10. Row 1 is refused by the Stock Cap, so row 2 is judged against 10."""
+		rows = [
+			_bulk_row(self.po, self.po_item, row_number=1, invoice_no="CAP-REM-1", qty=6),
+			_bulk_row(self.po, self.po_item, row_number=2, invoice_no="CAP-REM-2", qty=11),
+		]
+
+		def fake_breaches(payload_rows, exclude_asn_name=None, consumed=None):
+			if payload_rows and payload_rows[0]["idx"] == 1:
+				return [self._breach()], {}
+			return [], {}
+
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				side_effect=fake_breaches,
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=self.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 2: qty 11 exceeds remaining PO qty 10.0.", messages)
+		self.assertFalse(any("remaining PO qty 4" in message for message in messages))
+
+	def test_a_stock_cap_refusal_keeps_a_real_remaining_qty_error_on_the_same_invoice(self):
+		"""Ordered 10 on each line. The cap refuses the invoice, and the other line still exceeds 10."""
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test ASN Bulk Cap Remaining Tax",
+			qty=10,
+			item_count=2,
+			unique_items=True,
+		)
+		capped_line, other_line = po.items[0], po.items[1]
+		rows = [
+			_bulk_row(po, capped_line, row_number=1, invoice_no="CAP-SAME-A", qty=6),
+			_bulk_row(po, other_line, row_number=2, invoice_no="CAP-SAME-A", qty=11),
+			_bulk_row(po, capped_line, row_number=3, invoice_no="CAP-SAME-B", qty=6),
+		]
+		rows[0] = replace(rows[0], supplier_invoice_amount=1000)
+		rows[1] = replace(rows[1], supplier_invoice_amount=1000)
+
+		def fake_breaches(payload_rows, exclude_asn_name=None, consumed=None):
+			if payload_rows and payload_rows[0]["idx"] == 1:
+				return [self._breach()], {}
+			return [], {}
+
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				side_effect=fake_breaches,
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(supplier=po.supplier, rows=rows, insert_asn=lambda **kwargs: None)
+
+		messages = [error.get("message", "") for error in raised.exception.errors]
+		self.assertIn("Row 2: qty 11 exceeds remaining PO qty 10.0.", messages)
+		self.assertFalse(any(message.startswith("Row 3:") for message in messages))
+
+	def test_breach_prevents_any_asn_from_being_created(self):
+		inserted = []
+
+		def fake_insert(**kwargs):
+			inserted.append(kwargs)
+			return SimpleNamespace(name="ASN-TEST")
+
+		with patch(
+			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+			return_value=([self._breach()], {}),
+		):
+			with self.assertRaises(PortalValidationError) as ctx:
+				create_bulk_asns_for_supplier(
+					supplier=self.supplier, rows=self._one_group(), insert_asn=fake_insert
+				)
+
+		self.assertEqual(inserted, [])
+		messages = " ".join(error.get("message", "") for error in ctx.exception.errors)
+		self.assertIn("WIDGET", messages)
+		self.assertIn("No ASNs created", messages)
+
+	def test_no_breach_allows_all_asns_to_be_created(self):
+		inserted = []
+
+		def fake_insert(**kwargs):
+			inserted.append(kwargs)
+			return SimpleNamespace(name=f"ASN-{len(inserted)}")
+
+		with patch(
+			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows", return_value=([], {})
+		):
+			names = create_bulk_asns_for_supplier(
+				supplier=self.supplier, rows=self._one_group(), insert_asn=fake_insert
+			)
+
+		self.assertEqual(len(names), len(inserted))
+		self.assertTrue(names)
+
+	def test_a_later_submit_failure_names_the_asns_already_submitted(self):
+		"""Validation passed for both invoices. The second submit is refused. The first
+		ASN is already submitted, so the error must name it and must not say nothing was created.
+		"""
+
+		def insert_asn(**kwargs):
+			if kwargs["header"]["supplier_invoice_no"] == "CAP-INV-2":
+				raise PortalValidationError(
+					[error_entry(field="items_csv", message="Stock Cap Exceeded for WIDGET")]
+				)
+			return SimpleNamespace(name="ASN-0001")
+
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+				return_value=([], {}),
+			),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			create_bulk_asns_for_supplier(
+				supplier=self.supplier,
+				rows=self._two_groups_same_item(),
+				insert_asn=insert_asn,
+			)
+
+		self.assertEqual(raised.exception.created_asn_names, ("ASN-0001",))
+		messages = " ".join(error.get("message", "") for error in raised.exception.errors)
+		self.assertNotIn("No ASNs created", messages)
+		self.assertNotIn("ASN-0001", messages)
+
+	def test_consumed_headroom_is_carried_across_groups(self):
+		seen_consumed = []
+
+		def fake_breaches(payload_rows, exclude_asn_name=None, consumed=None):
+			seen_consumed.append(dict(consumed or {}))
+			return [], {("Mumbai", self.po_item.item_code): 1.0}
+
+		with patch(
+			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+			side_effect=fake_breaches,
+		):
+			create_bulk_asns_for_supplier(
+				supplier=self.supplier,
+				rows=self._two_groups_same_item(),
+				insert_asn=lambda **kwargs: SimpleNamespace(name="ASN-X"),
+			)
+
+		self.assertGreaterEqual(len(seen_consumed), 2)
+		self.assertEqual(seen_consumed[0], {})
+		self.assertEqual(seen_consumed[1], {("Mumbai", self.po_item.item_code): 1.0})
+
+	def test_breaching_group_does_not_contribute_headroom_to_later_group(self):
+		"""A group that produces a breach must not have its ``accepted`` folded into
+		``consumed`` for the next group.
+
+		``accepted`` is evaluate()'s record of every filtered group's incoming quantity,
+		whether or not that particular group breached -- see evaluate()'s docstring. The
+		bulk loop must still only fold a group's ``accepted`` into ``consumed`` when that
+		group came back breach-free (mirrored here by returning a non-empty ``accepted``
+		alongside a breach for the first group). If it folded accepted in regardless, a
+		later group referencing the same item would be evaluated against inflated headroom
+		it never earned, and could be spuriously blamed for a breach that the earlier
+		(rejected) group actually caused.
+		"""
+		seen_consumed = []
+
+		def fake_breaches(payload_rows, exclude_asn_name=None, consumed=None):
+			seen_consumed.append(dict(consumed or {}))
+			if len(seen_consumed) == 1:
+				return [self._breach()], {("Mumbai", self.po_item.item_code): 1.0}
+			return [], {}
+
+		with patch(
+			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
+			side_effect=fake_breaches,
+		):
+			with self.assertRaises(PortalValidationError):
+				create_bulk_asns_for_supplier(
+					supplier=self.supplier,
+					rows=self._two_groups_same_item(),
+					insert_asn=lambda **kwargs: SimpleNamespace(name="ASN-X"),
+				)
+
+		self.assertEqual(len(seen_consumed), 2)
+		self.assertEqual(seen_consumed[0], {})
+		self.assertEqual(
+			seen_consumed[1],
+			{},
+			"the second group must not see headroom claimed by the first group's breaching rows",
+		)
+
+
+def _bulk_cap_warehouse(name: str, *, company: str) -> str:
+	"""A second real Warehouse under ``company``, distinct from the one
+	build_purchase_order_with_mandatory_fields would otherwise default to, so a test can
+	control which one is a branch's registered cap warehouse and which one is not.
+
+	``company`` must be the same company create_purchase_order() resolves to (its default
+	is not necessarily whichever Company happens to sort first on this site) -- Purchase
+	Order validation rejects a warehouse under a different company outright.
+	"""
+	abbr = frappe.get_cached_value("Company", company, "abbr")
+	full_name = f"{name} - {abbr}"
+	if not frappe.db.exists("Warehouse", full_name):
+		frappe.get_doc(
+			{"doctype": "Warehouse", "warehouse_name": name, "company": company, "is_group": 0}
+		).insert(ignore_permissions=True)
+	return full_name
+
+
+class TestBulkUploadStockCapRealPipeline(FrappeTestCase):
+	"""Exercises create_bulk_asns_for_supplier end to end against the real evaluate()/
+	fetch_cap_context() layer, without mocking breaches_for_asn_rows.
+
+	TestBulkUploadStockCap above mocks the cap check out entirely, so it cannot see bugs
+	in the plumbing between the bulk loop and the real cap-checking layer -- which is
+	exactly where both regressions covered here lived: the bulk loop crediting headroom
+	for a line the evaluator itself would have ignored, and a breach citing a synthetic
+	per-group position instead of the row's real CSV line number.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		disable_hsn_validation()
+
+	def setUp(self):
+		self.branch = "_Test Bulk Real Cap Branch"
+		if not frappe.db.exists("Branch", self.branch):
+			frappe.get_doc({"doctype": "Branch", "branch": self.branch}).insert(ignore_permissions=True)
+
+		self.item_code = "_Test Bulk Real Cap Item"
+		if not frappe.db.exists("Item", self.item_code):
+			frappe.get_doc(
+				{
+					"doctype": "Item",
+					"item_code": self.item_code,
+					"item_name": self.item_code,
+					"item_group": frappe.db.get_value("Item Group", {}, "name"),
+					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
+				}
+			).insert(ignore_permissions=True)
+		frappe.db.delete("ASN Item Branch Cap", {"item": self.item_code})
+		frappe.get_doc(
+			{
+				"doctype": "ASN Item Branch Cap",
+				"branch": self.branch,
+				"item": self.item_code,
+				"max_qty": 100,
+			}
+		).insert(ignore_permissions=True)
+
+		# FrappeTestCase only rolls back once at class teardown, not per test.
+		frappe.db.delete("ASN Stock Cap Warehouse")
+		frappe.db.delete("ASN Stock Cap Settings")
+
+		# Both warehouses are created explicitly, under the same company
+		# create_purchase_order() itself defaults to -- rather than letting one of them
+		# come from create_purchase_order's own "first Warehouse for this company"
+		# fallback (_ensure_warehouse()). That fallback has no explicit ordering, and once
+		# this class's own custom warehouse exists in the same uncommitted transaction, it
+		# can just as easily be the one that sorts first on a later test in this class --
+		# silently collapsing "cap" and "non-cap" onto the very same warehouse.
+		company = _resolve_test_company()
+		self.cap_warehouse = _bulk_cap_warehouse("_Test Bulk Real Cap WH", company=company)
+		self.non_cap_warehouse = _bulk_cap_warehouse("_Test Bulk Real NonCap WH", company=company)
+
+		frappe.get_doc(
+			{
+				"doctype": "ASN Stock Cap Settings",
+				"branch": self.branch,
+				"enabled": 1,
+				"warehouses": [{"warehouse": self.cap_warehouse}],
+			}
+		).insert(ignore_permissions=True)
+
+	def _po(self, *, warehouse, qty):
+		po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Bulk Real Cap Tax",
+			item_code=self.item_code,
+			warehouse=warehouse,
+			qty=qty,
+		)
+		frappe.db.set_value("Purchase Order", po.name, "branch", self.branch)
+		return po
+
+	def test_line_in_non_cap_warehouse_does_not_consume_headroom_from_later_group(self):
+		"""Reproduces the finding precisely: an earlier invoice group's line lands in a
+		warehouse outside the branch's cap-warehouse list -- invisible to the rule -- and
+		must not consume headroom that a later group in the same upload actually needs.
+
+		Pre-fix, consumed_from_breach_free_rows summed every line of the first group
+		(including the one in the non-cap warehouse) with none of evaluate()'s filters
+		applied, so the second group's 50 units were wrongly evaluated against 90 units of
+		phantom headroom (90 + 50 = 140 > the cap of 100) and the whole upload was
+		rejected. This test fails against that code and passes once the bulk loop carries
+		forward evaluate()'s own ``accepted`` dict instead.
+		"""
+		po_non_cap = self._po(warehouse=self.non_cap_warehouse, qty=90)
+		po_cap = self._po(warehouse=self.cap_warehouse, qty=50)
+		self.assertEqual(po_non_cap.supplier, po_cap.supplier)
+
+		rows = [
+			_bulk_row(po_non_cap, po_non_cap.items[0], row_number=2, invoice_no="REAL-CAP-INV-1", qty=90),
+			_bulk_row(po_cap, po_cap.items[0], row_number=3, invoice_no="REAL-CAP-INV-2", qty=50),
+		]
+
+		names = create_bulk_asns_for_supplier(
+			supplier=po_non_cap.supplier,
+			rows=rows,
+			insert_asn=lambda **kwargs: SimpleNamespace(
+				name=f"ASN-REAL-{kwargs['header']['supplier_invoice_no']}"
+			),
+		)
+
+		self.assertEqual(len(names), 2)
+
+	def test_breach_error_reports_the_real_csv_row_number(self):
+		"""The reported row number must be the CSV row (ParsedBulkRow.row_number), not a
+		position within this invoice group. Pre-fix, _collect_stock_cap_errors built its
+		cap-check rows via ``enumerate(items, start=1)``, which restarts at 1 for every
+		invoice group regardless of where its rows actually sat in the uploaded CSV, and
+		omitted ``row_number=`` on the error_entry call entirely. This test fails against
+		that code (row_number is None, or the group-relative 1) and passes once the real
+		CSV row_number is threaded through.
+		"""
+		po = self._po(warehouse=self.cap_warehouse, qty=1000)
+		row = _bulk_row(po, po.items[0], row_number=9, invoice_no="REAL-CAP-INV-ROWNUM", qty=150)
+
+		with self.assertRaises(PortalValidationError) as ctx:
+			create_bulk_asns_for_supplier(
+				supplier=po.supplier,
+				rows=[row],
+				insert_asn=lambda **kwargs: SimpleNamespace(name="ASN-REAL-ROWNUM"),
+			)
+
+		row_numbers = [error.get("row_number") for error in ctx.exception.errors]
+		self.assertIn(9, row_numbers)
+		self.assertNotIn(1, row_numbers)

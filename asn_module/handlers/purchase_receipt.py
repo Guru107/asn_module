@@ -6,6 +6,10 @@ from frappe import _
 from frappe.utils import flt
 
 from asn_module.handlers.utils import attach_qr_to_doc
+from asn_module.stock_cap.api import breaches_for_purchase_receipt
+from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
+from asn_module.stock_cap.messages import throw_stock_cap_exceeded
+from asn_module.stock_cap.precision import flt_qty
 from asn_module.traceability import emit_asn_item_transition
 
 
@@ -53,6 +57,208 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 		"url": f"/app/purchase-receipt/{pr.name}",
 		"message": _("Purchase Receipt {0} created from ASN {1}").format(pr.name, source_name),
 	}
+
+
+def _po_conversion_factors(po_item_names: list[str]) -> dict[str, float]:
+	names = [name for name in po_item_names if name]
+	if not names:
+		return {}
+	rows = frappe.get_all(
+		"Purchase Order Item",
+		filters={"name": ["in", names]},
+		fields=["name", "conversion_factor"],
+		limit_page_length=0,
+	)
+	return {row.name: flt(row.conversion_factor) for row in rows}
+
+
+def _delivered_purchase_qty(row, po_factor: float | None) -> float:
+	"""Quantity this receipt row delivers, in the Purchase Order line's UOM.
+
+	``ASN Item.qty`` and ``received_qty`` are both in that UOM. A receipt can use a
+	different UOM, so ``qty + rejected_qty`` is only right when the units already match.
+	When the row carries ``stock_qty`` and a Purchase Order Item, convert stock units
+	back through the PO conversion factor. Rows without those fields keep the historical
+	``qty + rejected_qty`` sum.
+	"""
+	rejected = flt(getattr(row, "rejected_qty", 0))
+	stock_qty = getattr(row, "stock_qty", None)
+	po_item = getattr(row, "purchase_order_item", None)
+	if stock_qty is not None and po_item:
+		factor = flt(po_factor)
+		if factor <= 0:
+			factor = 1.0
+		receipt_factor = flt(getattr(row, "conversion_factor", 0))
+		if receipt_factor <= 0:
+			receipt_factor = 1.0
+		return (flt(stock_qty) + rejected * receipt_factor) / factor
+	return flt(getattr(row, "qty", 0)) + rejected
+
+
+def _add_received_qty(asn_item_name: str, delta: float) -> None:
+	delta = flt_qty(delta)
+	if not delta:
+		return
+	frappe.db.sql(
+		"""
+		UPDATE `tabASN Item`
+		SET received_qty = GREATEST(COALESCE(received_qty, 0) + %s, 0)
+		WHERE name = %s
+		""",
+		(delta, asn_item_name),
+	)
+
+
+def _lines_with_delivered_qty(doc) -> list[tuple]:
+	"""Receipt rows paired with the purchase-UOM quantity each one delivers."""
+	items = getattr(doc, "items", None) or []
+	factors = _po_conversion_factors([getattr(row, "purchase_order_item", None) for row in items])
+	return [
+		(row, _delivered_purchase_qty(row, factors.get(getattr(row, "purchase_order_item", None))))
+		for row in items
+	]
+
+
+def _record_linked_received_qty(doc, sign: int) -> tuple[list[str], bool]:
+	"""Apply delivered qty for mapped rows.
+
+	Returns the mapped ASN Item names, in first-seen order, and whether any quantity was
+	written. Submit uses the names for transitions; cancel refreshes the ASN only when a
+	quantity changed.
+	"""
+	mapping = json.loads(getattr(doc, "asn_items", None) or "{}")
+	received_qty_by_asn_item: dict[str, float] = {}
+	mapped_names: dict[str, None] = {}
+	for pr_item, delivered in _lines_with_delivered_qty(doc):
+		asn_item_name = (mapping.get(str(pr_item.idx)) or {}).get("asn_item_name")
+		if not asn_item_name:
+			continue
+		mapped_names.setdefault(asn_item_name, None)
+		if delivered:
+			received_qty_by_asn_item[asn_item_name] = (
+				received_qty_by_asn_item.get(asn_item_name, 0.0) + delivered
+			)
+
+	for asn_item_name, qty in received_qty_by_asn_item.items():
+		_add_received_qty(asn_item_name, sign * qty)
+
+	return list(mapped_names), bool(received_qty_by_asn_item)
+
+
+def _record_unlinked_received_qty(doc, sign: int) -> list[str]:
+	"""Spread a receipt that has no ASN link across the submitted ASN lines for its PO items.
+
+	The standard Purchase Order -> Create -> Purchase Receipt action leaves ``asn`` empty,
+	so the linked mapping never runs and ``received_qty`` stays 0. In-transit keeps the
+	full ASN quantity after the goods are already on hand.
+
+	Filling skips the same statuses in-transit ignores (Received and Closed). A Closed
+	shipment can still have unreceived quantity; recording it there would leave the open
+	shipment in transit. Cancel also skips Closed, so a closed shipment this receipt did
+	not fill is not reduced. It still sees Received: filling an open shipment moves it to
+	Received, and cancel has to reverse that.
+	"""
+	delivered_by_po_item: dict[str, float] = {}
+	for row, delivered in _lines_with_delivered_qty(doc):
+		po_item = getattr(row, "purchase_order_item", None)
+		if not po_item or delivered <= 0:
+			continue
+		delivered_by_po_item[po_item] = delivered_by_po_item.get(po_item, 0.0) + delivered
+
+	if not delivered_by_po_item:
+		return []
+
+	po_items = list(delivered_by_po_item)
+	# Only the placeholder run is interpolated. Every purchase order item name is a param.
+	placeholders = ", ".join(["%s"] * len(po_items))
+	asn_rows = frappe.db.sql(
+		"""
+		SELECT ai.name, ai.parent, ai.purchase_order_item, ai.qty, ai.received_qty, asn.status
+		FROM `tabASN Item` ai
+		INNER JOIN `tabASN` asn ON asn.name = ai.parent AND asn.docstatus = 1
+		WHERE ai.purchase_order_item IN ("""
+		+ placeholders
+		+ """
+		)
+		ORDER BY ai.parent, ai.idx
+		""",
+		po_items,
+		as_dict=True,
+	)
+	rows_by_po_item: dict[str, list] = {}
+	for row in asn_rows:
+		rows_by_po_item.setdefault(row.purchase_order_item, []).append(row)
+
+	parents: set[str] = set()
+	for po_item, delivered in delivered_by_po_item.items():
+		rows = rows_by_po_item.get(po_item) or []
+		# Fill skips Received and Closed. Cancel skips Closed only: the shipment this
+		# receipt filled is Received by the time cancel runs.
+		skipped = EXCLUDED_ASN_STATUSES if sign > 0 else ("Closed",)
+		rows = [row for row in rows if row.status not in skipped]
+		remaining = delivered
+		# Submit fills lines in document order. Cancel subtracts in reverse so a single
+		# receipt restores the lines it filled. Several receipts on one PO item can
+		# leave the remainder on a different line; the total received quantity, which
+		# the cap uses, still changes by the cancelled amount.
+		ordered = rows if sign > 0 else list(reversed(rows))
+		for index, row in enumerate(ordered):
+			if remaining <= 0:
+				break
+			if sign > 0:
+				room = max(flt(row.qty) - flt(row.received_qty), 0)
+				take = remaining if index == len(ordered) - 1 else min(room, remaining)
+			else:
+				take = min(flt(row.received_qty), remaining)
+			if take <= 0:
+				continue
+			_add_received_qty(row.name, sign * take)
+			parents.add(row.parent)
+			remaining -= take
+
+	return sorted(parents)
+
+
+def _refresh_asn_receipt_status(asn_names: list[str]) -> None:
+	for asn_name in asn_names:
+		if not asn_name or not frappe.db.exists("ASN", asn_name):
+			continue
+		asn = frappe.get_doc("ASN", asn_name)
+		asn.update_receipt_status()
+
+
+def on_purchase_receipt_cancel(doc, method=None):
+	"""Put delivered quantity back when a receipt is cancelled.
+
+	Submit adds to ``ASN Item.received_qty`` and may mark the ASN Received, which drops
+	it out of in-transit. Cancel reverses the stock ledger and must reverse that too.
+	A return is a separate transaction: the quantity that arrived stays received, so
+	cancelling the return does not change it either.
+	"""
+	del method
+	if getattr(doc, "is_return", 0):
+		return
+	if getattr(doc, "asn", None):
+		_mapped, updated = _record_linked_received_qty(doc, sign=-1)
+		asn_names = [doc.asn] if updated else []
+	else:
+		asn_names = _record_unlinked_received_qty(doc, sign=-1)
+	_refresh_asn_receipt_status(asn_names)
+
+
+def on_purchase_receipt_before_submit(doc, method=None):
+	"""Block a receipt that would carry an item above its branch maximum.
+
+	Runs before_submit so no stock ledger entry is written before the block. The Purchase
+	Order Items this receipt is itself receiving are excluded from the in-transit figure
+	inside breaches_for_purchase_receipt, whether or not this receipt is linked back to an
+	ASN by name.
+	"""
+	breaches = breaches_for_purchase_receipt(doc)
+	if not breaches:
+		return
+
+	throw_stock_cap_exceeded(breaches)
 
 
 def _get_single_purchase_order(asn) -> tuple[str, list[str]]:
@@ -200,51 +406,38 @@ def on_purchase_receipt_trash(doc, method):
 
 
 def on_purchase_receipt_submit(doc, method):
-	"""Update ASN receipt tracking and attach follow-up QR codes on submit."""
-	del method
+	"""Update ASN receipt tracking and attach follow-up QR codes on submit.
 
-	if not doc.asn:
+	A return does not record against the ASN. The supplier's shipment already arrived;
+	sending some of it back is its own transaction and leaves ``received_qty`` as it is.
+	"""
+	del method
+	if getattr(doc, "is_return", 0):
+		return
+
+	if doc.asn:
+		mapped_names, _updated = _record_linked_received_qty(doc, sign=1)
+	else:
+		_refresh_asn_receipt_status(_record_unlinked_received_qty(doc, sign=1))
 		return
 
 	asn = frappe.get_doc("ASN", doc.asn)
-	asn_items_map = json.loads(doc.asn_items or "{}")
-	received_qty_by_asn_item = {}
-
-	for pr_item in doc.items:
-		mapping = asn_items_map.get(str(pr_item.idx))
-		if not mapping:
-			continue
-
-		asn_item_name = mapping.get("asn_item_name")
-		if not asn_item_name:
-			continue
-		received_qty_by_asn_item[asn_item_name] = received_qty_by_asn_item.get(asn_item_name, 0) + flt(
-			pr_item.qty
-		)
-
-	for asn_item_name, qty_delta in received_qty_by_asn_item.items():
-		frappe.db.sql(
-			"""
-			UPDATE `tabASN Item`
-			SET received_qty = COALESCE(received_qty, 0) + %s
-			WHERE name = %s
-			""",
-			(qty_delta, asn_item_name),
-		)
-
 	asn.reload()
 	asn.update_receipt_status()
+
+	if not mapped_names:
+		return
 
 	asn_item_codes = {
 		row.name: row.item_code
 		for row in frappe.get_all(
 			"ASN Item",
-			filters={"name": ["in", list(received_qty_by_asn_item)]},
+			filters={"name": ["in", mapped_names]},
 			fields=["name", "item_code"],
 		)
 	}
 
-	for asn_item_name in received_qty_by_asn_item:
+	for asn_item_name in mapped_names:
 		emit_asn_item_transition(
 			asn=asn.name,
 			asn_item=asn_item_name,

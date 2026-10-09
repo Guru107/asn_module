@@ -1,21 +1,25 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder import DocType
-from frappe.query_builder.functions import Sum
+from frappe.query_builder.functions import Function, Sum
 from frappe.utils import flt, today
 from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
+from asn_module.stock_cap.api import breaches_for_asn_doc
+from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures, throw_stock_cap_exceeded
 from asn_module.supplier_asn_portal import (
 	asn_eligible_for_supplier_portal_cancel,
 	asn_eligible_for_supplier_portal_delete,
 )
 from asn_module.traceability import emit_asn_item_transition, get_latest_transition_rows_for_asn
+from asn_module.utils.permissions import get_accessible_doc
 
 
 class ASN(WebsiteGenerator):
@@ -44,6 +48,10 @@ class ASN(WebsiteGenerator):
 		super().validate()
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
+		self._warn_stock_cap()
+
+	def before_submit(self):
+		self._validate_stock_cap()
 
 	def on_submit(self):
 		asn_date = today()
@@ -142,6 +150,8 @@ class ASN(WebsiteGenerator):
 			status = "Received"
 		elif any_received:
 			status = "Partially Received"
+		elif status in ("Received", "Partially Received"):
+			status = "Submitted"
 
 		for item in self.items:
 			frappe.db.set_value(
@@ -235,19 +245,24 @@ class ASN(WebsiteGenerator):
 			fields=["name", "qty"],
 		)
 		po_qty_by_item = {row.name: flt(row.qty) for row in po_items}
-		existing_qty_by_item = _get_shipped_qty_by_po_item(
-			purchase_order_item_names, exclude_asn_name=self.name or None
-		)
+		for name in purchase_order_item_names:
+			po_qty_by_item.setdefault(name, 0)
+		qty_state = _purchase_order_item_qty_state(po_qty_by_item, exclude_asn_name=self.name or None)
 
 		for purchase_order_item, rows in rows_by_purchase_order_item.items():
-			po_qty = po_qty_by_item.get(purchase_order_item)
-			if not po_qty:
-				continue
-
+			po_qty = po_qty_by_item[purchase_order_item]
 			current_qty = sum(flt(row.qty) for row in rows)
-			already_shipped = existing_qty_by_item.get(purchase_order_item, 0)
-			remaining_qty = flt(po_qty) - flt(already_shipped)
-			if flt(current_qty) <= flt(remaining_qty):
+			# Net received already includes receipts against this ASN. Add back only the
+			# received quantity that this Shipped Qty still covers, so a partly received
+			# shipment can be saved again and an over-received line is not counted twice.
+			received_within_shipped = sum(min(flt(row.qty), max(flt(row.received_qty), 0)) for row in rows)
+			po_line_qty = qty_state[purchase_order_item]
+			past_remaining, remaining_qty = po_line_qty.shipped_qty_past_remaining(
+				ordered_qty=po_qty,
+				shipped_qty=current_qty,
+				received_within_shipped=received_within_shipped,
+			)
+			if not past_remaining:
 				continue
 
 			row_numbers = ", ".join(str(row.idx) for row in rows)
@@ -258,6 +273,33 @@ class ASN(WebsiteGenerator):
 					remaining_qty,
 				)
 			)
+
+	def _warn_stock_cap(self):
+		"""Surface cap breaches on save without blocking. Drafts must always be saveable.
+
+		Submit runs validate and then before_submit. The block is the submit message;
+		the orange warning would only repeat it.
+		"""
+		if getattr(self, "_action", None) == "submit":
+			return
+
+		breaches = breaches_for_asn_doc(self)
+		if not breaches:
+			return
+
+		frappe.msgprint(
+			format_breaches(breaches, detailed=may_see_stock_figures()),
+			title=_("Stock Cap Warning"),
+			indicator="orange",
+		)
+
+	def _validate_stock_cap(self):
+		"""Block submission. Runs in before_submit so nothing is written before the block."""
+		breaches = breaches_for_asn_doc(self)
+		if not breaches:
+			return
+
+		throw_stock_cap_exceeded(breaches)
 
 	def _generate_attachments(self) -> tuple[str, str, str]:
 		qr_result = generate_qr("create_purchase_receipt", "ASN", self.name)
@@ -284,21 +326,32 @@ class ASN(WebsiteGenerator):
 		return qr_file.file_url, barcode_file.file_url, scan_label
 
 
-def _get_shipped_qty_by_po_item(
+_PO_STATUSES_WITH_NO_SHIPPED_QTY = ("Closed", "On Hold")
+
+
+def _unreceived_qty_by_po_item(
 	purchase_order_item_names: Sequence[str], exclude_asn_name: str | None = None
 ) -> dict[str, float]:
+	"""Shipped Qty not yet received, on ASNs that are not Cancelled or Closed.
+
+	A line whose Received Qty already covers its Shipped Qty adds nothing. The ASN named
+	in ``exclude_asn_name`` is left out. Receipts against that ASN stay in the Purchase
+	Order's net received quantity; the save check adds them back for that document only.
+	"""
 	if not purchase_order_item_names:
 		return {}
 
 	asn_item = DocType("ASN Item")
 	asn = DocType("ASN")
+	unreceived = Function("GREATEST", asn_item.qty - Function("IFNULL", asn_item.received_qty, 0), 0)
 	query = (
 		frappe.qb.from_(asn_item)
 		.inner_join(asn)
 		.on(asn.name == asn_item.parent)
-		.select(asn_item.purchase_order_item, Sum(asn_item.qty).as_("qty"))
+		.select(asn_item.purchase_order_item, Sum(unreceived).as_("qty"))
 		.where(asn_item.purchase_order_item.isin(list(purchase_order_item_names)))
 		.where(asn.docstatus != 2)
+		.where(asn.status != "Closed")
 		.groupby(asn_item.purchase_order_item)
 	)
 	if exclude_asn_name:
@@ -306,6 +359,168 @@ def _get_shipped_qty_by_po_item(
 
 	rows = query.run(as_dict=True)
 	return {row.purchase_order_item: flt(row.qty) for row in rows}
+
+
+@dataclass(frozen=True)
+class _PurchaseOrderLine:
+	"""What a Purchase Order line contributes to Remaining Qty.
+
+	``net_received`` is ERPNext's figure, already net of returns and of a stock-updating
+	Purchase Invoice, in the line's purchase UOM. ``accepts_no_shipped_qty`` is a Closed
+	or On Hold order. ``item_code`` is how the over-receipt allowance is found.
+	"""
+
+	net_received: float
+	item_code: str | None
+	accepts_no_shipped_qty: bool
+
+
+def _purchase_order_lines(purchase_order_item_names: Sequence[str]) -> dict[str, _PurchaseOrderLine]:
+	if not purchase_order_item_names:
+		return {}
+
+	po_item = DocType("Purchase Order Item")
+	po = DocType("Purchase Order")
+	rows = (
+		frappe.qb.from_(po_item)
+		.inner_join(po)
+		.on(po.name == po_item.parent)
+		.select(po_item.name, po_item.received_qty, po_item.item_code, po.status)
+		.where(po_item.name.isin(list(purchase_order_item_names)))
+		.run(as_dict=True)
+	)
+	return {
+		row.name: _PurchaseOrderLine(
+			net_received=flt(row.received_qty),
+			item_code=row.item_code,
+			accepts_no_shipped_qty=row.status in _PO_STATUSES_WITH_NO_SHIPPED_QTY,
+		)
+		for row in rows
+	}
+
+
+def _over_receipt_allowance_percent(
+	item_code: str | None, stock_allowance: float | None
+) -> tuple[float, float | None]:
+	"""The percent a Purchase Receipt would allow everyone on this Item.
+
+	ERPNext uses the Item's over-receipt allowance when it is set. A zero on the Item is
+	unset and falls through to Stock Settings. The role allowed to over-receive is not
+	consulted: an ASN stops at this percent for every user.
+	"""
+	item_allowance = 0
+	if item_code:
+		item_allowance = frappe.get_cached_value("Item", item_code, "over_delivery_receipt_allowance")
+	if item_allowance:
+		return flt(item_allowance), stock_allowance
+	if stock_allowance is None:
+		stock_allowance = flt(frappe.get_single_value("Stock Settings", "over_delivery_receipt_allowance"))
+	return flt(stock_allowance), stock_allowance
+
+
+def _ordered_qty_with_allowance(ordered_qty: float, allowance_percent: float) -> float:
+	"""Ordered quantity expanded the way ERPNext expands a receipt ceiling."""
+	return flt(flt(ordered_qty) * (100 + flt(allowance_percent)) / 100)
+
+
+# ERPNext refuses a receipt when overflow percent minus the allowance is above this.
+_OVER_RECEIPT_TOLERANCE_PERCENT = 0.01
+
+
+def _exceeds_over_receipt_allowance(
+	would_be_qty: float, ordered_qty: float, allowance_percent: float
+) -> bool:
+	"""ERPNext's overflow test, stopping at the allowance for every user."""
+	if not ordered_qty:
+		return would_be_qty > 0
+	overflow_percent = ((would_be_qty - ordered_qty) / ordered_qty) * 100
+	return overflow_percent - allowance_percent > _OVER_RECEIPT_TOLERANCE_PERCENT
+
+
+@dataclass(frozen=True)
+class _PurchaseOrderItemQty:
+	"""Remaining Qty for one Purchase Order Item, and the figures save compares to it.
+
+	Displayed Remaining Qty stops at the allowance ceiling, or at zero when the order
+	accepts no new Shipped Qty. Save still needs net received, unreceived Shipped Qty,
+	and the allowance, because ERPNext's overflow test allows 0.01 percent past that ceiling.
+	"""
+
+	remaining: float
+	allowance: float
+	accepts_no_shipped_qty: bool
+	net_received: float
+	unreceived: float
+
+	def shipped_qty_past_remaining(
+		self, *, ordered_qty: float, shipped_qty: float, received_within_shipped: float
+	) -> tuple[bool, float]:
+		"""Whether this Shipped Qty is past Remaining Qty, and the Remaining Qty to state.
+
+		Receipts against this ASN are already inside net received. ``received_within_shipped``
+		adds back only what this Shipped Qty still covers, so a partly received shipment is
+		not refused for goods already receipted. A Closed or On Hold order stops there.
+		An open order uses the overflow test and does not consult the over-receive role.
+		"""
+		remaining_qty = flt(self.remaining) + received_within_shipped
+		if self.accepts_no_shipped_qty:
+			return flt(shipped_qty) > remaining_qty, remaining_qty
+		would_be_qty = (
+			flt(self.net_received) - received_within_shipped + flt(self.unreceived) + flt(shipped_qty)
+		)
+		past = _exceeds_over_receipt_allowance(would_be_qty, ordered_qty, flt(self.allowance))
+		return past, remaining_qty
+
+
+def _purchase_order_item_qty_state(
+	ordered_qty_by_name: dict[str, float], *, exclude_asn_name: str | None = None
+) -> dict[str, _PurchaseOrderItemQty]:
+	if not ordered_qty_by_name:
+		return {}
+
+	names = list(ordered_qty_by_name)
+	lines = _purchase_order_lines(names)
+	shipped_qty_by_item = _unreceived_qty_by_po_item(names, exclude_asn_name=exclude_asn_name)
+	state: dict[str, _PurchaseOrderItemQty] = {}
+	stock_allowance: float | None = None
+	for name, ordered_qty in ordered_qty_by_name.items():
+		line = lines.get(name) or _PurchaseOrderLine(
+			net_received=0, item_code=None, accepts_no_shipped_qty=False
+		)
+		allowance, stock_allowance = _over_receipt_allowance_percent(line.item_code, stock_allowance)
+		unreceived = flt(shipped_qty_by_item.get(name, 0))
+		if line.accepts_no_shipped_qty:
+			remaining = 0
+		else:
+			qty = _ordered_qty_with_allowance(ordered_qty, allowance) - line.net_received - unreceived
+			remaining = qty if qty > 0 else 0
+		state[name] = _PurchaseOrderItemQty(
+			remaining=remaining,
+			allowance=allowance,
+			accepts_no_shipped_qty=line.accepts_no_shipped_qty,
+			net_received=line.net_received,
+			unreceived=unreceived,
+		)
+	return state
+
+
+def remaining_qty_by_purchase_order_item(
+	ordered_qty_by_name: dict[str, float], *, exclude_asn_name: str | None = None
+) -> dict[str, float]:
+	"""Remaining Qty for each Purchase Order Item, in the line's purchase UOM.
+
+	The ordered quantity expanded by the over-receipt allowance, minus the Purchase Order
+	Item's net received quantity, minus Shipped Qty declared but not yet received on ASNs
+	that are not Closed or Cancelled. Never below zero. The ASN named in
+	``exclude_asn_name`` is left out of the unreceived sum. The save check then adds
+	back the received quantity already on that ASN, so its own receipts are not counted twice.
+	"""
+	return {
+		name: row.remaining
+		for name, row in _purchase_order_item_qty_state(
+			ordered_qty_by_name, exclude_asn_name=exclude_asn_name
+		).items()
+	}
 
 
 @frappe.whitelist()
@@ -324,14 +539,12 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 		],
 	)
 
-	shipped_qty_by_item = _get_shipped_qty_by_po_item(
-		[poi.purchase_order_item for poi in po_items], exclude_asn_name=asn_name
-	)
+	ordered_qty_by_name = {poi.purchase_order_item: flt(poi.qty) for poi in po_items}
+	remaining_by_item = remaining_qty_by_purchase_order_item(ordered_qty_by_name, exclude_asn_name=asn_name)
 
 	result = []
 	for poi in po_items:
-		already_shipped = shipped_qty_by_item.get(poi.purchase_order_item, 0)
-		remaining_qty = flt(poi.qty) - flt(already_shipped)
+		remaining_qty = remaining_by_item.get(poi.purchase_order_item, 0)
 		if remaining_qty <= 0:
 			continue
 
@@ -387,10 +600,4 @@ def get_item_transition_summary(asn: str) -> list[dict]:
 
 
 def _get_accessible_purchase_order(purchase_order: str):
-	doc = frappe.get_doc("Purchase Order", purchase_order)
-	if doc.has_permission("read") or frappe.has_website_permission(doc, "read", user=frappe.session.user):
-		return doc
-
-	frappe.throw(
-		_("Not permitted to access Purchase Order {0}").format(purchase_order), frappe.PermissionError
-	)
+	return get_accessible_doc("Purchase Order", purchase_order)

@@ -8,7 +8,9 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from asn_module.asn_module.doctype.asn.asn import _get_shipped_qty_by_po_item
+from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
+from asn_module.stock_cap.api import breaches_for_asn_rows
+from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
 
 OPEN_PO_STATUSES = ("To Receive", "To Receive and Bill")
@@ -45,6 +47,7 @@ INVOICE_GROUP_FIELDS = (
 @dataclass
 class PortalValidationError(Exception):
 	errors: list[dict]
+	created_asn_names: tuple[str, ...] = ()
 
 	def __str__(self):
 		return "\n".join(error.get("message", "") for error in self.errors)
@@ -178,8 +181,15 @@ def parse_bulk_csv_content(content: bytes) -> list[ParsedBulkRow]:
 	return rows
 
 
-def validate_supplier_invoices_not_reused(supplier: str, invoice_numbers: list[str]):
-	"""Raise PortalValidationError if any invoice number is already on a non-cancelled ASN."""
+def validate_supplier_invoices_not_reused(
+	supplier: str, invoice_numbers: list[str], exclude_asn_name: str | None = None
+):
+	"""Raise PortalValidationError if any invoice number is already on a non-cancelled ASN.
+
+	``exclude_asn_name`` is the draft being resumed. The ASN controller already ignores
+	that document in its own uniqueness check. This gate has to do the same, or the
+	supplier cannot submit the draft under the invoice number already stored on it.
+	"""
 	errors: list[dict] = []
 	for raw in invoice_numbers:
 		inv = (raw or "").strip()
@@ -190,6 +200,8 @@ def validate_supplier_invoices_not_reused(supplier: str, invoice_numbers: list[s
 			"supplier_invoice_no": inv,
 			"docstatus": ("!=", 2),
 		}
+		if exclude_asn_name:
+			filters["name"] = ("!=", exclude_asn_name)
 		if not frappe.db.exists("ASN", filters):
 			continue
 		errors.append(
@@ -306,6 +318,7 @@ def parse_required_supplier_invoice_amount(
 
 def fetch_purchase_order_items(
 	purchase_orders: list[str],
+	exclude_asn_name: str | None = None,
 ) -> tuple[dict[tuple[str, str], list[frappe._dict]], dict[str, float]]:
 	if not purchase_orders:
 		return {}, {}
@@ -317,11 +330,9 @@ def fetch_purchase_order_items(
 		limit_page_length=0,
 	)
 	po_item_qty_by_name = {row.name: flt(row.qty) for row in rows}
-	shipped_qty_by_item = _get_shipped_qty_by_po_item([row.name for row in rows])
-	remaining_qty_by_name = {
-		name: flt(po_item_qty_by_name.get(name, 0)) - flt(shipped_qty_by_item.get(name, 0))
-		for name in po_item_qty_by_name
-	}
+	remaining_qty_by_name = remaining_qty_by_purchase_order_item(
+		po_item_qty_by_name, exclude_asn_name=exclude_asn_name
+	)
 
 	rows_by_key: dict[tuple[str, str], list[frappe._dict]] = {}
 	for row in rows:
@@ -524,6 +535,102 @@ def validate_invoice_group_single_purchase_order(invoice_no: str, rows: list[Par
 		raise PortalValidationError(errors)
 
 
+def _invoice_header(row: ParsedBulkRow) -> dict:
+	return {
+		"supplier_invoice_no": row.supplier_invoice_no,
+		"supplier_invoice_date": row.supplier_invoice_date,
+		"expected_delivery_date": row.expected_delivery_date,
+		"lr_no": row.lr_no,
+		"lr_date": row.lr_date,
+		"transporter_name": row.transporter_name,
+		"vehicle_number": row.vehicle_number,
+		"driver_contact": row.driver_contact,
+		"supplier_invoice_amount": row.supplier_invoice_amount,
+	}
+
+
+def _accept_rows_within_remaining(
+	rows: list[ParsedBulkRow],
+	*,
+	rows_by_key: dict[tuple[str, str], list[frappe._dict]],
+	remaining_qty_by_name: dict[str, float],
+	invoices_that_do_not_consume: set[str] | None = None,
+) -> tuple[dict[str, list[tuple[ParsedBulkRow, frappe._dict]]], list[dict]]:
+	"""Take Remaining Qty in file order. A row that does not fit leaves the figure unchanged.
+
+	``invoices_that_do_not_consume`` are groups the Stock Cap has already refused. Their
+	rows are still checked, so a real excess is reported, but they are not created and
+	must not reduce what a later row sees.
+	"""
+	running_remaining = dict(remaining_qty_by_name)
+	does_not_consume = invoices_that_do_not_consume or set()
+	accepted: dict[str, list[tuple[ParsedBulkRow, frappe._dict]]] = {}
+	errors: list[dict] = []
+	for row in sorted(rows, key=lambda item: item.row_number):
+		try:
+			po_item = resolve_po_item(
+				purchase_order=row.purchase_order,
+				sr_no=row.sr_no,
+				item_code=row.item_code,
+				row_number=row.row_number,
+				invoice_no=row.supplier_invoice_no,
+				rows_by_key=rows_by_key,
+			)
+			validate_qty_within_remaining(
+				purchase_order_item=po_item.name,
+				qty=row.qty,
+				row_number=row.row_number,
+				invoice_no=row.supplier_invoice_no,
+				remaining_qty_by_name=running_remaining,
+			)
+		except PortalValidationError as exc:
+			errors.extend(exc.errors)
+			continue
+		if row.supplier_invoice_no in does_not_consume:
+			continue
+		running_remaining[po_item.name] = flt(running_remaining.get(po_item.name, 0)) - flt(row.qty)
+		accepted.setdefault(row.supplier_invoice_no, []).append((row, po_item))
+	return accepted, errors
+
+
+def _payloads_for_accepted_rows(
+	valid_groups: list[tuple[str, dict, list[ParsedBulkRow]]],
+	accepted_by_invoice: dict[str, list[tuple[ParsedBulkRow, frappe._dict]]],
+) -> list[tuple[dict, list[dict], list[dict]]]:
+	payloads: list[tuple[dict, list[dict], list[dict]]] = []
+	for invoice_no, header, _invoice_rows in valid_groups:
+		accepted = accepted_by_invoice.get(invoice_no) or []
+		if not accepted:
+			continue
+		items = []
+		cap_check_rows = []
+		for row, po_item in accepted:
+			item_rate = flt(row.rate) if row.rate is not None else flt(getattr(po_item, "rate", None))
+			items.append(
+				{
+					"purchase_order": row.purchase_order,
+					"purchase_order_item": po_item.name,
+					"item_code": row.item_code,
+					"uom": po_item.uom,
+					"qty": row.qty,
+					"rate": item_rate,
+				}
+			)
+			# Keyed by the real CSV row_number, not a position within this invoice
+			# group -- see _collect_stock_cap_errors for why that distinction matters.
+			cap_check_rows.append(
+				{
+					"idx": row.row_number,
+					"purchase_order": row.purchase_order,
+					"purchase_order_item": po_item.name,
+					"item_code": row.item_code,
+					"qty": row.qty,
+				}
+			)
+		payloads.append((header, items, cap_check_rows))
+	return payloads
+
+
 def create_bulk_asns_for_supplier(
 	supplier: str,
 	rows: list[ParsedBulkRow],
@@ -547,9 +654,8 @@ def create_bulk_asns_for_supplier(
 	validate_supplier_invoices_not_reused(supplier, sorted(invoice_groups.keys()))
 
 	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(all_purchase_orders)
-	running_remaining = dict(remaining_qty_by_name)
 	errors: list[dict] = []
-	asn_payloads: list[tuple[dict, list[dict]]] = []
+	valid_groups: list[tuple[str, dict, list[ParsedBulkRow]]] = []
 
 	for invoice_no, invoice_rows in invoice_groups.items():
 		try:
@@ -560,51 +666,26 @@ def create_bulk_asns_for_supplier(
 			errors.extend(exc.errors)
 			continue
 
-		header = {
-			"supplier_invoice_no": invoice_rows[0].supplier_invoice_no,
-			"supplier_invoice_date": invoice_rows[0].supplier_invoice_date,
-			"expected_delivery_date": invoice_rows[0].expected_delivery_date,
-			"lr_no": invoice_rows[0].lr_no,
-			"lr_date": invoice_rows[0].lr_date,
-			"transporter_name": invoice_rows[0].transporter_name,
-			"vehicle_number": invoice_rows[0].vehicle_number,
-			"driver_contact": invoice_rows[0].driver_contact,
-			"supplier_invoice_amount": invoice_rows[0].supplier_invoice_amount,
-		}
-		items = []
-		for row in invoice_rows:
-			try:
-				po_item = resolve_po_item(
-					purchase_order=row.purchase_order,
-					sr_no=row.sr_no,
-					item_code=row.item_code,
-					row_number=row.row_number,
-					invoice_no=invoice_no,
-					rows_by_key=rows_by_key,
-				)
-				validate_qty_within_remaining(
-					purchase_order_item=po_item.name,
-					qty=row.qty,
-					row_number=row.row_number,
-					invoice_no=invoice_no,
-					remaining_qty_by_name=running_remaining,
-				)
-				running_remaining[po_item.name] = flt(running_remaining.get(po_item.name, 0)) - flt(row.qty)
-				item_rate = flt(row.rate) if row.rate is not None else flt(getattr(po_item, "rate", None))
-				items.append(
-					{
-						"purchase_order": row.purchase_order,
-						"purchase_order_item": po_item.name,
-						"item_code": row.item_code,
-						"uom": po_item.uom,
-						"qty": row.qty,
-						"rate": item_rate,
-					}
-				)
-			except PortalValidationError as exc:
-				errors.extend(exc.errors)
-		if items:
-			asn_payloads.append((header, items))
+		valid_groups.append((invoice_no, _invoice_header(invoice_rows[0]), invoice_rows))
+
+	candidate_rows = [row for _invoice_no, _header, invoice_rows in valid_groups for row in invoice_rows]
+	accepted_by_invoice, qty_errors = _accept_rows_within_remaining(
+		candidate_rows,
+		rows_by_key=rows_by_key,
+		remaining_qty_by_name=remaining_qty_by_name,
+	)
+	asn_payloads = _payloads_for_accepted_rows(valid_groups, accepted_by_invoice)
+	cap_errors = _collect_stock_cap_errors(asn_payloads)
+	breaching_invoices = {error["invoice_no"] for error in cap_errors if error.get("invoice_no")}
+	if breaching_invoices:
+		qty_errors = _accept_rows_within_remaining(
+			candidate_rows,
+			rows_by_key=rows_by_key,
+			remaining_qty_by_name=remaining_qty_by_name,
+			invoices_that_do_not_consume=breaching_invoices,
+		)[1]
+	errors.extend(qty_errors)
+	errors.extend(cap_errors)
 
 	if errors:
 		errors.append(error_entry(field="bulk", message=_("No ASNs created due to validation failures.")))
@@ -612,16 +693,76 @@ def create_bulk_asns_for_supplier(
 
 	insert_asn = insert_asn or insert_and_submit_asn
 	asn_names = []
-	for header, items in asn_payloads:
-		asn = insert_asn(supplier=supplier, header=header, items=items)
+	for header, items, _cap_check_rows in asn_payloads:
+		try:
+			asn = insert_asn(supplier=supplier, header=header, items=items)
+		except PortalValidationError as exc:
+			# Names only. The portal commits this request and says which ASNs stayed.
+			# The desk caller rethrows, and that rolls the request back, so those
+			# ASNs do not stay submitted there.
+			if asn_names:
+				exc.created_asn_names = tuple(asn_names)
+			raise
 		asn_names.append(asn.name)
 	return asn_names
 
 
-def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
-	doc_payload = {
-		"doctype": "ASN",
-		"supplier": supplier,
+def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[dict]]]) -> list[dict]:
+	"""Evaluate the cap across every parsed payload before any ASN is inserted.
+
+	Returns the errors found rather than mutating a list the caller passes in: a return
+	value reads honestly, where an out-parameter can silently go unused by a caller that
+	forgets to pass one in.
+
+	Runs in the validation phase so a breach is refused before any ASN is inserted.
+	A submit that still fails after that rolls back only the group that failed.
+	Earlier groups in the same request stay submitted, and the error names them.
+	Headroom accepted by an earlier breach-free group is carried
+	forward so one upload cannot drive an item past its maximum across several ASNs,
+	mirroring how running_remaining already guards the PO quantity check. A group that
+	produced any breach contributes nothing to ``consumed`` -- only ``accepted``, the exact
+	incoming quantities ``evaluate()`` itself counted toward that group (same cap-warehouse,
+	cap-is-set, and positive-qty filters it uses to decide breaches), is folded in, and only
+	for groups that came back breach-free.
+
+	Each cap-check row carries the real CSV ``row_number`` as its ``idx`` (not a position
+	within this invoice group), so a reported breach cites the row the supplier actually
+	needs to look at.
+
+	Message text goes through the same redaction gate as the ASN controller
+	(``format_breaches(..., detailed=...)``) rather than interpolating breach figures
+	directly: this endpoint is reached from the supplier portal, where the caller has no
+	``read`` permission on ``Item`` and must not see On Hand, In Transit, or Maximum Stock.
+	``may_see_stock_figures()`` is read once, before the loop, rather than once per payload:
+	the caller's own read permission on Item cannot change in the middle of one request.
+	"""
+	detailed = may_see_stock_figures()
+	consumed: dict[tuple[str, str], float] = {}
+	errors: list[dict] = []
+
+	for header, _items, cap_check_rows in asn_payloads:
+		breaches, accepted = breaches_for_asn_rows(cap_check_rows, consumed=consumed)
+		for breach in breaches:
+			errors.append(
+				error_entry(
+					field="items_csv",
+					invoice_no=header.get("supplier_invoice_no"),
+					message=format_breaches([breach], detailed=detailed),
+					row_number=breach.row_idxs[0] if breach.row_idxs else None,
+				)
+			)
+
+		if breaches:
+			continue
+
+		for key, qty in accepted.items():
+			consumed[key] = consumed.get(key, 0.0) + qty
+
+	return errors
+
+
+def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn_name: str | None = None):
+	header_fields = {
 		"supplier_invoice_no": header.get("supplier_invoice_no"),
 		"supplier_invoice_date": header.get("supplier_invoice_date"),
 		"expected_delivery_date": header.get("expected_delivery_date"),
@@ -630,11 +771,36 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
 		"transporter_name": header.get("transporter_name"),
 		"vehicle_number": header.get("vehicle_number"),
 		"driver_contact": header.get("driver_contact"),
-		"items": items,
+		"supplier_invoice_amount": header["supplier_invoice_amount"],
 	}
-	doc_payload["supplier_invoice_amount"] = header["supplier_invoice_amount"]
-	asn = frappe.get_doc(doc_payload)
+	if asn_name:
+		asn = frappe.get_doc("ASN", asn_name)
+		asn.supplier = supplier
+		asn.update(header_fields)
+		asn.items = []
+		for item in items:
+			asn.append("items", item)
+	else:
+		asn = frappe.get_doc({"doctype": "ASN", "supplier": supplier, "items": items, **header_fields})
 	asn.flags.ignore_permissions = True
-	asn.insert()
-	asn.submit()
+	# Earlier invoice groups in this request are already submitted and must stay.
+	# A savepoint undoes only this draft when submit is refused. PortalValidationError
+	# is rendered as a form error, so the request itself commits; without the rollback
+	# the draft would commit with it and block the invoice number.
+	frappe.db.savepoint("asn_portal_submit")
+	try:
+		if asn_name:
+			asn.save()
+		else:
+			asn.insert()
+		asn.submit()
+	except frappe.ValidationError as exc:
+		try:
+			frappe.db.rollback(save_point="asn_portal_submit")
+		except Exception:
+			frappe.log_error(
+				title="ASN portal submit: failed to roll back orphaned draft",
+				message=frappe.get_traceback(),
+			)
+		raise PortalValidationError([error_entry(field="items_csv", message=str(exc))]) from exc
 	return asn

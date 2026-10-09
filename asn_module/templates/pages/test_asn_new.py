@@ -6,17 +6,25 @@ import frappe
 from frappe.exceptions import ValidationError as FrappeValidationError
 from frappe.tests.utils import FrappeTestCase
 
+from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 from asn_module.templates.pages import asn_new
 from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	ParsedSingleRow,
 	PortalValidationError,
+	error_entry,
 	resolve_po_item,
 	validate_no_duplicate_po_sr_no,
 	validate_supplier_invoices_not_reused,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils import cypress_helpers
+from asn_module.utils.test_setup import (
+	before_tests,
+	build_purchase_order_with_mandatory_fields,
+	disable_hsn_validation,
+	make_test_breach,
+)
 
 
 def _test_dates():
@@ -284,6 +292,35 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertTrue(context.single_errors)
 		self.assertEqual(context.single_errors[0]["field"], "mode")
 
+	def test_get_context_names_asns_already_submitted_when_a_later_bulk_group_fails(self):
+		context = SimpleNamespace()
+
+		def _boom(*_a, **_k):
+			raise PortalValidationError(
+				[error_entry(field="items_csv", message="Stock Cap Exceeded for WIDGET")],
+				created_asn_names=("ASN-0001",),
+			)
+
+		request = SimpleNamespace(method="POST", files={})
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"mode": "bulk"}),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
+			),
+			patch("asn_module.templates.pages.asn_new._create_bulk_asns", side_effect=_boom),
+			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
+		):
+			asn_new.get_context(context)
+
+		self.assertEqual(context.bulk_submitted_names, "ASN-0001")
+		self.assertIn("Stock Cap Exceeded", context.bulk_errors[0]["message"])
+
 	def test_get_context_maps_frappe_validation_error_to_bulk_errors(self):
 		context = SimpleNamespace()
 
@@ -430,6 +467,15 @@ class TestASNNewPortalPage(FrappeTestCase):
 		msgs = " ".join(e.get("message", "") for e in ctx.exception.errors)
 		self.assertIn("INV-DUP", msgs)
 
+	def test_resuming_a_draft_does_not_treat_its_own_invoice_as_reused(self):
+		def exists(_doctype, filters):
+			if filters.get("name") == ("!=", "ASN-DRAFT"):
+				return None
+			return "ASN-DRAFT"
+
+		with patch("asn_module.templates.pages.asn_new_services.frappe.db.exists", side_effect=exists):
+			validate_supplier_invoices_not_reused("Supp-001", ["INV-1"], exclude_asn_name="ASN-DRAFT")
+
 	def test_service_rejects_duplicate_po_sr_no_in_same_invoice_group(self):
 		rows = [
 			ParsedBulkRow(
@@ -540,6 +586,28 @@ class TestASNNewPortalPage(FrappeTestCase):
 			with self.assertRaises(PortalValidationError) as ctx:
 				asn_new._create_single_asn("Supp-001")
 		self.assertEqual(ctx.exception.errors[0]["field"], "selected_purchase_orders")
+
+	def test_create_single_asn_leaves_the_resumed_draft_out_of_the_invoice_check(self):
+		seen = {}
+
+		def capture(*_args, **kwargs):
+			seen["exclude"] = kwargs.get("exclude_asn_name")
+
+		with (
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001"]),
+			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
+			patch(
+				"asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused",
+				side_effect=capture,
+			),
+			patch("asn_module.templates.pages.asn_new.supplier_draft_asn_name", return_value="ASN-DRAFT"),
+			patch("asn_module.templates.pages.asn_new._request_value", return_value="INV-1"),
+			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=[]),
+			self.assertRaises(PortalValidationError),
+		):
+			asn_new._create_single_asn("Supp-001")
+
+		self.assertEqual(seen["exclude"], "ASN-DRAFT")
 
 	def test_create_single_asn_rejects_empty_rows(self):
 		with (
@@ -950,6 +1018,78 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertTrue(fake_asn.flags.ignore_permissions)
 		self.assertEqual(get_doc.call_args.args[0]["supplier_invoice_amount"], 100)
 
+	def test_insert_and_submit_asn_raises_portal_validation_error_on_submit_failure(self):
+		def _raise_on_submit():
+			raise FrappeValidationError("Item ITEM-001: stock cap breached")
+
+		fake_asn = SimpleNamespace(
+			doctype="ASN",
+			name="ASN-FAKE-0001",
+			flags=SimpleNamespace(),
+			insert=lambda **_kwargs: None,
+			submit=_raise_on_submit,
+		)
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.get_doc", return_value=fake_asn),
+			patch("asn_module.templates.pages.asn_new_services.frappe.db.rollback") as rollback,
+		):
+			with self.assertRaises(PortalValidationError) as ctx:
+				asn_new._insert_and_submit_asn(
+					supplier="Supp-001",
+					header={
+						"supplier_invoice_no": "INV-1",
+						"supplier_invoice_date": _test_dates()["supplier_invoice_date"],
+						"expected_delivery_date": _test_dates()["expected_delivery_date"],
+						"supplier_invoice_amount": 100,
+					},
+					items=[{"item_code": "ITEM-001", "qty": 1}],
+				)
+
+		self.assertEqual(ctx.exception.errors[0]["field"], "items_csv")
+		self.assertIn("Item ITEM-001: stock cap breached", ctx.exception.errors[0]["message"])
+		rollback.assert_called_once_with(save_point="asn_portal_submit")
+
+	def test_insert_and_submit_asn_raises_original_error_when_rollback_fails(self):
+		"""Rolling the draft back is itself fallible. That failure must not replace the
+		original validation error with a raw traceback. The caller still sees the portal
+		error, and the rollback failure is logged.
+		"""
+
+		def _raise_on_submit():
+			raise FrappeValidationError("Item ITEM-001: stock cap breached")
+
+		fake_asn = SimpleNamespace(
+			doctype="ASN",
+			name="ASN-FAKE-0001",
+			flags=SimpleNamespace(),
+			insert=lambda **_kwargs: None,
+			submit=_raise_on_submit,
+		)
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.get_doc", return_value=fake_asn),
+			patch(
+				"asn_module.templates.pages.asn_new_services.frappe.db.rollback",
+				side_effect=frappe.ValidationError("savepoint missing"),
+			) as rollback,
+			patch("asn_module.templates.pages.asn_new_services.frappe.log_error") as log_error,
+		):
+			with self.assertRaises(PortalValidationError) as ctx:
+				asn_new._insert_and_submit_asn(
+					supplier="Supp-001",
+					header={
+						"supplier_invoice_no": "INV-1",
+						"supplier_invoice_date": _test_dates()["supplier_invoice_date"],
+						"expected_delivery_date": _test_dates()["expected_delivery_date"],
+						"supplier_invoice_amount": 100,
+					},
+					items=[{"item_code": "ITEM-001", "qty": 1}],
+				)
+
+		self.assertEqual(ctx.exception.errors[0]["field"], "items_csv")
+		self.assertIn("Item ITEM-001: stock cap breached", ctx.exception.errors[0]["message"])
+		rollback.assert_called_once_with(save_point="asn_portal_submit")
+		log_error.assert_called_once()
+
 	def test_request_supplier_invoice_amount_valid(self):
 		with (
 			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace()),
@@ -997,3 +1137,91 @@ class TestASNNewPortalPage(FrappeTestCase):
 			self.assertRaises(frappe.PermissionError),
 		):
 			asn_new.get_context(context)
+
+
+class TestCreateSingleAsnStockCapOrphanDraft(FrappeTestCase):
+	"""Regression coverage for the single-ASN portal path stranding a draft when the stock
+	cap blocks submission. Uses a real Purchase Order and a real ASN insert/submit so the
+	assertions below are about actual DB state, not a mocked stand-in for it -- only the cap
+	evaluation ASN.before_submit calls (``breaches_for_asn_doc``) is mocked, so a forced
+	breach exercises the exact code path (ASN.submit() -> before_submit ->
+	_validate_stock_cap()) a real cap breach would take on this bench, without needing real
+	ASN Item Branch Cap / ASN Stock Cap Settings fixtures.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		disable_hsn_validation()
+
+	def setUp(self):
+		self.po = build_purchase_order_with_mandatory_fields(
+			create_purchase_order,
+			tax_description="_Test Single ASN Stock Cap Tax",
+		)
+		self.supplier = self.po.supplier
+		self.po_item = self.po.items[0]
+		self.invoice_no = f"CAP-ORPHAN-{frappe.generate_hash(length=8)}"
+
+	def _rows(self):
+		return [
+			ParsedSingleRow(
+				row_number=1,
+				purchase_order=self.po.name,
+				sr_no=str(self.po_item.idx),
+				item_code=self.po_item.item_code,
+				uom=self.po_item.uom,
+				qty=1,
+				rate=float(self.po_item.rate or 1),
+			)
+		]
+
+	def _create(self):
+		with (
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=[self.po.name]),
+			patch(
+				"asn_module.templates.pages.asn_new._request_value",
+				side_effect=lambda field: {
+					"supplier_invoice_no": self.invoice_no,
+					"supplier_invoice_date": _test_dates()["supplier_invoice_date"],
+					"expected_delivery_date": _test_dates()["expected_delivery_date"],
+				}.get(field, ""),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new._request_supplier_invoice_amount",
+				return_value=float(self.po_item.rate or 1),
+			),
+			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=self._rows()),
+		):
+			return asn_new._create_single_asn(self.supplier)
+
+	def test_blocked_submit_leaves_no_draft_and_allows_retry_with_same_invoice_no(self):
+		"""The cap is only checked at asn.submit() time (ASN._validate_stock_cap in
+		before_submit), after asn.insert() has already committed a draft to the DB. Before the
+		fix, that draft was left in place: it is invisible on the portal (drafts are not
+		listed there), and ASN._validate_supplier_invoice_unique then rejects a retry that
+		reuses the same invoice number, since a non-cancelled ASN with that number already
+		exists -- the supplier is stuck. This must fail before the fix: the first assertion
+		(no draft left behind) fails, since the pre-fix code leaves one in place.
+		"""
+		with patch(
+			"asn_module.asn_module.doctype.asn.asn.breaches_for_asn_doc",
+			return_value=[make_test_breach()],
+		):
+			with self.assertRaises(PortalValidationError):
+				self._create()
+
+		self.assertFalse(
+			frappe.db.exists("ASN", {"supplier": self.supplier, "supplier_invoice_no": self.invoice_no}),
+			"a blocked single-ASN submit must not leave a draft behind",
+		)
+
+		result = self._create()
+
+		self.assertEqual(len(result.asn_names), 1)
+		self.assertEqual(
+			frappe.db.get_value("ASN", result.asn_names[0], "docstatus"),
+			1,
+			"the retried submission must actually go through, not just avoid raising",
+		)

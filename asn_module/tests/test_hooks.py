@@ -60,6 +60,13 @@ class TestHooks(FrappeTestCase):
 		self.assertEqual(fields[1]["fieldname"], "asn_items")
 		self.assertEqual(fields[1]["fieldtype"], "JSON")
 
+	def test_item_max_stock_removal_patch_is_registered_for_post_model_sync(self):
+		patches = (Path(__file__).resolve().parents[1] / "patches.txt").read_text()
+		post_sync = patches.split("[post_model_sync]", 1)[1]
+
+		self.assertIn("asn_module.patches.remove_item_max_stock_field", post_sync)
+		self.assertNotIn("asn_module.patches.create_item_max_stock_field", post_sync)
+
 	def test_purchase_invoice_custom_fields_define_asn_link(self):
 		with patch("asn_module.custom_fields.purchase_invoice.create_custom_fields") as create_custom_fields:
 			purchase_invoice_fields.setup()
@@ -67,3 +74,31 @@ class TestHooks(FrappeTestCase):
 		fields = create_custom_fields.call_args.args[0]["Purchase Invoice"]
 		self.assertEqual(fields[0]["fieldname"], "asn")
 		self.assertEqual(fields[0]["options"], "ASN")
+
+	def test_purchase_receipt_doc_events_registers_all_handlers(self):
+		pr_events = hooks.doc_events.get("Purchase Receipt")
+		self.assertIsNotNone(pr_events, "Purchase Receipt entry missing from doc_events")
+
+		self.assertIn("before_submit", pr_events)
+		self.assertEqual(
+			pr_events["before_submit"],
+			"asn_module.handlers.purchase_receipt.on_purchase_receipt_before_submit",
+		)
+
+		self.assertIn("on_submit", pr_events)
+		self.assertEqual(
+			pr_events["on_submit"],
+			"asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
+		)
+
+		self.assertIn("on_cancel", pr_events)
+		self.assertEqual(
+			pr_events["on_cancel"],
+			"asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",
+		)
+
+		self.assertIn("on_trash", pr_events)
+		self.assertEqual(
+			pr_events["on_trash"],
+			"asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
+		)

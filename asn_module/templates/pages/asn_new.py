@@ -9,6 +9,7 @@ from frappe.utils import cstr
 from frappe.website.utils import cleanup_page_name
 
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
+from asn_module.templates.pages.asn_new_search import supplier_draft_asn_name
 from asn_module.templates.pages.asn_new_services import (
 	BULK_CSV_HEADERS,
 	ParsedBulkRow,
@@ -43,6 +44,7 @@ def get_context(context):
 	context.single_errors = []
 	context.bulk_errors = []
 	context.bulk_success = None
+	context.bulk_submitted_names = ""
 	context.bulk_csv_headers = BULK_CSV_HEADERS
 
 	user = frappe.session.user
@@ -52,6 +54,7 @@ def get_context(context):
 
 	context.supplier = supplier
 	context.open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
+	context.asn_name = supplier_draft_asn_name(supplier, (frappe.form_dict or {}).get("asn_name")) or ""
 
 	if not frappe.request or frappe.request.method != "POST":
 		return
@@ -75,10 +78,14 @@ def get_context(context):
 			return
 		raise PortalValidationError([error_entry(field="mode", message=_("Invalid submit mode."))])
 	except PortalValidationError as exc:
+		errors = list(exc.errors)
+		created = tuple(getattr(exc, "created_asn_names", ()) or ())
+		if context.active_tab == "bulk" and created:
+			context.bulk_submitted_names = ", ".join(created)
 		if context.active_tab == "bulk":
-			context.bulk_errors = exc.errors
+			context.bulk_errors = errors
 		else:
-			context.single_errors = exc.errors
+			context.single_errors = errors
 	except FrappeValidationError as exc:
 		msg = cstr(getattr(exc, "message", None) or (exc.args[0] if exc.args else "") or exc).strip()
 		if not msg:
@@ -106,7 +113,12 @@ def _create_single_asn(supplier: str) -> CreateResult:
 				)
 			]
 		)
-	validate_supplier_invoices_not_reused(supplier, [_request_value("supplier_invoice_no")])
+	draft_name = supplier_draft_asn_name(supplier, _request_value("asn_name"))
+	validate_supplier_invoices_not_reused(
+		supplier,
+		[_request_value("supplier_invoice_no")],
+		exclude_asn_name=draft_name,
+	)
 	rows = _parse_single_rows()
 	if not rows:
 		raise PortalValidationError(
@@ -118,7 +130,10 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			]
 		)
 
-	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(selected_purchase_orders)
+	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(
+		selected_purchase_orders,
+		exclude_asn_name=draft_name,
+	)
 	running_remaining = dict(remaining_qty_by_name)
 	items = []
 	seen_po_sr: set[tuple[str, str]] = set()
@@ -177,6 +192,7 @@ def _create_single_asn(supplier: str) -> CreateResult:
 		)
 
 	asn = _insert_and_submit_asn(
+		asn_name=draft_name,
 		supplier=supplier,
 		header={
 			"supplier_invoice_no": _request_value("supplier_invoice_no"),
@@ -200,8 +216,8 @@ def _create_bulk_asns(supplier: str) -> CreateResult:
 	return CreateResult(asn_names=asn_names)
 
 
-def _insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict]):
-	return insert_and_submit_asn(supplier=supplier, header=header, items=items)
+def _insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn_name: str | None = None):
+	return insert_and_submit_asn(supplier=supplier, header=header, items=items, asn_name=asn_name)
 
 
 def _parse_single_rows() -> list[ParsedSingleRow]:

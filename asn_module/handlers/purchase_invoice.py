@@ -1,11 +1,12 @@
 import json
+from types import SimpleNamespace
 
 import frappe
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
 	make_purchase_invoice as make_purchase_invoice_from_pr,
 )
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from asn_module.traceability import emit_asn_item_transition
 
@@ -67,3 +68,53 @@ def create_from_purchase_receipt(source_doctype: str, source_name: str, payload:
 		"url": f"/app/purchase-invoice/{pi.name}",
 		"message": _("Purchase Invoice {0} created from Purchase Receipt {1}").format(pi.name, pr.name),
 	}
+
+
+def on_purchase_invoice_submit(doc, method=None):
+	"""Record a stock-updating invoice on open shipments the way an unlinked receipt does."""
+	del method
+	_record_stock_invoice_on_open_shipments(doc, sign=1)
+
+
+def on_purchase_invoice_cancel(doc, method=None):
+	"""Reverse the received quantity a stock-updating invoice added to open shipments."""
+	del method
+	_record_stock_invoice_on_open_shipments(doc, sign=-1)
+
+
+def _record_stock_invoice_on_open_shipments(doc, sign: int) -> None:
+	if not cint(doc.get("update_stock")) or cint(doc.get("is_return")):
+		return
+
+	from asn_module.handlers.purchase_receipt import (
+		_record_unlinked_received_qty,
+		_refresh_asn_receipt_status,
+	)
+
+	parents = _record_unlinked_received_qty(_invoice_lines_not_against_a_receipt(doc), sign=sign)
+	_refresh_asn_receipt_status(parents)
+
+
+def _invoice_lines_not_against_a_receipt(doc):
+	"""Purchase Invoice rows shaped like an unlinked receipt, in purchase UOM.
+
+	A row billed against a Purchase Receipt is skipped. That receipt already recorded
+	Received Qty, and counting the invoice as well would consume the shipment twice.
+	"""
+	items = []
+	for row in doc.items or []:
+		if row.get("purchase_receipt"):
+			continue
+		po_item = row.get("po_detail")
+		if not po_item:
+			continue
+		items.append(
+			frappe._dict(
+				purchase_order_item=po_item,
+				qty=flt(row.qty),
+				rejected_qty=flt(row.get("rejected_qty")),
+				stock_qty=row.get("stock_qty"),
+				conversion_factor=row.get("conversion_factor"),
+			)
+		)
+	return SimpleNamespace(items=items)

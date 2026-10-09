@@ -1,13 +1,14 @@
 """Per-registry-key ``dispatch(code=…)`` coverage (real handlers, minimal mocks)."""
 
-from unittest.mock import patch
-
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.handlers.tests.test_purchase_return import TestCreatePurchaseReturn
 from asn_module.handlers.tests.test_stock_transfer import TestCreateStockTransfer
-from asn_module.handlers.tests.test_subcontracting import TestSubcontractingHandlers
+from asn_module.handlers.tests.test_subcontracting import (
+	TestSubcontractingHandlers,
+	patch_subcontracting_incoming_rate,
+)
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
@@ -116,7 +117,7 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		self.assertEqual(ste.docstatus, 0)
 
 		with integration_user_context():
-			with patch("erpnext.controllers.subcontracting_controller._get_incoming_rate", return_value=5):
+			with patch_subcontracting_incoming_rate(5):
 				code_receipt = get_or_create_scan_code(
 					"create_subcontracting_receipt", "Subcontracting Order", sco.name
 				)

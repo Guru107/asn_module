@@ -13,10 +13,12 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 )
 from asn_module.handlers.purchase_receipt import (
 	create_from_asn,
+	on_purchase_receipt_before_submit,
 	on_purchase_receipt_submit,
 	on_purchase_receipt_trash,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+from asn_module.utils.test_setup import make_test_breach
 
 
 class TestCreatePurchaseReceipt(FrappeTestCase):
@@ -334,3 +336,31 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			[call.args[2] for call in attach_qr_to_doc.call_args_list],
 			["purchase-invoice-qr", f"putaway-{pr.name}"],
 		)
+
+
+class TestPurchaseReceiptStockCap(FrappeTestCase):
+	def _breach(self):
+		return make_test_breach()
+
+	def test_submit_is_blocked_when_cap_is_breached(self):
+		doc = SimpleNamespace(name="PR-0001", is_return=0, branch="Mumbai", asn=None, items=[])
+		with patch(
+			"asn_module.handlers.purchase_receipt.breaches_for_purchase_receipt",
+			return_value=[self._breach()],
+		):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				on_purchase_receipt_before_submit(doc)
+		self.assertIn("WIDGET", str(ctx.exception))
+
+	def test_submit_is_allowed_when_no_breach(self):
+		doc = SimpleNamespace(name="PR-0002", is_return=0, branch="Mumbai", asn=None, items=[])
+		with patch("asn_module.handlers.purchase_receipt.breaches_for_purchase_receipt", return_value=[]):
+			self.assertIsNone(on_purchase_receipt_before_submit(doc))
+
+	def test_handler_passes_the_receipt_through_for_asn_exclusion(self):
+		doc = SimpleNamespace(name="PR-0003", is_return=0, branch="Mumbai", asn="ASN-0007", items=[])
+		with patch(
+			"asn_module.handlers.purchase_receipt.breaches_for_purchase_receipt", return_value=[]
+		) as spy:
+			on_purchase_receipt_before_submit(doc)
+		spy.assert_called_once_with(doc)

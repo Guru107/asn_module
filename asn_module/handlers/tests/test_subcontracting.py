@@ -13,6 +13,19 @@ from asn_module.handlers.subcontracting import (
 )
 
 
+def patch_subcontracting_incoming_rate(return_value):
+	"""Patch the incoming-rate function the installed Subcontracting Controller calls.
+
+	ERPNext version-16 renamed the import from ``get_incoming_rate`` to
+	``_get_incoming_rate``. Patching a name the module does not have raises
+	AttributeError before the receipt is created.
+	"""
+	import erpnext.controllers.subcontracting_controller as controller
+
+	name = "_get_incoming_rate" if hasattr(controller, "_get_incoming_rate") else "get_incoming_rate"
+	return patch(f"erpnext.controllers.subcontracting_controller.{name}", return_value=return_value)
+
+
 class _FakeDoc:
 	def __init__(self, name):
 		self.name = name
@@ -95,7 +108,7 @@ class TestSubcontractingHandlers(FrappeTestCase):
 		company = frappe.db.get_value("Company", {}, "name")
 		source_warehouse = self._ensure_warehouse("_Test Subcontract Source Warehouse", company)
 		supplier_warehouse = self._ensure_warehouse("_Test Subcontract Supplier Warehouse", company)
-		po = create_purchase_order(warehouse=source_warehouse)
+		po = create_purchase_order(company=company, warehouse=source_warehouse)
 		supplier = po.supplier
 		uom = po.items[0].uom
 
@@ -306,6 +319,27 @@ class TestSubcontractingHandlers(FrappeTestCase):
 		generate.assert_not_called()
 		attach.assert_not_called()
 
+	def test_incoming_rate_patch_follows_the_private_name_when_that_is_what_erpnext_calls(self):
+		import erpnext.controllers.subcontracting_controller as controller
+
+		had_public = hasattr(controller, "get_incoming_rate")
+		public = getattr(controller, "get_incoming_rate", None)
+		had_private = hasattr(controller, "_get_incoming_rate")
+		private = getattr(controller, "_get_incoming_rate", None)
+		try:
+			if had_public:
+				del controller.get_incoming_rate
+			controller._get_incoming_rate = lambda *args, **kwargs: 0
+			with patch_subcontracting_incoming_rate(7):
+				self.assertEqual(controller._get_incoming_rate(), 7)
+		finally:
+			if had_public:
+				controller.get_incoming_rate = public
+			if had_private:
+				controller._get_incoming_rate = private
+			else:
+				del controller._get_incoming_rate
+
 	def test_create_dispatch_integration_creates_real_draft_stock_entry(self):
 		sco = self._make_integration_subcontracting_order()
 
@@ -324,7 +358,7 @@ class TestSubcontractingHandlers(FrappeTestCase):
 
 	def test_create_receipt_integration_creates_real_draft_subcontracting_receipt(self):
 		sco = self._make_integration_subcontracting_order()
-		with patch("erpnext.controllers.subcontracting_controller._get_incoming_rate", return_value=5):
+		with patch_subcontracting_incoming_rate(5):
 			result = create_receipt_from_subcontracting_order(
 				source_doctype="Subcontracting Order",
 				source_name=sco.name,

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
-from asn_module.asn_module.doctype.asn.asn import _get_shipped_qty_by_po_item
+from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
 
 
@@ -27,6 +27,17 @@ def _get_supplier() -> str:
 	frappe.throw(_("Only supplier portal users can access ASN create search."), frappe.PermissionError)
 
 
+def supplier_draft_asn_name(supplier: str | None, asn_name: str | None) -> str | None:
+	"""The ASN to leave out of Remaining Qty: this supplier's own unsubmitted draft."""
+	name = (asn_name or "").strip()
+	if not supplier or not name:
+		return None
+	row = frappe.db.get_value("ASN", name, ["supplier", "docstatus"], as_dict=True)
+	if not row or row.supplier != supplier or cint(row.docstatus) != 0:
+		return None
+	return name
+
+
 @frappe.whitelist()
 def search_open_purchase_orders(txt: str = "", start: int = 0, page_len: int = 20) -> list[dict]:
 	supplier = _get_supplier()
@@ -47,6 +58,7 @@ def search_purchase_order_items(
 	txt: str = "",
 	start: int = 0,
 	page_len: int = 20,
+	asn_name: str | None = None,
 ) -> list[dict]:
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
@@ -62,7 +74,10 @@ def search_purchase_order_items(
 		fields=["name", "idx", "item_code", "item_name", "uom", "rate", "qty"],
 		limit_page_length=0,
 	)
-	shipped_qty_by_item = _get_shipped_qty_by_po_item([row.name for row in rows])
+	remaining_by_item = remaining_qty_by_purchase_order_item(
+		{row.name: flt(row.qty) for row in rows},
+		exclude_asn_name=supplier_draft_asn_name(supplier, asn_name),
+	)
 	filtered = []
 	for row in rows:
 		if txt:
@@ -73,7 +88,7 @@ def search_purchase_order_items(
 			]
 			if not any(txt in value for value in haystack):
 				continue
-		remaining_qty = flt(row.qty) - flt(shipped_qty_by_item.get(row.name, 0))
+		remaining_qty = remaining_by_item.get(row.name, 0)
 		if remaining_qty <= 0:
 			continue
 		filtered.append(
