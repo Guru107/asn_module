@@ -63,3 +63,21 @@ coverage.xml
 .hypothesis/
 dump.rdb
 .worktrees/
+
+# Local and generated dotfiles. Tracked project config stays visible.
+.*
+!.agents/
+!.agents/**
+!. claude/
+!. claude/**
+!.coderabbit.yaml
+!.cursor/
+!.cursor/**
+!.editorconfig
+!.eslintrc
+!.frappe
+!.github/
+!.github/**
+!.gitignore
+!.gitkeep
+!.pre-commit-config.yaml
