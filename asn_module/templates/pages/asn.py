@@ -64,7 +64,8 @@ def get_context(context):
 	)
 
 	for asn in asn_list:
-		if not asn.route:
+		route = (asn.route or "").strip().strip("/")
+		if not route.startswith("asn/"):
 			asn.route = _ensure_asn_route(asn.name)
 		asn.total_items = item_counts.get(asn.name, 0)
 		asn.can_cancel_portal = (

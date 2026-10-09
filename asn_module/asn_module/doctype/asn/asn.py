@@ -32,6 +32,15 @@ class ASN(WebsiteGenerator):
 		context.can_cancel_portal = asn_eligible_for_supplier_portal_cancel(self)
 		context.can_delete_portal = asn_eligible_for_supplier_portal_delete(self)
 
+	def make_route(self):
+		"""Keep detail pages under /asn/<name> even with an empty DocType-level route.
+
+		WebsiteGenerator.make_route() only prefixes meta.route. That field stays empty so
+		/asn resolves to the supplier portal list; without this override each ASN would
+		publish at a bare /asn-0001 path instead of /asn/asn-0001.
+		"""
+		return f"asn/{self.scrubbed_title()}"
+
 	def validate(self):
 		self._validate_items_present()
 		self._validate_item_qty()

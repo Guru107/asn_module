@@ -401,6 +401,39 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 		self.assertEqual(local.flags.redirect_location, "/asn/asn-0001")
 
+	def test_get_context_redirects_under_asn_prefix_when_stored_route_is_bare(self):
+		"""WebsiteGenerator stores a bare slug when the DocType-level route is empty.
+
+		Clearing ASN's doctype route stopped /asn from shadowing the portal list, but
+		make_route() then returns only the scrubbed name (asn-0002). Post-submit must
+		still land on /asn/<name>, which is what the nightly Cypress check asserts.
+		"""
+		context = SimpleNamespace()
+		local = SimpleNamespace(flags=SimpleNamespace())
+		request = SimpleNamespace(method="POST", files={})
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"mode": "single"}),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
+			),
+			patch(
+				"asn_module.templates.pages.asn_new._create_single_asn",
+				return_value=asn_new.CreateResult(asn_names=["ASN-0002"]),
+			),
+			patch("asn_module.templates.pages.asn_new.frappe.db.get_value", return_value="asn-0002"),
+			patch("asn_module.templates.pages.asn_new.frappe.local", local),
+			self.assertRaises(frappe.Redirect),
+		):
+			asn_new.get_context(context)
+
+		self.assertEqual(local.flags.redirect_location, "/asn/asn-0002")
+
 	def test_get_context_sets_bulk_success_after_bulk_create(self):
 		context = SimpleNamespace()
 		request = SimpleNamespace(method="POST", files={})
@@ -1084,6 +1117,12 @@ class TestASNNewPortalPage(FrappeTestCase):
 	def test_default_asn_route_format(self):
 		route = asn_new._default_asn_route("ASN-001")
 		self.assertTrue(route.startswith("asn/"))
+
+	def test_portal_asn_route_keeps_prefixed_stored_route(self):
+		self.assertEqual(asn_new._portal_asn_route("ASN-0001", "asn/asn-0001"), "asn/asn-0001")
+
+	def test_portal_asn_route_prefixes_bare_stored_route(self):
+		self.assertEqual(asn_new._portal_asn_route("ASN-0002", "asn-0002"), "asn/asn-0002")
 
 	def test_get_context_rejects_non_supplier(self):
 		context = SimpleNamespace()

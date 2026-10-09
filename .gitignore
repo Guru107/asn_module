@@ -65,3 +65,4 @@ cypress/screenshots/
 coverage.xml
 .hypothesis/
 dump.rdb
+.worktrees/
