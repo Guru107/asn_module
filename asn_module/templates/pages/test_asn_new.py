@@ -1027,9 +1027,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 			save=lambda **_kwargs: calls.append("save"),
 			submit=lambda: calls.append("submit"),
 		)
-		with patch(
-			"asn_module.templates.pages.asn_new_services.frappe.get_doc", return_value=fake_asn
-		):
+		with patch("asn_module.templates.pages.asn_new_services.frappe.get_doc", return_value=fake_asn):
 			result = asn_new._insert_and_submit_asn(
 				supplier="Supp-001",
 				header={

@@ -421,7 +421,9 @@ def validate_qty_within_remaining(
 	)
 
 
-def consume_remaining_qty(remaining_qty_by_name: dict[str, float | None], purchase_order_item: str, qty: float):
+def consume_remaining_qty(
+	remaining_qty_by_name: dict[str, float | None], purchase_order_item: str, qty: float
+):
 	"""Reduce the running ceiling after a row is accepted.
 
 	``None`` is an uncapped unit-price line. Later rows on that line stay uncapped.
