@@ -782,6 +782,7 @@
 	const poNoMatchMsg = poTypeaheadRoot.dataset.msgNoMatch || "No matching purchase orders.";
 	const rowResetConfirmMsg = "Changing purchase order will clear selected items and rows. Continue?";
 	const noItemsMsg = "No items found for this purchase order.";
+	const unitPriceRemainingLabel = {{ _("Unit price") | tojson }};
 
 	let poSuggestionRows = [];
 	let poActiveSuggestion = -1;
@@ -993,7 +994,7 @@
 				`Sr No: ${String(entry.sr_no || "")}`,
 				String(entry.item_name || ""),
 				`UOM: ${String(entry.uom || "")}`,
-				`Remaining: ${String(entry.remaining_qty ?? "")}`,
+				entry.remaining_qty == null ? unitPriceRemainingLabel : `Remaining: ${String(entry.remaining_qty)}`,
 			].join(" | ");
 
 			main.appendChild(title);

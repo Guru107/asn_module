@@ -15,6 +15,7 @@ from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	ParsedSingleRow,
 	PortalValidationError,
+	consume_remaining_qty,
 	create_bulk_asns_for_supplier,
 	error_entry,
 	fetch_purchase_order_items,
@@ -177,9 +178,7 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			invoice_no=None,
 			remaining_qty_by_name=running_remaining,
 		)
-		running_remaining[po_item.name] = frappe.utils.flt(
-			running_remaining.get(po_item.name, 0)
-		) - frappe.utils.flt(row.qty)
+		consume_remaining_qty(running_remaining, po_item.name, row.qty)
 		items.append(
 			{
 				"purchase_order": row.purchase_order,
