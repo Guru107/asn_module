@@ -35,26 +35,56 @@
 		text-transform: uppercase;
 		color: #6c757d;
 	}
+	.asn-form-toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1rem;
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid #d1d8dd;
+	}
+	.asn-indicator {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		margin-top: 0.2rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #6c757d;
+	}
+	.asn-indicator::before {
+		content: "";
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 50%;
+		background: #e24c4c;
+	}
 </style>
 <div class="container py-3">
 	<div class="asn-detail-portal">
-		<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+		<div class="asn-form-toolbar">
 			<div>
-				<h2 class="mb-1">{{ doc.name }}</h2>
-				<div class="text-muted small">
-					{% if can_submit_portal %}
-					{{ _("Draft. Review the notice and edit it if needed. Scan codes are created only when you submit.") }}
-					{% else %}
-					{{ _("Read-only view") }}
-					{% endif %}
+				<h2 class="mb-0">{{ doc.name }}</h2>
+				{% if can_submit_portal %}
+				<div class="asn-indicator">{{ _("Draft") }}</div>
+				{% else %}
+				<div class="mt-1">
+					<span class="badge badge-{{ 'success' if doc.status == 'Received' else 'warning' if doc.status == 'Partially Received' else 'secondary' if doc.status == 'Cancelled' else 'info' }}">
+						{{ doc.status }}
+					</span>
 				</div>
+				{% endif %}
 			</div>
-			<div>
-				<span class="badge badge-{{ 'success' if doc.status == 'Received' else 'warning' if doc.status == 'Partially Received' else 'secondary' if doc.status == 'Cancelled' else 'info' }}">
-					{{ doc.status }}
-				</span>
-			</div>
+			{% if can_submit_portal %}
+			<button type="button" class="btn btn-primary" id="asn-portal-submit-detail" data-asn-name="{{ doc.name }}">{{ _("Submit") }}</button>
+			{% endif %}
 		</div>
+		{% if can_edit_portal %}
+		<p class="text-muted small">
+			<a href="/asn_new?asn_name={{ doc.name | e }}">{{ _("Edit") }}</a>
+		</p>
+		{% endif %}
 
 		<h3 class="asn-section-title">{{ _("Supplier & dates") }}</h3>
 		<div class="row">
@@ -205,12 +235,6 @@
 
 		<div class="mt-4 d-flex flex-wrap gap-2 align-items-center">
 			<a href="/asn" class="btn btn-light btn-sm">{{ _("Back to list") }}</a>
-			{% if can_edit_portal %}
-			<a href="/asn_new?asn_name={{ doc.name | e }}" class="btn btn-outline-secondary btn-sm">{{ _("Edit draft") }}</a>
-			{% endif %}
-			{% if can_submit_portal %}
-			<button type="button" class="btn btn-primary btn-sm" id="asn-portal-submit-detail" data-asn-name="{{ doc.name }}">{{ _("Submit") }}</button>
-			{% endif %}
 			{% if can_cancel_portal %}
 			<button type="button" class="btn btn-outline-danger btn-sm" id="asn-portal-cancel-detail" data-asn-name="{{ doc.name }}">{{ _("Cancel this notice") }}</button>
 			{% endif %}

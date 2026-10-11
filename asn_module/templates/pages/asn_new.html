@@ -448,6 +448,49 @@
 		font-size: 0.8125rem;
 		color: var(--asn-new-muted, #6c757d);
 	}
+	.asn-form-toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1rem;
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid var(--bs-border-color, #d1d8dd);
+	}
+	.asn-form-title {
+		font-size: 1.25rem;
+		font-weight: 600;
+		margin: 0;
+	}
+	.asn-indicator {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		margin-top: 0.2rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--bs-secondary-color, #6c757d);
+	}
+	.asn-indicator::before {
+		content: "";
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 50%;
+		background: #f0a202;
+	}
+	.asn-indicator-draft::before {
+		background: #e24c4c;
+	}
+	.asn-form-section {
+		margin-bottom: 1.25rem;
+	}
+	.asn-form-section-title {
+		margin: 0 0 0.75rem;
+		padding-bottom: 0.35rem;
+		border-bottom: 1px solid var(--bs-border-color, #d1d8dd);
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
 </style>
 <div class="container-fluid asn-new-page px-3 px-md-4 px-xl-5">
 	<div class="row justify-content-center">
@@ -472,6 +515,13 @@
 
 			<div class="tab-content">
 				<div class="tab-pane {% if active_tab != 'bulk' %}active{% endif %}" id="single-pane" role="tabpanel">
+					<div class="asn-form-toolbar">
+						<div>
+							<h2 class="asn-form-title">{% if asn_name %}{{ asn_name }}{% else %}{{ _("New ASN") }}{% endif %}</h2>
+							<div class="asn-indicator{% if asn_name %} asn-indicator-draft{% endif %}">{% if asn_name %}{{ _("Draft") }}{% else %}{{ _("Not Saved") }}{% endif %}</div>
+						</div>
+						<button type="submit" form="single-asn-form" class="btn btn-primary">{{ _("Save") }}</button>
+					</div>
 					{% if single_errors %}
 					<div class="alert alert-danger" role="alert">
 						<strong>{{ _("Please fix the following errors:") }}</strong>
@@ -493,11 +543,23 @@
 						<input type="hidden" name="mode" value="single">
 						<input type="hidden" name="asn_name" value="{{ asn_name or '' }}">
 
+						<div class="asn-form-section">
+						<h3 class="asn-form-section-title">{{ _("Details") }}</h3>
 						<div class="mb-3">
 							<label class="form-label">{{ _("Supplier") }}</label>
 							<input class="form-control" value="{{ supplier }}" disabled>
 						</div>
 
+						<div class="row">
+							<div class="col-md-6 mb-3">
+								<label class="form-label">{{ _("Expected Delivery Date") }}</label>
+								<input type="date" class="form-control" name="expected_delivery_date">
+							</div>
+						</div>
+						</div>
+
+						<div class="asn-form-section">
+						<h3 class="asn-form-section-title">{{ _("Supplier Invoice") }}</h3>
 						<div class="row">
 							<div class="col-md-4 mb-3">
 								<label class="form-label">{{ _("Supplier Invoice No") }}</label>
@@ -508,15 +570,14 @@
 								<input type="date" class="form-control" name="supplier_invoice_date">
 							</div>
 							<div class="col-md-4 mb-3">
-								<label class="form-label">{{ _("Expected Delivery Date") }}</label>
-								<input type="date" class="form-control" name="expected_delivery_date">
-							</div>
-							<div class="col-md-4 mb-3">
 								<label class="form-label">{{ _("Supplier invoice amount") }}</label>
 								<input type="number" class="form-control" name="supplier_invoice_amount" min="0" step="0.01" required>
 							</div>
 						</div>
+						</div>
 
+						<div class="asn-form-section">
+						<h3 class="asn-form-section-title">{{ _("Transport Details") }}</h3>
 						<div class="row">
 							<div class="col-md-4 mb-3">
 								<label class="form-label">{{ _("LR No") }}</label>
@@ -542,7 +603,10 @@
 								<input class="form-control" name="driver_contact" maxlength="140" autocomplete="off">
 							</div>
 						</div>
+						</div>
 
+						<div class="asn-form-section">
+						<h3 class="asn-form-section-title">{{ _("Items") }}</h3>
 						<div class="mb-3">
 							<label class="form-label" for="single-po-input">{{ _("Purchase Order") }}</label>
 							<div
@@ -601,17 +665,7 @@
 							<div id="single-manual-rows" class="asn-new-manual-body"></div>
 						</div>
 
-						<div class="mt-4 d-flex flex-wrap gap-2">
-							<button type="submit" class="btn btn-outline-secondary" name="portal_action" value="draft">
-								{{ _("Save draft") }}
-							</button>
-							<button type="submit" class="btn btn-primary" name="portal_action" value="submit">
-								{{ _("Submit ASN") }}
-							</button>
 						</div>
-						<p class="text-muted small mt-2 mb-0">
-							{{ _("A draft can be reviewed and edited. Scan codes are created only when you submit.") }}
-						</p>
 					</form>
 				</div>
 

@@ -191,11 +191,10 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			}
 		)
 
-	action = (_request_value("portal_action") or "submit").strip().lower()
 	asn = _insert_and_submit_asn(
 		asn_name=draft_name,
 		supplier=supplier,
-		submit=action != "draft",
+		submit=False,
 		header={
 			"supplier_invoice_no": _request_value("supplier_invoice_no"),
 			"supplier_invoice_date": _request_value("supplier_invoice_date"),
