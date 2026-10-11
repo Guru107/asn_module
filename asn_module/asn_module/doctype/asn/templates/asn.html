@@ -60,6 +60,50 @@
 		border-radius: 50%;
 		background: #e24c4c;
 	}
+	.asn-form-actions {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		align-items: center;
+		gap: 1rem;
+	}
+	.asn-action-group {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem;
+	}
+	.asn-form-actions .btn,
+	.asn-page-actions .btn {
+		font-weight: 600;
+	}
+	.asn-page-actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 2rem;
+		padding-top: 1.25rem;
+		border-top: 1px solid #d1d8dd;
+	}
+	.asn-scan-code-value {
+		margin-top: 0.15rem;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-size: 1rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+	}
+	.asn-scan-code-actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+	.asn-scan-code-actions .btn {
+		min-width: 10rem;
+		font-weight: 600;
+	}
 </style>
 <div class="container py-3">
 	<div class="asn-detail-portal">
@@ -76,15 +120,28 @@
 				</div>
 				{% endif %}
 			</div>
-			{% if can_submit_portal %}
-			<button type="button" class="btn btn-primary" id="asn-portal-submit-detail" data-asn-name="{{ doc.name }}">{{ _("Submit") }}</button>
-			{% endif %}
+			<div class="asn-form-actions">
+				<div class="asn-action-group">
+					<a href="/asn" class="btn btn-light">{{ _("Back to list") }}</a>
+					{% if can_cancel_portal %}
+					<button type="button" class="btn btn-outline-danger asn-portal-cancel-detail" id="asn-portal-cancel-detail" data-asn-name="{{ doc.name }}">{{ _("Cancel this notice") }}</button>
+					{% endif %}
+					{% if can_delete_portal %}
+					<button type="button" class="btn btn-outline-secondary asn-portal-delete-detail" id="asn-portal-delete-detail" data-asn-name="{{ doc.name }}">{{ _("Delete this notice") }}</button>
+					{% endif %}
+				</div>
+				{% if can_edit_portal or can_submit_portal %}
+				<div class="asn-action-group">
+					{% if can_edit_portal %}
+					<a href="/asn_new?asn_name={{ doc.name | e }}" class="btn btn-outline-primary">{{ _("Edit") }}</a>
+					{% endif %}
+					{% if can_submit_portal %}
+					<button type="button" class="btn btn-primary" id="asn-portal-submit-detail" data-asn-name="{{ doc.name }}">{{ _("Submit") }}</button>
+					{% endif %}
+				</div>
+				{% endif %}
+			</div>
 		</div>
-		{% if can_edit_portal %}
-		<p class="text-muted small">
-			<a href="/asn_new?asn_name={{ doc.name | e }}">{{ _("Edit") }}</a>
-		</p>
-		{% endif %}
 
 		<h3 class="asn-section-title">{{ _("Supplier & dates") }}</h3>
 		<div class="row">
@@ -216,30 +273,30 @@
 			{% if doc.scan_code_label %}
 			<div class="col-12">
 				<div class="asn-ro-label">{{ _("Scan code label") }}</div>
-				<div class="asn-ro-value d-flex flex-wrap align-items-center gap-2">
-					<span class="font-monospace small" id="asn-scan-code-label">{{ doc.scan_code_label }}</span>
+				<div class="asn-scan-code-value" id="asn-scan-code-label">{{ doc.scan_code_label }}</div>
+				<div class="asn-scan-code-actions">
 					<button
 						type="button"
-						class="btn btn-outline-secondary btn-sm"
+						class="btn btn-outline-primary"
 						id="asn-copy-scan-code-btn"
 						data-scan-code="{{ doc.scan_code_label | e }}"
 					>
 						{{ _("Copy scan code") }}
 					</button>
-					<span class="text-success small d-none" id="asn-copy-scan-code-feedback">{{ _("Copied") }}</span>
+					<span class="text-success d-none" id="asn-copy-scan-code-feedback">{{ _("Copied") }}</span>
 				</div>
 			</div>
 			{% endif %}
 		</div>
 		{% endif %}
 
-		<div class="mt-4 d-flex flex-wrap gap-2 align-items-center">
-			<a href="/asn" class="btn btn-light btn-sm">{{ _("Back to list") }}</a>
+		<div class="asn-page-actions">
+			<a href="/asn" class="btn btn-light">{{ _("Back to list") }}</a>
 			{% if can_cancel_portal %}
-			<button type="button" class="btn btn-outline-danger btn-sm" id="asn-portal-cancel-detail" data-asn-name="{{ doc.name }}">{{ _("Cancel this notice") }}</button>
+			<button type="button" class="btn btn-outline-danger asn-portal-cancel-detail" data-asn-name="{{ doc.name }}">{{ _("Cancel this notice") }}</button>
 			{% endif %}
 			{% if can_delete_portal %}
-			<button type="button" class="btn btn-outline-secondary btn-sm" id="asn-portal-delete-detail" data-asn-name="{{ doc.name }}">{{ _("Delete this notice") }}</button>
+			<button type="button" class="btn btn-outline-secondary asn-portal-delete-detail" data-asn-name="{{ doc.name }}">{{ _("Delete this notice") }}</button>
 			{% endif %}
 		</div>
 	</div>
@@ -389,8 +446,7 @@
 		return null;
 	}
 
-	const cancelBtn = document.getElementById("asn-portal-cancel-detail");
-	if (cancelBtn) {
+	document.querySelectorAll(".asn-portal-cancel-detail").forEach((cancelBtn) => {
 		cancelBtn.addEventListener("click", async () => {
 			const asnName = cancelBtn.getAttribute("data-asn-name") || "";
 			if (!asnName || !confirm(cancelConfirmMsg)) return;
@@ -417,10 +473,9 @@
 				showPortalError(cancelErr);
 			}
 		});
-	}
+	});
 
-	const deleteBtn = document.getElementById("asn-portal-delete-detail");
-	if (deleteBtn) {
+	document.querySelectorAll(".asn-portal-delete-detail").forEach((deleteBtn) => {
 		deleteBtn.addEventListener("click", async () => {
 			const asnName = deleteBtn.getAttribute("data-asn-name") || "";
 			if (!asnName || !confirm(deleteConfirmMsg)) return;
@@ -447,7 +502,7 @@
 				showPortalError(deleteErr);
 			}
 		});
-	}
+	});
 })();
 </script>
 {% endif %}
