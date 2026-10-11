@@ -1018,6 +1018,124 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertTrue(fake_asn.flags.ignore_permissions)
 		self.assertEqual(get_doc.call_args.args[0]["supplier_invoice_amount"], 100)
 
+	def test_saving_a_portal_draft_does_not_submit(self):
+		calls = []
+		fake_asn = SimpleNamespace(
+			flags=SimpleNamespace(),
+			name="ASN-DRAFT-1",
+			insert=lambda **_kwargs: calls.append("insert"),
+			save=lambda **_kwargs: calls.append("save"),
+			submit=lambda: calls.append("submit"),
+		)
+		with patch(
+			"asn_module.templates.pages.asn_new_services.frappe.get_doc", return_value=fake_asn
+		):
+			result = asn_new._insert_and_submit_asn(
+				supplier="Supp-001",
+				header={
+					"supplier_invoice_no": "INV-1",
+					"supplier_invoice_date": _test_dates()["supplier_invoice_date"],
+					"expected_delivery_date": _test_dates()["expected_delivery_date"],
+					"supplier_invoice_amount": 100,
+				},
+				items=[{"item_code": "ITEM-001", "qty": 1}],
+				submit=False,
+			)
+
+		self.assertIs(result, fake_asn)
+		self.assertEqual(calls, ["insert"])
+
+	def test_create_single_asn_saves_a_draft_when_asked(self):
+		rows = [
+			ParsedSingleRow(
+				row_number=1,
+				purchase_order="PO-0001",
+				sr_no="1",
+				item_code="ITEM-001",
+				uom="Nos",
+				qty=2,
+				rate=10,
+			)
+		]
+		po_item = SimpleNamespace(name="POI-1", item_code="ITEM-001", uom="Nos")
+		with (
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001"]),
+			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
+			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
+			patch(
+				"asn_module.templates.pages.asn_new._request_value",
+				side_effect=lambda field: {"portal_action": "draft", "supplier_invoice_no": "INV-1"}.get(
+					field, ""
+				),
+			),
+			patch("asn_module.templates.pages.asn_new._request_supplier_invoice_amount", return_value=20),
+			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=rows),
+			patch(
+				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
+				return_value=({("PO-0001", "1"): [po_item]}, {"POI-1": 5}),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new._insert_and_submit_asn",
+				return_value=SimpleNamespace(name="ASN-DRAFT-1"),
+			) as insert_submit,
+		):
+			result = asn_new._create_single_asn("Supp-001")
+
+		self.assertEqual(result.asn_names, ["ASN-DRAFT-1"])
+		self.assertFalse(insert_submit.call_args.kwargs["submit"])
+		self.assertEqual(insert_submit.call_count, 1)
+
+	def test_create_single_asn_saves_every_row_on_one_draft(self):
+		rows = [
+			ParsedSingleRow(
+				row_number=1,
+				purchase_order="PO-0001",
+				sr_no="1",
+				item_code="ITEM-001",
+				uom="Nos",
+				qty=2,
+				rate=10,
+			),
+			ParsedSingleRow(
+				row_number=2,
+				purchase_order="PO-0001",
+				sr_no="2",
+				item_code="ITEM-002",
+				uom="Nos",
+				qty=3,
+				rate=4,
+			),
+		]
+		po_items = {
+			("PO-0001", "1"): [SimpleNamespace(name="POI-1", item_code="ITEM-001", uom="Nos")],
+			("PO-0001", "2"): [SimpleNamespace(name="POI-2", item_code="ITEM-002", uom="Nos")],
+		}
+		with (
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001"]),
+			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
+			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
+			patch(
+				"asn_module.templates.pages.asn_new._request_value",
+				side_effect=lambda field: {"portal_action": "draft"}.get(field, ""),
+			),
+			patch("asn_module.templates.pages.asn_new._request_supplier_invoice_amount", return_value=20),
+			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=rows),
+			patch(
+				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
+				return_value=(po_items, {"POI-1": 5, "POI-2": 5}),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new._insert_and_submit_asn",
+				return_value=SimpleNamespace(name="ASN-DRAFT-1"),
+			) as insert_submit,
+		):
+			asn_new._create_single_asn("Supp-001")
+
+		self.assertEqual(insert_submit.call_count, 1)
+		saved = insert_submit.call_args.kwargs["items"]
+		self.assertEqual([row["item_code"] for row in saved], ["ITEM-001", "ITEM-002"])
+		self.assertFalse(insert_submit.call_args.kwargs["submit"])
+
 	def test_insert_and_submit_asn_raises_portal_validation_error_on_submit_failure(self):
 		def _raise_on_submit():
 			raise FrappeValidationError("Item ITEM-001: stock cap breached")

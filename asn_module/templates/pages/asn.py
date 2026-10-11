@@ -164,6 +164,31 @@ def cancel_portal_asn(asn_name: str | None = None):
 
 
 @frappe.whitelist(methods=["POST"])
+def submit_portal_asn(asn_name: str | None = None):
+	"""Submit the supplier's own draft. Scan codes are created by ASN.on_submit."""
+	asn_name = (asn_name or "").strip()
+	if not asn_name:
+		frappe.throw(_("ASN is required."))
+
+	supplier = _get_supplier_for_user(frappe.session.user)
+	if not supplier:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	doc = frappe.get_doc("ASN", asn_name)
+	if doc.supplier != supplier:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	if doc.docstatus != 0:
+		frappe.throw(_("Only a draft notice can be submitted from the portal."))
+
+	doc.flags.ignore_permissions = True
+	doc.submit()
+	stored_route = (frappe.db.get_value("ASN", doc.name, "route") or "").strip().strip("/")
+	if not stored_route.startswith("asn/"):
+		stored_route = _ensure_asn_route(doc.name)
+	return {"ok": True, "redirect": f"/{stored_route}"}
+
+
+@frappe.whitelist(methods=["POST"])
 def delete_portal_asn(asn_name: str | None = None):
 	"""Permanently delete a cancelled ASN for the portal supplier when no purchase receipt references it."""
 	asn_name = (asn_name or "").strip()

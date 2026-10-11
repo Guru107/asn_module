@@ -7,9 +7,13 @@
 					<span class="text-muted ml-2">{{ asn.supplier_invoice_no }}</span>
 				</div>
 				<div>
+					{% if asn.docstatus == 0 %}
+					<span class="badge badge-secondary">{{ _("Draft") }}</span>
+					{% else %}
 					<span class="badge badge-{{ 'success' if asn.status == 'Received' else 'warning' if asn.status == 'Partially Received' else 'info' }}">
 						{{ asn.status }}
 					</span>
+					{% endif %}
 				</div>
 			</div>
 			<div class="text-muted small mt-1">

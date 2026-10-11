@@ -772,7 +772,14 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[di
 	return errors
 
 
-def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn_name: str | None = None):
+def insert_and_submit_asn(
+	*,
+	supplier: str,
+	header: dict,
+	items: list[dict],
+	asn_name: str | None = None,
+	submit: bool = True,
+):
 	header_fields = {
 		"supplier_invoice_no": header.get("supplier_invoice_no"),
 		"supplier_invoice_date": header.get("supplier_invoice_date"),
@@ -794,6 +801,13 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn
 	else:
 		asn = frappe.get_doc({"doctype": "ASN", "supplier": supplier, "items": items, **header_fields})
 	asn.flags.ignore_permissions = True
+	if not submit:
+		# A draft is for review and editing. Scan codes are created in on_submit.
+		if asn_name:
+			asn.save()
+		else:
+			asn.insert()
+		return asn
 	# Earlier invoice groups in this request are already submitted and must stay.
 	# A savepoint undoes only this draft when submit is refused. PortalValidationError
 	# is rendered as a form error, so the request itself commits; without the rollback

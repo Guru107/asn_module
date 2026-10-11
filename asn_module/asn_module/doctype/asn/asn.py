@@ -33,6 +33,8 @@ class ASN(WebsiteGenerator):
 		context.title = self.name
 		context.can_cancel_portal = asn_eligible_for_supplier_portal_cancel(self)
 		context.can_delete_portal = asn_eligible_for_supplier_portal_delete(self)
+		context.can_submit_portal = self.docstatus == 0
+		context.can_edit_portal = self.docstatus == 0
 
 	def make_route(self):
 		"""Keep detail pages under /asn/<name> even with an empty DocType-level route.
