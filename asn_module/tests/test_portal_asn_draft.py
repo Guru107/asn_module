@@ -6,6 +6,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
+	_ensure_item,
 	_mock_asn_attachments,
 	create_purchase_order,
 	make_test_asn,
@@ -20,24 +21,7 @@ class TestPortalAsnDraft(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
-		if not frappe.db.exists("Item", "_Test ASN Item"):
-			sample = frappe.db.get_value(
-				"Item",
-				{"gst_hsn_code": ["!=", ""]},
-				["item_group", "stock_uom", "gst_hsn_code"],
-				as_dict=True,
-			)
-			frappe.get_doc(
-				{
-					"doctype": "Item",
-					"item_code": "_Test ASN Item",
-					"item_name": "_Test ASN Item",
-					"item_group": sample.item_group,
-					"stock_uom": sample.stock_uom,
-					"gst_hsn_code": sample.gst_hsn_code,
-					"inspection_required_before_purchase": 0,
-				}
-			).insert(ignore_permissions=True)
+		_ensure_item()
 
 	def test_a_draft_has_no_scan_codes_until_the_supplier_submits(self):
 		po = build_purchase_order_with_mandatory_fields(

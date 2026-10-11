@@ -96,16 +96,20 @@ def _ensure_item(item_code: str = "_Test ASN Item") -> str:
 
 	item_group = _first_or_none("Item Group") or "All Item Groups"
 	uom = _first_or_none("UOM") or "Nos"
-	item = frappe.get_doc(
-		{
-			"doctype": "Item",
-			"item_code": item_code,
-			"item_name": item_code,
-			"item_group": item_group,
-			"stock_uom": uom,
-			"inspection_required_before_purchase": 0,
-		}
-	)
+	item_doc = {
+		"doctype": "Item",
+		"item_code": item_code,
+		"item_name": item_code,
+		"item_group": item_group,
+		"stock_uom": uom,
+		"inspection_required_before_purchase": 0,
+	}
+	# india_compliance adds this column and can require it. The CI site has neither.
+	if frappe.db.has_column("Item", "gst_hsn_code"):
+		existing_hsn_code = frappe.db.get_value("GST HSN Code", {}, "name")
+		if existing_hsn_code:
+			item_doc["gst_hsn_code"] = existing_hsn_code
+	item = frappe.get_doc(item_doc)
 	item.insert(ignore_permissions=True)
 	return item.name
 

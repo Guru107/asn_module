@@ -12,6 +12,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.asn import get_purchase_order_items
 from asn_module.asn_module.doctype.asn.test_asn import (
+	_ensure_item,
 	_mock_asn_attachments,
 	create_purchase_order,
 	make_test_asn,
@@ -39,24 +40,7 @@ class TestUnitPricePurchaseOrderAsn(FrappeTestCase):
 		disable_hsn_validation()
 		if not frappe.db.exists("Branch", BRANCH):
 			frappe.get_doc({"doctype": "Branch", "branch": BRANCH}).insert(ignore_permissions=True)
-		if not frappe.db.exists("Item", "_Test ASN Item"):
-			sample = frappe.db.get_value(
-				"Item",
-				{"gst_hsn_code": ["!=", ""]},
-				["item_group", "stock_uom", "gst_hsn_code"],
-				as_dict=True,
-			)
-			frappe.get_doc(
-				{
-					"doctype": "Item",
-					"item_code": "_Test ASN Item",
-					"item_name": "_Test ASN Item",
-					"item_group": sample.item_group,
-					"stock_uom": sample.stock_uom,
-					"gst_hsn_code": sample.gst_hsn_code,
-					"inspection_required_before_purchase": 0,
-				}
-			).insert(ignore_permissions=True)
+		_ensure_item()
 
 	def setUp(self):
 		frappe.set_user("Administrator")
