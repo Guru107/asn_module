@@ -46,7 +46,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// The Link field's value lands on the DOM input synchronously, but the commit
 		// into frm.doc is a server round-trip (validate_link_and_fetch): force the
 		// field to blur/commit and wait for the model to actually reflect it.
-		cy.get('[data-fieldname="supplier"] input').blur();
+		cy.get('[data-fieldname="supplier"] input').focus().blur();
 		cy.window().its("cur_frm.doc.supplier", { timeout: 15000 }).should("eq", seeded.supplier);
 		// Every new ASN starts with one empty row already in the "items" table: it is
 		// a mandatory (reqd) Table field, and Frappe seeds mandatory child tables with

@@ -319,7 +319,7 @@ def parse_required_supplier_invoice_amount(
 def fetch_purchase_order_items(
 	purchase_orders: list[str],
 	exclude_asn_name: str | None = None,
-) -> tuple[dict[tuple[str, str], list[frappe._dict]], dict[str, float]]:
+) -> tuple[dict[tuple[str, str], list[frappe._dict]], dict[str, float | None]]:
 	if not purchase_orders:
 		return {}, {}
 
@@ -402,10 +402,10 @@ def validate_qty_within_remaining(
 	qty: float,
 	row_number: int,
 	invoice_no: str | None,
-	remaining_qty_by_name: dict[str, float],
+	remaining_qty_by_name: dict[str, float | None],
 ):
-	remaining = flt(remaining_qty_by_name.get(purchase_order_item, 0))
-	if qty <= remaining:
+	remaining = remaining_qty_by_name.get(purchase_order_item, 0)
+	if remaining is None or qty <= flt(remaining):
 		return
 	raise PortalValidationError(
 		[
@@ -419,6 +419,19 @@ def validate_qty_within_remaining(
 			)
 		]
 	)
+
+
+def consume_remaining_qty(
+	remaining_qty_by_name: dict[str, float | None], purchase_order_item: str, qty: float
+):
+	"""Reduce the running ceiling after a row is accepted.
+
+	``None`` is an uncapped unit-price line. Later rows on that line stay uncapped.
+	"""
+	remaining = remaining_qty_by_name.get(purchase_order_item, 0)
+	if remaining is None:
+		return
+	remaining_qty_by_name[purchase_order_item] = flt(remaining) - flt(qty)
 
 
 def normalize_group_value(value: str | None) -> str:
@@ -553,7 +566,7 @@ def _accept_rows_within_remaining(
 	rows: list[ParsedBulkRow],
 	*,
 	rows_by_key: dict[tuple[str, str], list[frappe._dict]],
-	remaining_qty_by_name: dict[str, float],
+	remaining_qty_by_name: dict[str, float | None],
 	invoices_that_do_not_consume: set[str] | None = None,
 ) -> tuple[dict[str, list[tuple[ParsedBulkRow, frappe._dict]]], list[dict]]:
 	"""Take Remaining Qty in file order. A row that does not fit leaves the figure unchanged.
@@ -588,7 +601,7 @@ def _accept_rows_within_remaining(
 			continue
 		if row.supplier_invoice_no in does_not_consume:
 			continue
-		running_remaining[po_item.name] = flt(running_remaining.get(po_item.name, 0)) - flt(row.qty)
+		consume_remaining_qty(running_remaining, po_item.name, row.qty)
 		accepted.setdefault(row.supplier_invoice_no, []).append((row, po_item))
 	return accepted, errors
 
@@ -761,7 +774,14 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[di
 	return errors
 
 
-def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn_name: str | None = None):
+def insert_and_submit_asn(
+	*,
+	supplier: str,
+	header: dict,
+	items: list[dict],
+	asn_name: str | None = None,
+	submit: bool = True,
+):
 	header_fields = {
 		"supplier_invoice_no": header.get("supplier_invoice_no"),
 		"supplier_invoice_date": header.get("supplier_invoice_date"),
@@ -783,6 +803,13 @@ def insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn
 	else:
 		asn = frappe.get_doc({"doctype": "ASN", "supplier": supplier, "items": items, **header_fields})
 	asn.flags.ignore_permissions = True
+	if not submit:
+		# A draft is for review and editing. Scan codes are created in on_submit.
+		if asn_name:
+			asn.save()
+		else:
+			asn.insert()
+		return asn
 	# Earlier invoice groups in this request are already submitted and must stay.
 	# A savepoint undoes only this draft when submit is refused. PortalValidationError
 	# is rendered as a form error, so the request itself commits; without the rollback

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import frappe
 from frappe import _
 from frappe.exceptions import ValidationError as FrappeValidationError
-from frappe.utils import cstr
+from frappe.utils import cint, cstr
 from frappe.website.utils import cleanup_page_name
 
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
@@ -15,6 +15,7 @@ from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	ParsedSingleRow,
 	PortalValidationError,
+	consume_remaining_qty,
 	create_bulk_asns_for_supplier,
 	error_entry,
 	fetch_purchase_order_items,
@@ -55,6 +56,7 @@ def get_context(context):
 	context.supplier = supplier
 	context.open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
 	context.asn_name = supplier_draft_asn_name(supplier, (frappe.form_dict or {}).get("asn_name")) or ""
+	context.draft_form = portal_draft_form(supplier, context.asn_name)
 
 	if not frappe.request or frappe.request.method != "POST":
 		return
@@ -177,9 +179,7 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			invoice_no=None,
 			remaining_qty_by_name=running_remaining,
 		)
-		running_remaining[po_item.name] = frappe.utils.flt(
-			running_remaining.get(po_item.name, 0)
-		) - frappe.utils.flt(row.qty)
+		consume_remaining_qty(running_remaining, po_item.name, row.qty)
 		items.append(
 			{
 				"purchase_order": row.purchase_order,
@@ -194,6 +194,7 @@ def _create_single_asn(supplier: str) -> CreateResult:
 	asn = _insert_and_submit_asn(
 		asn_name=draft_name,
 		supplier=supplier,
+		submit=False,
 		header={
 			"supplier_invoice_no": _request_value("supplier_invoice_no"),
 			"supplier_invoice_date": _request_value("supplier_invoice_date"),
@@ -210,14 +211,100 @@ def _create_single_asn(supplier: str) -> CreateResult:
 	return CreateResult(asn_names=[asn.name])
 
 
+def portal_draft_form(supplier: str, asn_name: str | None) -> dict | None:
+	"""Header and rows for the supplier's own unsubmitted notice, for the edit form."""
+	name = (asn_name or "").strip()
+	if not supplier or not name:
+		return None
+	doc = frappe.db.get_value(
+		"ASN",
+		name,
+		[
+			"name",
+			"supplier",
+			"docstatus",
+			"supplier_invoice_no",
+			"supplier_invoice_date",
+			"expected_delivery_date",
+			"supplier_invoice_amount",
+			"lr_no",
+			"lr_date",
+			"transporter_name",
+			"vehicle_number",
+			"driver_contact",
+		],
+		as_dict=True,
+	)
+	if not doc or doc.supplier != supplier or cint(doc.docstatus) != 0:
+		return None
+
+	items = frappe.get_all(
+		"ASN Item",
+		filters={"parent": name},
+		fields=["purchase_order", "purchase_order_item", "item_code", "uom", "qty", "rate", "idx"],
+		order_by="idx asc",
+		limit_page_length=0,
+	)
+	po_item_names = [row.purchase_order_item for row in items if row.purchase_order_item]
+	sr_by_name = {}
+	if po_item_names:
+		for row in frappe.get_all(
+			"Purchase Order Item",
+			filters={"name": ["in", po_item_names]},
+			fields=["name", "idx"],
+			limit_page_length=0,
+		):
+			sr_by_name[row.name] = str(row.idx)
+
+	purchase_order = next((row.purchase_order for row in items if row.purchase_order), "")
+	return {
+		"supplier_invoice_no": doc.supplier_invoice_no or "",
+		"supplier_invoice_date": _date_input(doc.supplier_invoice_date),
+		"expected_delivery_date": _date_input(doc.expected_delivery_date),
+		"supplier_invoice_amount": doc.supplier_invoice_amount,
+		"lr_no": doc.lr_no or "",
+		"lr_date": _date_input(doc.lr_date),
+		"transporter_name": doc.transporter_name or "",
+		"vehicle_number": doc.vehicle_number or "",
+		"driver_contact": doc.driver_contact or "",
+		"purchase_order": purchase_order,
+		"rows": [
+			{
+				"sr_no": sr_by_name.get(row.purchase_order_item, ""),
+				"item_code": row.item_code,
+				"uom": row.uom or "",
+				"qty": row.qty,
+				"rate": row.rate,
+			}
+			for row in items
+			if row.purchase_order == purchase_order
+		],
+	}
+
+
+def _date_input(value) -> str:
+	if not value:
+		return ""
+	return str(value)[:10]
+
+
 def _create_bulk_asns(supplier: str) -> CreateResult:
 	rows = _parse_bulk_csv_rows()
 	asn_names = create_bulk_asns_for_supplier(supplier, rows, insert_asn=_insert_and_submit_asn)
 	return CreateResult(asn_names=asn_names)
 
 
-def _insert_and_submit_asn(*, supplier: str, header: dict, items: list[dict], asn_name: str | None = None):
-	return insert_and_submit_asn(supplier=supplier, header=header, items=items, asn_name=asn_name)
+def _insert_and_submit_asn(
+	*,
+	supplier: str,
+	header: dict,
+	items: list[dict],
+	asn_name: str | None = None,
+	submit: bool = True,
+):
+	return insert_and_submit_asn(
+		supplier=supplier, header=header, items=items, asn_name=asn_name, submit=submit
+	)
 
 
 def _parse_single_rows() -> list[ParsedSingleRow]:

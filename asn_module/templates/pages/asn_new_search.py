@@ -89,7 +89,7 @@ def search_purchase_order_items(
 			if not any(txt in value for value in haystack):
 				continue
 		remaining_qty = remaining_by_item.get(row.name, 0)
-		if remaining_qty <= 0:
+		if remaining_qty is not None and remaining_qty <= 0:
 			continue
 		filtered.append(
 			{

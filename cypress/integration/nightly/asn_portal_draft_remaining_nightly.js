@@ -1,5 +1,5 @@
 function openPurchaseOrder(poName) {
-	cy.intercept("GET", "**/search_purchase_order_items*").as("poItems");
+	cy.intercept("GET", /search_purchase_order_items/).as("poItems");
 	cy.get("#single-po-input", { timeout: 20000 }).clear().type(poName);
 	cy.get("#add-po-btn").click();
 	cy.wait("@poItems")

@@ -7,13 +7,15 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder import DocType
 from frappe.query_builder.functions import Function, Sum
-from frappe.utils import flt, today
+from frappe.utils import cint, flt, today
 from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
 from asn_module.stock_cap.api import breaches_for_asn_doc
+from asn_module.stock_cap.fetch import cap_branch_by_warehouse, fetch_cap_context
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures, throw_stock_cap_exceeded
+from asn_module.stock_cap.models import Breach, Line
 from asn_module.supplier_asn_portal import (
 	asn_eligible_for_supplier_portal_cancel,
 	asn_eligible_for_supplier_portal_delete,
@@ -31,6 +33,8 @@ class ASN(WebsiteGenerator):
 		context.title = self.name
 		context.can_cancel_portal = asn_eligible_for_supplier_portal_cancel(self)
 		context.can_delete_portal = asn_eligible_for_supplier_portal_delete(self)
+		context.can_submit_portal = self.docstatus == 0
+		context.can_edit_portal = self.docstatus == 0
 
 	def make_route(self):
 		"""Keep detail pages under /asn/<name> even with an empty DocType-level route.
@@ -373,6 +377,10 @@ class _PurchaseOrderLine:
 	net_received: float
 	item_code: str | None
 	accepts_no_shipped_qty: bool
+	unit_price: bool = False
+	branch: str = ""
+	warehouse: str = ""
+	conversion_factor: float = 1.0
 
 
 def _purchase_order_lines(purchase_order_item_names: Sequence[str]) -> dict[str, _PurchaseOrderLine]:
@@ -381,22 +389,43 @@ def _purchase_order_lines(purchase_order_item_names: Sequence[str]) -> dict[str,
 
 	po_item = DocType("Purchase Order Item")
 	po = DocType("Purchase Order")
+	has_unit_price = frappe.db.has_column("Purchase Order", "has_unit_price_items")
+	has_branch = frappe.db.has_column("Purchase Order", "branch")
+	selected = [
+		po_item.name,
+		po_item.received_qty,
+		po_item.item_code,
+		po_item.qty,
+		po_item.warehouse,
+		po_item.conversion_factor,
+		po.status,
+		po.set_warehouse,
+	]
+	if has_unit_price:
+		selected.append(po.has_unit_price_items)
+	if has_branch:
+		selected.append(po.branch)
 	rows = (
 		frappe.qb.from_(po_item)
 		.inner_join(po)
 		.on(po.name == po_item.parent)
-		.select(po_item.name, po_item.received_qty, po_item.item_code, po.status)
+		.select(*selected)
 		.where(po_item.name.isin(list(purchase_order_item_names)))
 		.run(as_dict=True)
 	)
-	return {
-		row.name: _PurchaseOrderLine(
+	lines = {}
+	for row in rows:
+		factor = flt(row.conversion_factor)
+		lines[row.name] = _PurchaseOrderLine(
 			net_received=flt(row.received_qty),
 			item_code=row.item_code,
 			accepts_no_shipped_qty=row.status in _PO_STATUSES_WITH_NO_SHIPPED_QTY,
+			unit_price=bool(has_unit_price and cint(row.has_unit_price_items) and not flt(row.qty)),
+			branch=(row.branch or "") if has_branch else "",
+			warehouse=row.warehouse or row.set_warehouse or "",
+			conversion_factor=factor if factor > 0 else 1.0,
 		)
-		for row in rows
-	}
+	return lines
 
 
 def _over_receipt_allowance_percent(
@@ -446,11 +475,12 @@ class _PurchaseOrderItemQty:
 	and the allowance, because ERPNext's overflow test allows 0.01 percent past that ceiling.
 	"""
 
-	remaining: float
+	remaining: float | None
 	allowance: float
 	accepts_no_shipped_qty: bool
 	net_received: float
 	unreceived: float
+	unit_price: bool = False
 
 	def shipped_qty_past_remaining(
 		self, *, ordered_qty: float, shipped_qty: float, received_within_shipped: float
@@ -461,7 +491,11 @@ class _PurchaseOrderItemQty:
 		adds back only what this Shipped Qty still covers, so a partly received shipment is
 		not refused for goods already receipted. A Closed or On Hold order stops there.
 		An open order uses the overflow test and does not consult the over-receive role.
+		A unit-price line has no ordered quantity. Its ceiling is the branch stock cap,
+		enforced on submit, so save does not treat the zero order as fully shipped.
 		"""
+		if self.unit_price and not self.accepts_no_shipped_qty:
+			return False, 0.0
 		remaining_qty = flt(self.remaining) + received_within_shipped
 		if self.accepts_no_shipped_qty:
 			return flt(shipped_qty) > remaining_qty, remaining_qty
@@ -481,6 +515,12 @@ def _purchase_order_item_qty_state(
 	names = list(ordered_qty_by_name)
 	lines = _purchase_order_lines(names)
 	shipped_qty_by_item = _unreceived_qty_by_po_item(names, exclude_asn_name=exclude_asn_name)
+	unit_price_lines = {
+		name: line for name, line in lines.items() if line.unit_price and not line.accepts_no_shipped_qty
+	}
+	unit_price_remaining = _unit_price_remaining_purchase_qty(
+		unit_price_lines, exclude_asn_name=exclude_asn_name
+	)
 	state: dict[str, _PurchaseOrderItemQty] = {}
 	stock_allowance: float | None = None
 	for name, ordered_qty in ordered_qty_by_name.items():
@@ -491,6 +531,8 @@ def _purchase_order_item_qty_state(
 		unreceived = flt(shipped_qty_by_item.get(name, 0))
 		if line.accepts_no_shipped_qty:
 			remaining = 0
+		elif line.unit_price:
+			remaining = unit_price_remaining.get(name)
 		else:
 			qty = _ordered_qty_with_allowance(ordered_qty, allowance) - line.net_received - unreceived
 			remaining = qty if qty > 0 else 0
@@ -500,13 +542,72 @@ def _purchase_order_item_qty_state(
 			accepts_no_shipped_qty=line.accepts_no_shipped_qty,
 			net_received=line.net_received,
 			unreceived=unreceived,
+			unit_price=line.unit_price,
 		)
 	return state
 
 
+def _unit_price_remaining_purchase_qty(
+	lines: dict[str, _PurchaseOrderLine], *, exclude_asn_name: str | None
+) -> dict[str, float | None]:
+	"""Purchase quantity still allowed on a unit-price line.
+
+	``None`` means no branch cap applies, so the supplier may declare any positive
+	quantity. A number is the cap headroom in the purchase UOM, using the same branch,
+	warehouse, and precision as submit. Zero means the branch cannot take any more.
+	"""
+	if not lines:
+		return {}
+
+	owners = cap_branch_by_warehouse([line.warehouse for line in lines.values()])
+	probes: list[Line] = []
+	branch_by_name: dict[str, str] = {}
+	for name, line in lines.items():
+		if not line.warehouse or not line.item_code:
+			continue
+		branch = owners.get(line.warehouse) or line.branch or ""
+		branch_by_name[name] = branch
+		probes.append(
+			Line(
+				branch=branch,
+				item_code=line.item_code,
+				warehouse=line.warehouse,
+				stock_qty=1,
+				row_idx=0,
+				conversion_factor=line.conversion_factor,
+			)
+		)
+
+	context = fetch_cap_context(probes, exclude_asn_name=exclude_asn_name) if probes else None
+	remaining: dict[str, float | None] = {}
+	for name, line in lines.items():
+		branch = branch_by_name.get(name) or ""
+		cap_warehouses = context.cap_warehouses.get(branch) if context and branch else None
+		cap = float(context.max_stock.get((branch, line.item_code or ""), 0) or 0) if context else 0
+		if not cap_warehouses or line.warehouse not in cap_warehouses or cap <= 0 or not line.item_code:
+			remaining[name] = None
+			continue
+		on_hand = float(context.on_hand.get((branch, line.item_code), 0) or 0)
+		in_transit = float(context.in_transit.get((branch, line.item_code), 0) or 0)
+		baseline = on_hand + in_transit
+		remaining[name] = Breach(
+			branch=branch,
+			item_code=line.item_code,
+			row_idxs=(),
+			on_hand=on_hand,
+			in_transit=in_transit,
+			baseline=baseline,
+			incoming=0,
+			projected=baseline,
+			cap=cap,
+			conversion_factor=line.conversion_factor,
+		).allowed_purchase_qty
+	return remaining
+
+
 def remaining_qty_by_purchase_order_item(
 	ordered_qty_by_name: dict[str, float], *, exclude_asn_name: str | None = None
-) -> dict[str, float]:
+) -> dict[str, float | None]:
 	"""Remaining Qty for each Purchase Order Item, in the line's purchase UOM.
 
 	The ordered quantity expanded by the over-receipt allowance, minus the Purchase Order
@@ -514,6 +615,10 @@ def remaining_qty_by_purchase_order_item(
 	that are not Closed or Cancelled. Never below zero. The ASN named in
 	``exclude_asn_name`` is left out of the unreceived sum. The save check then adds
 	back the received quantity already on that ASN, so its own receipts are not counted twice.
+
+	A unit-price line (ordered quantity zero on a Purchase Order flagged
+	``has_unit_price_items``) has no ordered ceiling. Its remaining quantity is the
+	branch stock-cap headroom, or ``None`` when no cap applies.
 	"""
 	return {
 		name: row.remaining
@@ -545,8 +650,12 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 	result = []
 	for poi in po_items:
 		remaining_qty = remaining_by_item.get(poi.purchase_order_item, 0)
-		if remaining_qty <= 0:
+		if remaining_qty is None:
+			offered_qty = 1
+		elif remaining_qty <= 0:
 			continue
+		else:
+			offered_qty = remaining_qty
 
 		result.append(
 			{
@@ -554,7 +663,7 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 				"purchase_order_item": poi.purchase_order_item,
 				"item_code": poi.item_code,
 				"item_name": poi.item_name,
-				"qty": remaining_qty,
+				"qty": offered_qty,
 				"uom": poi.uom,
 				"rate": poi.rate,
 			}
