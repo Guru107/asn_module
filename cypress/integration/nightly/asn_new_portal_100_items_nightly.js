@@ -50,14 +50,13 @@ context("ASN New portal nightly — 100 item PO flows", () => {
 		cy.get("form#single-asn-form input[name='supplier_invoice_no']")
 			.clear()
 			.type("SINGLE-100-" + Date.now());
-		cy.get("form#single-asn-form input[name='supplier_invoice_amount']").clear().type("20");
 		cy.get("input[name='single_manual_qty']").each(($input) => {
 			cy.wrap($input).clear().type("1");
 		});
 		cy.get("input[name='single_manual_rate']").each(($input) => {
 			cy.wrap($input).clear().type("10");
 		});
-		cy.get("form#single-asn-form button[type='submit']").click();
+		cy.get("button[form='single-asn-form']").click();
 		cy.location("pathname", { timeout: 20000 }).should("match", /\/asn\/asn-[^/]+$/i);
 	});
 

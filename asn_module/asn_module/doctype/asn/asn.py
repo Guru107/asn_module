@@ -46,9 +46,10 @@ class ASN(WebsiteGenerator):
 		return f"asn/{self.scrubbed_title()}"
 
 	def validate(self):
-		self._validate_items_present()
-		self._validate_item_qty()
-		self._sync_supplier_invoice_amount_from_items()
+		if cint(self.docstatus) == 1:
+			self._validate_items_present()
+			self._validate_item_qty()
+			self._validate_supplier_invoice_no_present()
 		super().validate()
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
@@ -186,12 +187,10 @@ class ASN(WebsiteGenerator):
 
 			frappe.throw(_("Row {0}: Quantity must be greater than 0").format(row.idx))
 
-	def _sync_supplier_invoice_amount_from_items(self):
-		"""When header amount is unset (0), derive it from line qty * rate so the portal/detail view is not stuck at 0."""
-		if flt(self.supplier_invoice_amount) != 0:
+	def _validate_supplier_invoice_no_present(self):
+		if (self.supplier_invoice_no or "").strip():
 			return
-		total = sum(flt(row.qty) * flt(row.rate) for row in (self.items or []))
-		self.supplier_invoice_amount = total
+		frappe.throw(_("Supplier Invoice No is required."))
 
 	def _validate_supplier_invoice_unique(self):
 		if not self.supplier_invoice_no:

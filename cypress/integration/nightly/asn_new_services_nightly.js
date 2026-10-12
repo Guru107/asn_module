@@ -49,20 +49,22 @@ context("ASN New Services nightly — validation error branches", () => {
 		cy.get("#bulk-pane .alert.alert-danger", { timeout: 15000 }).should("be.visible");
 	});
 
-	it("blocks submit when supplier invoice amount is missing", () => {
+	it("leaves the supplier invoice amount for the user to enter", () => {
 		const po = seededData.purchase_orders[0];
 		cy.visit("/asn_new", { failOnStatusCode: false });
 		selectFirstInvoiceItem(po.name);
-		cy.get("form#single-asn-form input[name='supplier_invoice_no']")
-			.clear()
-			.type("MISMATCH-" + Date.now());
-		cy.get("form#single-asn-form input[name='supplier_invoice_amount']").clear();
 		cy.get("input[name='single_manual_qty']").first().clear().type("1");
 		cy.get("input[name='single_manual_rate']").first().clear().type("100");
-		cy.get("form#single-asn-form button[type='submit']").click();
-		cy.get("form#single-asn-form input[name='supplier_invoice_amount']").then(($input) => {
-			expect($input[0].checkValidity()).to.equal(false);
+		cy.get("#supplier-invoice-amount").should("have.value", "");
+		cy.get("#supplier-invoice-amount").clear().type("1492.50");
+		cy.get("#supplier-invoice-amount").should("have.value", "1492.50");
+		cy.get("#single-manual-rows").then(($rows) => {
+			cy.get("#supplier-invoice-amount").then(($amount) => {
+				expect(
+					$rows[0].compareDocumentPosition($amount[0]) & Node.DOCUMENT_POSITION_FOLLOWING
+				).to.be.ok;
+			});
 		});
-		cy.location("pathname").should("eq", "/asn_new");
+		cy.get("#supplier-invoice-amount").should("not.have.attr", "readonly");
 	});
 });

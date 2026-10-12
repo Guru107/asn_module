@@ -192,6 +192,7 @@ def make_test_asn(*, purchase_order=None, supplier=None, supplier_invoice_no=Non
 			"supplier_invoice_no": supplier_invoice_no or f"INV-{frappe.generate_hash(length=8)}",
 			"supplier_invoice_date": today(),
 			"expected_delivery_date": today(),
+			"supplier_invoice_amount": flt(qty) * flt(po_item.rate),
 			"items": [
 				{
 					"purchase_order": po.name,
@@ -364,11 +365,13 @@ class TestASN(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			asn.insert(ignore_permissions=True)
 
-	def test_insert_rejects_non_positive_qty(self):
+	def test_draft_insert_allows_non_positive_qty_and_submit_rejects_it(self):
 		asn = make_test_asn(qty=0)
+		asn.insert(ignore_permissions=True)
+		self.assertEqual(asn.docstatus, 0)
 
 		with self.assertRaises(frappe.ValidationError):
-			asn.insert(ignore_permissions=True)
+			asn.submit()
 
 	def test_insert_rejects_duplicate_supplier_invoice_for_active_docs(self):
 		invoice_no = f"INV-{frappe.generate_hash(length=8)}"
@@ -443,14 +446,15 @@ class TestASN(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			asn.insert(ignore_permissions=True)
 
-	def test_validate_sets_supplier_invoice_amount_from_line_totals_when_zero(self):
+	def test_validate_leaves_a_blank_supplier_invoice_amount(self):
 		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
 		asn = make_test_asn(purchase_order=po, qty=2)
+		asn.supplier_invoice_amount = 0
 		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
 		asn.validate()
-		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 200)
+		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
 
-	def test_validate_preserves_nonzero_supplier_invoice_amount(self):
+	def test_validate_preserves_a_typed_supplier_invoice_amount(self):
 		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
 		asn = make_test_asn(purchase_order=po, qty=2)
 		asn.supplier_invoice_amount = 250

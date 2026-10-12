@@ -61,7 +61,7 @@ class ParsedSingleRow:
 	item_code: str
 	uom: str
 	qty: float
-	rate: float
+	rate: float | None = None
 
 
 @dataclass(frozen=True)
@@ -792,6 +792,7 @@ def insert_and_submit_asn(
 		"vehicle_number": header.get("vehicle_number"),
 		"driver_contact": header.get("driver_contact"),
 		"supplier_invoice_amount": header["supplier_invoice_amount"],
+		"draft_purchase_order": header.get("draft_purchase_order"),
 	}
 	if asn_name:
 		asn = frappe.get_doc("ASN", asn_name)
@@ -805,6 +806,10 @@ def insert_and_submit_asn(
 	asn.flags.ignore_permissions = True
 	if not submit:
 		# A draft is for review and editing. Scan codes are created in on_submit.
+		# Mandatory invoice number, items, and quantity are enforced on submit.
+		asn.flags.ignore_mandatory = True
+		for item in getattr(asn, "items", None) or []:
+			item.flags.ignore_mandatory = True
 		if asn_name:
 			asn.save()
 		else:

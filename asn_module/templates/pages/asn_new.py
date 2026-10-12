@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import frappe
 from frappe import _
 from frappe.exceptions import ValidationError as FrappeValidationError
-from frappe.utils import cint, cstr
+from frappe.utils import cint, cstr, flt
 from frappe.website.utils import cleanup_page_name
 
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
@@ -21,8 +21,7 @@ from asn_module.templates.pages.asn_new_services import (
 	fetch_purchase_order_items,
 	insert_and_submit_asn,
 	parse_bulk_csv_content,
-	parse_non_negative_rate,
-	parse_positive_qty,
+	parse_optional_non_negative_rate,
 	resolve_po_item,
 	validate_qty_within_remaining,
 	validate_selected_purchase_orders,
@@ -35,6 +34,7 @@ ALLOWED_MODES = {"single", "bulk"}
 @dataclass
 class CreateResult:
 	asn_names: list[str]
+	incomplete: bool = False
 
 
 def get_context(context):
@@ -68,8 +68,12 @@ def get_context(context):
 		if mode == "single":
 			result = _create_single_asn(supplier)
 			asn_name = result.asn_names[0]
-			stored_route = frappe.db.get_value("ASN", asn_name, "route")
-			frappe.local.flags.redirect_location = f"/{_portal_asn_route(asn_name, stored_route)}"
+			if result.incomplete:
+				# Stay on the form so an unfinished draft is still on screen after Save.
+				frappe.local.flags.redirect_location = f"/asn_new?asn_name={asn_name}"
+			else:
+				stored_route = frappe.db.get_value("ASN", asn_name, "route")
+				frappe.local.flags.redirect_location = f"/{_portal_asn_route(asn_name, stored_route)}"
 			raise frappe.Redirect
 		if mode == "bulk":
 			result = _create_bulk_asns(supplier)
@@ -88,6 +92,7 @@ def get_context(context):
 			context.bulk_errors = errors
 		else:
 			context.single_errors = errors
+			_keep_posted_single_form(context)
 	except FrappeValidationError as exc:
 		msg = cstr(getattr(exc, "message", None) or (exc.args[0] if exc.args else "") or exc).strip()
 		if not msg:
@@ -97,16 +102,12 @@ def get_context(context):
 			context.bulk_errors = [entry]
 		else:
 			context.single_errors = [entry]
+			_keep_posted_single_form(context)
 
 
 def _create_single_asn(supplier: str) -> CreateResult:
 	selected_purchase_orders = _request_list("selected_purchase_orders")
-	validate_selected_purchase_orders(
-		supplier=supplier,
-		selected_purchase_orders=selected_purchase_orders,
-		field="selected_purchase_orders",
-	)
-	if len(selected_purchase_orders) != 1:
+	if len(selected_purchase_orders) > 1:
 		raise PortalValidationError(
 			[
 				error_entry(
@@ -115,100 +116,131 @@ def _create_single_asn(supplier: str) -> CreateResult:
 				)
 			]
 		)
+	rows = _parse_single_rows()
+	if rows and len(selected_purchase_orders) != 1:
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="selected_purchase_orders",
+					message=_("Select exactly one open Purchase Order for Single ASN."),
+				)
+			]
+		)
+	if selected_purchase_orders:
+		validate_selected_purchase_orders(
+			supplier=supplier,
+			selected_purchase_orders=selected_purchase_orders,
+			field="selected_purchase_orders",
+		)
 	draft_name = supplier_draft_asn_name(supplier, _request_value("asn_name"))
 	validate_supplier_invoices_not_reused(
 		supplier,
 		[_request_value("supplier_invoice_no")],
 		exclude_asn_name=draft_name,
 	)
-	rows = _parse_single_rows()
-	if not rows:
-		raise PortalValidationError(
-			[
-				error_entry(
-					field="rows",
-					message=_("Add at least one manual row for Single ASN."),
-				)
-			]
-		)
 
-	rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(
-		selected_purchase_orders,
-		exclude_asn_name=draft_name,
-	)
-	running_remaining = dict(remaining_qty_by_name)
 	items = []
-	seen_po_sr: set[tuple[str, str]] = set()
-	for row in rows:
-		if row.purchase_order not in selected_purchase_orders:
-			raise PortalValidationError(
-				[
-					error_entry(
-						row_number=row.row_number,
-						field="purchase_order",
-						message=_("Manual row {0}: Purchase Order is not selected.").format(row.row_number),
-					)
-				]
-			)
-		if (row.purchase_order, row.sr_no) in seen_po_sr:
-			raise PortalValidationError(
-				[
-					error_entry(
-						row_number=row.row_number,
-						field="sr_no",
-						message=_("Manual row {0}: duplicate purchase_order + sr_no is not allowed.").format(
-							row.row_number
-						),
-					)
-				]
-			)
-		seen_po_sr.add((row.purchase_order, row.sr_no))
+	if rows:
+		rows_by_key, remaining_qty_by_name = fetch_purchase_order_items(
+			selected_purchase_orders,
+			exclude_asn_name=draft_name,
+		)
+		running_remaining = dict(remaining_qty_by_name)
+		seen_po_sr: set[tuple[str, str]] = set()
+		for row in rows:
+			if row.purchase_order not in selected_purchase_orders:
+				raise PortalValidationError(
+					[
+						error_entry(
+							row_number=row.row_number,
+							field="purchase_order",
+							message=_("Manual row {0}: Purchase Order is not selected.").format(
+								row.row_number
+							),
+						)
+					]
+				)
+			if (row.purchase_order, row.sr_no) in seen_po_sr:
+				raise PortalValidationError(
+					[
+						error_entry(
+							row_number=row.row_number,
+							field="sr_no",
+							message=_(
+								"Manual row {0}: duplicate purchase_order + sr_no is not allowed."
+							).format(row.row_number),
+						)
+					]
+				)
+			seen_po_sr.add((row.purchase_order, row.sr_no))
 
-		po_item = resolve_po_item(
-			purchase_order=row.purchase_order,
-			sr_no=row.sr_no,
-			item_code=row.item_code,
-			row_number=row.row_number,
-			invoice_no=None,
-			rows_by_key=rows_by_key,
-		)
-		validate_qty_within_remaining(
-			purchase_order_item=po_item.name,
-			qty=row.qty,
-			row_number=row.row_number,
-			invoice_no=None,
-			remaining_qty_by_name=running_remaining,
-		)
-		consume_remaining_qty(running_remaining, po_item.name, row.qty)
-		items.append(
-			{
-				"purchase_order": row.purchase_order,
-				"purchase_order_item": po_item.name,
-				"item_code": row.item_code,
-				"uom": row.uom or po_item.uom,
-				"qty": row.qty,
-				"rate": row.rate,
-			}
-		)
+			po_item = resolve_po_item(
+				purchase_order=row.purchase_order,
+				sr_no=row.sr_no,
+				item_code=row.item_code,
+				row_number=row.row_number,
+				invoice_no=None,
+				rows_by_key=rows_by_key,
+			)
+			if flt(row.qty) > 0:
+				validate_qty_within_remaining(
+					purchase_order_item=po_item.name,
+					qty=row.qty,
+					row_number=row.row_number,
+					invoice_no=None,
+					remaining_qty_by_name=running_remaining,
+				)
+				consume_remaining_qty(running_remaining, po_item.name, row.qty)
+			items.append(
+				{
+					"purchase_order": row.purchase_order,
+					"purchase_order_item": po_item.name,
+					"item_code": row.item_code,
+					"uom": row.uom or po_item.uom,
+					"qty": row.qty,
+					"rate": flt(po_item.rate) if row.rate is None else row.rate,
+				}
+			)
 
+	header = _single_header(selected_purchase_orders[0] if selected_purchase_orders else "")
 	asn = _insert_and_submit_asn(
 		asn_name=draft_name,
 		supplier=supplier,
 		submit=False,
-		header={
-			"supplier_invoice_no": _request_value("supplier_invoice_no"),
-			"supplier_invoice_date": _request_value("supplier_invoice_date"),
-			"expected_delivery_date": _request_value("expected_delivery_date"),
-			"lr_no": _request_value("lr_no"),
-			"lr_date": _request_value("lr_date"),
-			"transporter_name": _request_value("transporter_name"),
-			"vehicle_number": _request_value("vehicle_number"),
-			"driver_contact": _request_value("driver_contact"),
-			"supplier_invoice_amount": _request_supplier_invoice_amount(),
-		},
+		header=header,
 		items=items,
 	)
-	return CreateResult(asn_names=[asn.name])
+	return CreateResult(asn_names=[asn.name], incomplete=not _single_draft_is_complete(header, items))
+
+
+def _single_header(purchase_order: str = "") -> dict:
+	return {
+		"supplier_invoice_no": _request_value("supplier_invoice_no"),
+		"supplier_invoice_date": _request_value("supplier_invoice_date"),
+		"expected_delivery_date": _request_value("expected_delivery_date"),
+		"lr_no": _request_value("lr_no"),
+		"lr_date": _request_value("lr_date"),
+		"transporter_name": _request_value("transporter_name"),
+		"vehicle_number": _request_value("vehicle_number"),
+		"driver_contact": _request_value("driver_contact"),
+		"supplier_invoice_amount": _optional_supplier_invoice_amount(),
+		"draft_purchase_order": purchase_order,
+	}
+
+
+def _single_draft_is_complete(header: dict, items: list[dict]) -> bool:
+	if not (header.get("supplier_invoice_no") or "").strip():
+		return False
+	if not items:
+		return False
+	return all(flt(item.get("qty")) > 0 for item in items)
+
+
+def _keep_posted_single_form(context) -> None:
+	"""Put the submitted fields back on the page when Save does not stick."""
+	posted = posted_single_draft_form()
+	if posted:
+		context.draft_form = posted
 
 
 def portal_draft_form(supplier: str, asn_name: str | None) -> dict | None:
@@ -232,6 +264,7 @@ def portal_draft_form(supplier: str, asn_name: str | None) -> dict | None:
 			"transporter_name",
 			"vehicle_number",
 			"driver_contact",
+			"draft_purchase_order",
 		],
 		as_dict=True,
 	)
@@ -257,6 +290,8 @@ def portal_draft_form(supplier: str, asn_name: str | None) -> dict | None:
 			sr_by_name[row.name] = str(row.idx)
 
 	purchase_order = next((row.purchase_order for row in items if row.purchase_order), "")
+	if not purchase_order:
+		purchase_order = doc.draft_purchase_order or ""
 	return {
 		"supplier_invoice_no": doc.supplier_invoice_no or "",
 		"supplier_invoice_date": _date_input(doc.supplier_invoice_date),
@@ -307,13 +342,87 @@ def _insert_and_submit_asn(
 	)
 
 
+def _parse_draft_qty(qty_raw: str, *, row_number: int) -> float:
+	"""Blank or zero quantity is allowed on a draft. A negative quantity is not."""
+	if not (qty_raw or "").strip():
+		return 0.0
+	qty = flt(qty_raw)
+	if qty < 0:
+		raise PortalValidationError(
+			[
+				error_entry(
+					row_number=row_number,
+					field="qty",
+					message=_("Row {0}: qty cannot be negative.").format(row_number),
+				)
+			]
+		)
+	return qty
+
+
+def posted_single_draft_form() -> dict | None:
+	"""Fields the supplier just posted, so a failed Save can render them again."""
+	request = getattr(frappe, "request", None)
+	form = getattr(request, "form", None) if request else None
+	if form is None or not hasattr(form, "getlist"):
+		return None
+
+	po_values = _request_row_list("single_manual_purchase_order")
+	sr_values = _request_row_list("single_manual_sr_no")
+	item_values = _request_row_list("single_manual_item_code")
+	uom_values = _request_row_list("single_manual_uom")
+	qty_values = _request_row_list("single_manual_qty")
+	rate_values = _request_row_list("single_manual_rate")
+	selected = _request_list("selected_purchase_orders")
+	max_len = max(
+		len(po_values),
+		len(sr_values),
+		len(item_values),
+		len(uom_values),
+		len(qty_values),
+		len(rate_values),
+		0,
+	)
+	rows = []
+	for idx in range(max_len):
+		sr_no = _safe_get(sr_values, idx).strip()
+		item_code = _safe_get(item_values, idx).strip()
+		uom = _safe_get(uom_values, idx).strip()
+		qty = _safe_get(qty_values, idx).strip()
+		rate = _safe_get(rate_values, idx).strip()
+		if not any([sr_no, item_code, uom, qty, rate]):
+			continue
+		rows.append(
+			{
+				"sr_no": sr_no,
+				"item_code": item_code,
+				"uom": uom,
+				"qty": qty,
+				"rate": rate,
+			}
+		)
+	return {
+		"supplier_invoice_no": _request_value("supplier_invoice_no"),
+		"supplier_invoice_date": _request_value("supplier_invoice_date"),
+		"expected_delivery_date": _request_value("expected_delivery_date"),
+		"supplier_invoice_amount": _request_value("supplier_invoice_amount"),
+		"lr_no": _request_value("lr_no"),
+		"lr_date": _request_value("lr_date"),
+		"transporter_name": _request_value("transporter_name"),
+		"vehicle_number": _request_value("vehicle_number"),
+		"driver_contact": _request_value("driver_contact"),
+		"purchase_order": selected[0] if len(selected) == 1 else "",
+		"rows": rows,
+	}
+
+
 def _parse_single_rows() -> list[ParsedSingleRow]:
-	po_values = _request_list("single_manual_purchase_order")
-	sr_values = _request_list("single_manual_sr_no")
-	item_values = _request_list("single_manual_item_code")
-	uom_values = _request_list("single_manual_uom")
-	qty_values = _request_list("single_manual_qty")
-	rate_values = _request_list("single_manual_rate")
+	po_values = _request_row_list("single_manual_purchase_order")
+	sr_values = _request_row_list("single_manual_sr_no")
+	item_values = _request_row_list("single_manual_item_code")
+	uom_values = _request_row_list("single_manual_uom")
+	qty_values = _request_row_list("single_manual_qty")
+	rate_values = _request_row_list("single_manual_rate")
 
 	max_len = max(
 		len(po_values),
@@ -343,10 +452,6 @@ def _parse_single_rows() -> list[ParsedSingleRow]:
 			missing.append("sr_no")
 		if not item_code:
 			missing.append("item_code")
-		if not qty_raw:
-			missing.append("qty")
-		if not rate_raw:
-			missing.append("rate")
 		if missing:
 			errors.append(
 				error_entry(
@@ -360,8 +465,8 @@ def _parse_single_rows() -> list[ParsedSingleRow]:
 			continue
 
 		try:
-			qty = parse_positive_qty(qty_raw, row_number=row_number, field="qty")
-			rate = parse_non_negative_rate(rate_raw, row_number=row_number, field="rate")
+			qty = _parse_draft_qty(qty_raw, row_number=row_number)
+			rate = parse_optional_non_negative_rate(rate_raw, row_number=row_number, field="rate")
 		except PortalValidationError as exc:
 			errors.extend(exc.errors)
 			continue
@@ -397,8 +502,33 @@ def _request_list(fieldname: str) -> list[str]:
 	return [value.strip() for value in frappe.request.form.getlist(fieldname) if (value or "").strip()]
 
 
+def _request_row_list(fieldname: str) -> list[str]:
+	"""Keep blank cells so each manual row stays aligned with its neighbours."""
+	if not frappe.request:
+		return []
+	return [(value or "").strip() for value in frappe.request.form.getlist(fieldname)]
+
+
 def _request_value(fieldname: str) -> str:
 	return (frappe.form_dict.get(fieldname) or "").strip()
+
+
+def _optional_supplier_invoice_amount() -> float:
+	"""Posted amount, or 0 when the field is still empty so the document can fill it."""
+	raw = _request_value("supplier_invoice_amount")
+	if not raw:
+		return 0.0
+	val = flt(raw)
+	if val < 0:
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="supplier_invoice_amount",
+					message=_("Supplier invoice amount cannot be negative."),
+				)
+			]
+		)
+	return val
 
 
 def _request_supplier_invoice_amount() -> float:
