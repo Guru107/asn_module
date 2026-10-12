@@ -808,7 +808,7 @@ def insert_and_submit_asn(
 		# A draft is for review and editing. Scan codes are created in on_submit.
 		# Mandatory invoice number, items, and quantity are enforced on submit.
 		asn.flags.ignore_mandatory = True
-		for item in asn.items or []:
+		for item in getattr(asn, "items", None) or []:
 			item.flags.ignore_mandatory = True
 		if asn_name:
 			asn.save()

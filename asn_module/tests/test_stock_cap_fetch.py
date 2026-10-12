@@ -1,6 +1,6 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import today
+from frappe.utils import flt, today
 
 from asn_module.stock_cap.fetch import fetch_cap_context
 from asn_module.stock_cap.models import Line
@@ -426,6 +426,7 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 				"supplier_invoice_no": f"INV-{frappe.generate_hash(length=8)}",
 				"supplier_invoice_date": today(),
 				"expected_delivery_date": today(),
+				"supplier_invoice_amount": sum(flt(row.get("qty")) * flt(row.get("rate")) for row in items),
 				"items": items,
 			}
 		)

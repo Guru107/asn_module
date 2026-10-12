@@ -192,6 +192,7 @@ def make_test_asn(*, purchase_order=None, supplier=None, supplier_invoice_no=Non
 			"supplier_invoice_no": supplier_invoice_no or f"INV-{frappe.generate_hash(length=8)}",
 			"supplier_invoice_date": today(),
 			"expected_delivery_date": today(),
+			"supplier_invoice_amount": flt(qty) * flt(po_item.rate),
 			"items": [
 				{
 					"purchase_order": po.name,
@@ -446,6 +447,7 @@ class TestASN(FrappeTestCase):
 	def test_validate_leaves_a_blank_supplier_invoice_amount(self):
 		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
 		asn = make_test_asn(purchase_order=po, qty=2)
+		asn.supplier_invoice_amount = 0
 		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
 		asn.validate()
 		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
