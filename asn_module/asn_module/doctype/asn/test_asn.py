@@ -365,11 +365,13 @@ class TestASN(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			asn.insert(ignore_permissions=True)
 
-	def test_insert_rejects_non_positive_qty(self):
+	def test_draft_insert_allows_non_positive_qty_and_submit_rejects_it(self):
 		asn = make_test_asn(qty=0)
+		asn.insert(ignore_permissions=True)
+		self.assertEqual(asn.docstatus, 0)
 
 		with self.assertRaises(frappe.ValidationError):
-			asn.insert(ignore_permissions=True)
+			asn.submit()
 
 	def test_insert_rejects_duplicate_supplier_invoice_for_active_docs(self):
 		invoice_no = f"INV-{frappe.generate_hash(length=8)}"
