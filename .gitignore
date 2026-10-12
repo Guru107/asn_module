@@ -67,20 +67,13 @@ coverage.xml
 dump.rdb
 .worktrees/
 
-# Local and generated dotfiles. Tracked project config stays visible.
+# Dot directories and other local dot paths. Tracked project config files stay visible.
+.*/
 .*
-!.agents/
-!.agents/**
-!. claude/
-!. claude/**
 !.coderabbit.yaml
-!.cursor/
-!.cursor/**
 !.editorconfig
 !.eslintrc
 !.frappe
-!.github/
-!.github/**
 !.gitignore
 !.gitkeep
 !.pre-commit-config.yaml
