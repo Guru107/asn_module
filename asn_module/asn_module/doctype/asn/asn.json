@@ -156,7 +156,6 @@
 			"fieldname": "supplier_invoice_amount",
 			"fieldtype": "Currency",
 			"label": "Supplier Invoice Amount",
-			"description": "Calculated from item quantity, rate, and the tax on the Purchase Order.",
 			"reqd": 1
 		},
 		{

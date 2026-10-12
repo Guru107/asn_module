@@ -373,7 +373,6 @@ def posted_single_draft_form() -> dict | None:
 	uom_values = _request_row_list("single_manual_uom")
 	qty_values = _request_row_list("single_manual_qty")
 	rate_values = _request_row_list("single_manual_rate")
-	tax_values = _request_row_list("single_manual_tax_percent")
 	selected = _request_list("selected_purchase_orders")
 	max_len = max(
 		len(po_values),
@@ -382,7 +381,6 @@ def posted_single_draft_form() -> dict | None:
 		len(uom_values),
 		len(qty_values),
 		len(rate_values),
-		len(tax_values),
 		0,
 	)
 	rows = []
@@ -401,7 +399,6 @@ def posted_single_draft_form() -> dict | None:
 				"uom": uom,
 				"qty": qty,
 				"rate": rate,
-				"tax_percent": _safe_get(tax_values, idx).strip(),
 			}
 		)
 	return {

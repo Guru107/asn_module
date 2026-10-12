@@ -468,7 +468,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 					"single_manual_item_code": ["ITEM-001"],
 					"single_manual_qty": ["2"],
 					"single_manual_rate": ["40"],
-					"single_manual_tax_percent": ["18"],
 				}.get(fieldname, [])
 
 		context = SimpleNamespace()
@@ -502,7 +501,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(context.draft_form["purchase_order"], "PO-0001")
 		self.assertEqual(context.draft_form["rows"][0]["item_code"], "ITEM-001")
 		self.assertEqual(context.draft_form["rows"][0]["rate"], "40")
-		self.assertEqual(context.draft_form["rows"][0]["tax_percent"], "18")
 
 	def test_get_context_sets_bulk_success_after_bulk_create(self):
 		context = SimpleNamespace()

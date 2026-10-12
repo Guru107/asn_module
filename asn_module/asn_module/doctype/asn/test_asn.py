@@ -443,24 +443,12 @@ class TestASN(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			asn.insert(ignore_permissions=True)
 
-	def test_validate_sets_supplier_invoice_amount_from_line_totals_when_zero(self):
+	def test_validate_leaves_a_blank_supplier_invoice_amount(self):
 		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
 		asn = make_test_asn(purchase_order=po, qty=2)
 		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
 		asn.validate()
-		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 200)
-
-	def test_validate_sets_supplier_invoice_amount_from_qty_rate_and_tax(self):
-		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
-		asn = make_test_asn(purchase_order=po, qty=2)
-		asn.supplier_invoice_amount = 0
-		with patch(
-			"asn_module.asn_module.doctype.asn.asn.tax_percent_by_purchase_order_item",
-			return_value={asn.items[0].purchase_order_item: 18},
-		):
-			asn.validate()
-		# 2 x 100 plus 18% tax.
-		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 236)
+		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
 
 	def test_validate_preserves_a_typed_supplier_invoice_amount(self):
 		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)

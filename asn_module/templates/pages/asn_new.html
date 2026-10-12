@@ -665,7 +665,7 @@
 							<div class="col-md-4 mb-3">
 								<label class="form-label" for="supplier-invoice-amount">{{ _("Supplier invoice amount") }}</label>
 								<input type="number" class="form-control" id="supplier-invoice-amount" name="supplier_invoice_amount" min="0" step="0.01">
-								<p class="text-muted small mb-0">{{ _("Prefilled from quantity, rate, and the tax on the Purchase Order. You can change it.") }}</p>
+								<p class="text-muted small mb-0">{{ _("Enter the total from the supplier invoice.") }}</p>
 							</div>
 						</div>
 
@@ -946,7 +946,6 @@
 		selectedItemByKey.clear();
 		rowsRoot.innerHTML = "";
 		itemFilterInput.value = "";
-		refreshInvoiceAmount(true);
 	}
 
 	function syncHiddenPoInputs() {
@@ -973,11 +972,8 @@
 	}
 
 	function createRowHtml(itemKey, entry) {
-		const taxPercent = String(Number(entry.tax_percent) || 0);
-		const poRate = Number(entry.po_rate != null && entry.po_rate !== "" ? entry.po_rate : entry.rate);
-		const poRateValue = Number.isFinite(poRate) ? String(poRate) : "0";
 		return `
-		<div class="single-row asn-new-manual-grid-row" data-item-key="${itemKey}" data-tax-percent="${taxPercent}" data-po-rate="${poRateValue}">
+		<div class="single-row asn-new-manual-grid-row" data-item-key="${itemKey}">
 			<div class="asn-new-cell">
 				<label class="asn-new-cell-label">PO</label>
 				<input class="form-control" name="single_manual_purchase_order" value="${selectedPo}" readonly>
@@ -1001,35 +997,12 @@
 			<div class="asn-new-cell">
 				<label class="asn-new-cell-label">Rate</label>
 				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_rate" value="${rateToInputValue(entry.rate)}">
-				<input type="hidden" name="single_manual_tax_percent" value="${taxPercent}">
 			</div>
 			<div class="asn-new-cell asn-new-remove">
 				<button type="button" class="btn btn-outline-danger btn-sm remove-row" aria-label="Remove row">×</button>
 			</div>
 		</div>
 	`;
-	}
-
-	let invoiceAmountEdited = false;
-
-	function refreshInvoiceAmount(force) {
-		const amountInput = document.getElementById("supplier-invoice-amount");
-		if (!amountInput) return;
-		if (invoiceAmountEdited && !force) return;
-		if (force) invoiceAmountEdited = false;
-		let total = 0;
-		rowsRoot.querySelectorAll(".single-row").forEach((row) => {
-			const qty = Number(row.querySelector("[name='single_manual_qty']")?.value);
-			const rateInput = row.querySelector("[name='single_manual_rate']");
-			const typedRate = rateInput ? rateInput.value : "";
-			const rate = typedRate === "" ? Number(row.getAttribute("data-po-rate")) : Number(typedRate);
-			const tax = Number(row.getAttribute("data-tax-percent"));
-			const safeQty = Number.isFinite(qty) ? qty : 0;
-			const safeRate = Number.isFinite(rate) ? rate : 0;
-			const safeTax = Number.isFinite(tax) ? tax : 0;
-			total += safeQty * safeRate * (1 + safeTax / 100);
-		});
-		amountInput.value = total.toFixed(2);
 	}
 
 	function addRowForItem(entry) {
@@ -1107,13 +1080,12 @@
 		renderItemPickerRows();
 	}
 
-	function selectItem(entry, opts = {}) {
+	function selectItem(entry) {
 		const itemKey = keyForItem(entry);
 		if (!itemKey || selectedItemKeys.has(itemKey)) return;
 		selectedItemKeys.add(itemKey);
 		selectedItemByKey.set(itemKey, entry);
 		addRowForItem(entry);
-		if (!opts.keepInvoiceAmount) refreshInvoiceAmount(true);
 	}
 
 	function deselectItemByKey(itemKey) {
@@ -1121,7 +1093,6 @@
 		selectedItemKeys.delete(itemKey);
 		selectedItemByKey.delete(itemKey);
 		removeRowForItemKey(itemKey);
-		refreshInvoiceAmount(true);
 	}
 
 	async function loadPoItems(po) {
@@ -1327,18 +1298,6 @@
 		renderItemPicker();
 	});
 
-	rowsRoot.addEventListener("input", (event) => {
-		if (!(event.target instanceof HTMLElement)) return;
-		const name = event.target.getAttribute("name") || "";
-		if (name === "single_manual_qty" || name === "single_manual_rate") {
-			refreshInvoiceAmount(false);
-		}
-	});
-
-	document.getElementById("supplier-invoice-amount")?.addEventListener("input", () => {
-		invoiceAmountEdited = true;
-	});
-
 	rowsRoot.addEventListener("click", (event) => {
 		if (!(event.target instanceof HTMLElement)) return;
 		if (!event.target.classList.contains("remove-row")) return;
@@ -1364,9 +1323,6 @@
 		setNamedInput("supplier_invoice_date", draftForm.supplier_invoice_date);
 		setNamedInput("expected_delivery_date", draftForm.expected_delivery_date);
 		setNamedInput("supplier_invoice_amount", draftForm.supplier_invoice_amount);
-		if (draftForm.supplier_invoice_amount != null && draftForm.supplier_invoice_amount !== "") {
-			invoiceAmountEdited = true;
-		}
 		setNamedInput("lr_no", draftForm.lr_no);
 		setNamedInput("lr_date", draftForm.lr_date);
 		setNamedInput("transporter_name", draftForm.transporter_name);
@@ -1381,14 +1337,11 @@
 							String(item.value || "") === String(row.item_code || "")
 					);
 					if (!entry) return;
-					entry.po_rate = entry.rate;
 					if (row.rate != null && row.rate !== "") entry.rate = row.rate;
 					if (row.qty != null && row.qty !== "") entry.qty = row.qty;
-					if (row.tax_percent != null && row.tax_percent !== "") entry.tax_percent = row.tax_percent;
-					selectItem(entry, { keepInvoiceAmount: true });
+					selectItem(entry);
 				});
 				renderItemPicker();
-				if (!invoiceAmountEdited) refreshInvoiceAmount(true);
 			});
 		}
 	}

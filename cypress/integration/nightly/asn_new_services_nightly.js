@@ -49,19 +49,15 @@ context("ASN New Services nightly — validation error branches", () => {
 		cy.get("#bulk-pane .alert.alert-danger", { timeout: 15000 }).should("be.visible");
 	});
 
-	it("fills the supplier invoice amount from qty, rate, and tax", () => {
+	it("leaves the supplier invoice amount for the user to enter", () => {
 		const po = seededData.purchase_orders[0];
 		cy.visit("/asn_new", { failOnStatusCode: false });
 		selectFirstInvoiceItem(po.name);
-		cy.get("form#single-asn-form input[name='supplier_invoice_no']")
-			.clear()
-			.type("MISMATCH-" + Date.now());
 		cy.get("input[name='single_manual_qty']").first().clear().type("1");
 		cy.get("input[name='single_manual_rate']").first().clear().type("100");
-		cy.get("form#single-asn-form input[name='supplier_invoice_amount']").should(($input) => {
-			const amount = Number($input.val());
-			expect(amount).to.be.greaterThan(0);
-		});
+		cy.get("#supplier-invoice-amount").should("have.value", "");
+		cy.get("#supplier-invoice-amount").clear().type("1492.50");
+		cy.get("#supplier-invoice-amount").should("have.value", "1492.50");
 		cy.get("#single-manual-rows").then(($rows) => {
 			cy.get("#supplier-invoice-amount").then(($amount) => {
 				expect(

@@ -11,7 +11,6 @@ from frappe.utils import cint, flt, today
 from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
 
-from asn_module.invoice_amount import invoice_amount_for_lines, tax_percent_by_purchase_order_item
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
 from asn_module.stock_cap.api import breaches_for_asn_doc
 from asn_module.stock_cap.fetch import cap_branch_by_warehouse, fetch_cap_context
@@ -46,15 +45,11 @@ class ASN(WebsiteGenerator):
 		"""
 		return f"asn/{self.scrubbed_title()}"
 
-	def before_validate(self):
-		self._sync_supplier_invoice_amount_from_items()
-
 	def validate(self):
 		if cint(self.docstatus) == 1:
 			self._validate_items_present()
 			self._validate_item_qty()
 			self._validate_supplier_invoice_no_present()
-		self._sync_supplier_invoice_amount_from_items()
 		super().validate()
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
@@ -196,16 +191,6 @@ class ASN(WebsiteGenerator):
 		if (self.supplier_invoice_no or "").strip():
 			return
 		frappe.throw(_("Supplier Invoice No is required."))
-
-	def _sync_supplier_invoice_amount_from_items(self):
-		"""Fill a blank amount from quantity, rate, and tax. A typed amount is kept."""
-		if flt(self.supplier_invoice_amount):
-			return
-		names = [row.purchase_order_item for row in (self.items or []) if row.purchase_order_item]
-		tax_by_item = tax_percent_by_purchase_order_item(names)
-		self.supplier_invoice_amount = invoice_amount_for_lines(
-			[(row.qty, row.rate, tax_by_item.get(row.purchase_order_item, 0)) for row in (self.items or [])]
-		)
 
 	def _validate_supplier_invoice_unique(self):
 		if not self.supplier_invoice_no:
