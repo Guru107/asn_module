@@ -62,9 +62,11 @@ context("ASN New Services nightly — validation error branches", () => {
 			const amount = Number($input.val());
 			expect(amount).to.be.greaterThan(0);
 		});
-		cy.get("form#single-asn-form input[name='supplier_invoice_amount']").should(
-			"have.attr",
-			"readonly"
-		);
+		cy.get("#single-manual-rows").then(($rows) => {
+			cy.get("#supplier-invoice-amount").then(($amount) => {
+				expect($rows[0].compareDocumentPosition($amount[0]) & Node.DOCUMENT_POSITION_FOLLOWING).to.be.ok;
+			});
+		});
+		cy.get("#supplier-invoice-amount").should("not.have.attr", "readonly");
 	});
 });

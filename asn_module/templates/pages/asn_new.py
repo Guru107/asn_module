@@ -221,8 +221,7 @@ def _single_header(purchase_order: str = "") -> dict:
 		"transporter_name": _request_value("transporter_name"),
 		"vehicle_number": _request_value("vehicle_number"),
 		"driver_contact": _request_value("driver_contact"),
-		# Replaced in ASN.before_validate from quantity, rate, and tax.
-		"supplier_invoice_amount": 0,
+		"supplier_invoice_amount": _optional_supplier_invoice_amount(),
 		"draft_purchase_order": purchase_order,
 	}
 
@@ -513,6 +512,24 @@ def _request_row_list(fieldname: str) -> list[str]:
 
 def _request_value(fieldname: str) -> str:
 	return (frappe.form_dict.get(fieldname) or "").strip()
+
+
+def _optional_supplier_invoice_amount() -> float:
+	"""Posted amount, or 0 when the field is still empty so the document can fill it."""
+	raw = _request_value("supplier_invoice_amount")
+	if not raw:
+		return 0.0
+	val = flt(raw)
+	if val < 0:
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="supplier_invoice_amount",
+					message=_("Supplier invoice amount cannot be negative."),
+				)
+			]
+		)
+	return val
 
 
 def _request_supplier_invoice_amount() -> float:

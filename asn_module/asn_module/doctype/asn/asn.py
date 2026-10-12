@@ -198,7 +198,9 @@ class ASN(WebsiteGenerator):
 		frappe.throw(_("Supplier Invoice No is required."))
 
 	def _sync_supplier_invoice_amount_from_items(self):
-		"""Set the header from quantity, the line rate, and tax on the Purchase Order."""
+		"""Fill a blank amount from quantity, rate, and tax. A typed amount is kept."""
+		if flt(self.supplier_invoice_amount):
+			return
 		names = [row.purchase_order_item for row in (self.items or []) if row.purchase_order_item]
 		tax_by_item = tax_percent_by_purchase_order_item(names)
 		self.supplier_invoice_amount = invoice_amount_for_lines(
