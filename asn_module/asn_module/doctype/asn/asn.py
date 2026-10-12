@@ -204,10 +204,7 @@ class ASN(WebsiteGenerator):
 		names = [row.purchase_order_item for row in (self.items or []) if row.purchase_order_item]
 		tax_by_item = tax_percent_by_purchase_order_item(names)
 		self.supplier_invoice_amount = invoice_amount_for_lines(
-			[
-				(row.qty, row.rate, tax_by_item.get(row.purchase_order_item, 0))
-				for row in (self.items or [])
-			]
+			[(row.qty, row.rate, tax_by_item.get(row.purchase_order_item, 0)) for row in (self.items or [])]
 		)
 
 	def _validate_supplier_invoice_unique(self):

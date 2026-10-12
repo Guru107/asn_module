@@ -492,7 +492,9 @@ class TestASNNewPortalPage(FrappeTestCase):
 				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
 			),
 			patch("asn_module.templates.pages.asn_new._create_single_asn", side_effect=_boom),
-			patch("asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(flags=SimpleNamespace())),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(flags=SimpleNamespace())
+			),
 		):
 			asn_new.get_context(context)
 

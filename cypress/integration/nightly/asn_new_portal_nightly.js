@@ -36,7 +36,10 @@ context("ASN New portal nightly — single mode errors", () => {
 		cy.get("input[name='single_manual_qty']").first().clear().type("0");
 		cy.get("button[form='single-asn-form']").click();
 		cy.location("search", { timeout: 15000 }).should("include", "asn_name=");
-		cy.get("form#single-asn-form input[name='supplier_invoice_no']").should("have.value", invoiceNo);
+		cy.get("form#single-asn-form input[name='supplier_invoice_no']").should(
+			"have.value",
+			invoiceNo
+		);
 		cy.get("input[name='single_manual_qty']").first().should("have.value", "0");
 	});
 

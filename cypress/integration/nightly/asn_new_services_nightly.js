@@ -64,7 +64,9 @@ context("ASN New Services nightly — validation error branches", () => {
 		});
 		cy.get("#single-manual-rows").then(($rows) => {
 			cy.get("#supplier-invoice-amount").then(($amount) => {
-				expect($rows[0].compareDocumentPosition($amount[0]) & Node.DOCUMENT_POSITION_FOLLOWING).to.be.ok;
+				expect(
+					$rows[0].compareDocumentPosition($amount[0]) & Node.DOCUMENT_POSITION_FOLLOWING
+				).to.be.ok;
 			});
 		});
 		cy.get("#supplier-invoice-amount").should("not.have.attr", "readonly");

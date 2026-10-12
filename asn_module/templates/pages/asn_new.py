@@ -154,7 +154,9 @@ def _create_single_asn(supplier: str) -> CreateResult:
 						error_entry(
 							row_number=row.row_number,
 							field="purchase_order",
-							message=_("Manual row {0}: Purchase Order is not selected.").format(row.row_number),
+							message=_("Manual row {0}: Purchase Order is not selected.").format(
+								row.row_number
+							),
 						)
 					]
 				)
@@ -164,9 +166,9 @@ def _create_single_asn(supplier: str) -> CreateResult:
 						error_entry(
 							row_number=row.row_number,
 							field="sr_no",
-							message=_("Manual row {0}: duplicate purchase_order + sr_no is not allowed.").format(
-								row.row_number
-							),
+							message=_(
+								"Manual row {0}: duplicate purchase_order + sr_no is not allowed."
+							).format(row.row_number),
 						)
 					]
 				)
