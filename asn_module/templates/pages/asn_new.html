@@ -563,7 +563,7 @@
 						<div class="row">
 							<div class="col-md-4 mb-3">
 								<label class="form-label">{{ _("Supplier Invoice No") }}</label>
-								<input class="form-control" name="supplier_invoice_no" maxlength="140" required>
+								<input class="form-control" name="supplier_invoice_no" maxlength="140">
 							</div>
 							<div class="col-md-4 mb-3">
 								<label class="form-label">{{ _("Supplier Invoice Date") }}</label>
@@ -571,7 +571,8 @@
 							</div>
 							<div class="col-md-4 mb-3">
 								<label class="form-label">{{ _("Supplier invoice amount") }}</label>
-								<input type="number" class="form-control" name="supplier_invoice_amount" min="0" step="0.01" required>
+								<input type="number" class="form-control" id="supplier-invoice-amount" name="supplier_invoice_amount" min="0" step="0.01" readonly tabindex="-1">
+								<p class="text-muted small mb-0">{{ _("Calculated from quantity, rate, and the tax on the Purchase Order.") }}</p>
 							</div>
 						</div>
 						</div>
@@ -651,7 +652,7 @@
 
 						<hr>
 						<h5 class="mb-2">{{ _("Manual Rows") }}</h5>
-						<p class="text-muted small mb-2">{{ _("Rows are auto-added from selected items. Enter qty and adjust rate if needed.") }}</p>
+						<p class="text-muted small mb-2">{{ _("Rows are added from selected items. Quantity and rate can be changed. Rate starts from the Purchase Order.") }}</p>
 						<div class="asn-new-manual-rows">
 							<div class="asn-new-manual-head" aria-hidden="true">
 								<span>{{ _("PO") }}</span>
@@ -942,6 +943,7 @@
 		selectedItemByKey.clear();
 		rowsRoot.innerHTML = "";
 		itemFilterInput.value = "";
+		refreshInvoiceAmount();
 	}
 
 	function syncHiddenPoInputs() {
@@ -968,8 +970,11 @@
 	}
 
 	function createRowHtml(itemKey, entry) {
+		const taxPercent = String(Number(entry.tax_percent) || 0);
+		const poRate = Number(entry.po_rate != null && entry.po_rate !== "" ? entry.po_rate : entry.rate);
+		const poRateValue = Number.isFinite(poRate) ? String(poRate) : "0";
 		return `
-		<div class="single-row asn-new-manual-grid-row" data-item-key="${itemKey}">
+		<div class="single-row asn-new-manual-grid-row" data-item-key="${itemKey}" data-tax-percent="${taxPercent}" data-po-rate="${poRateValue}">
 			<div class="asn-new-cell">
 				<label class="asn-new-cell-label">PO</label>
 				<input class="form-control" name="single_manual_purchase_order" value="${selectedPo}" readonly>
@@ -993,12 +998,31 @@
 			<div class="asn-new-cell">
 				<label class="asn-new-cell-label">Rate</label>
 				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_rate" value="${rateToInputValue(entry.rate)}">
+				<input type="hidden" name="single_manual_tax_percent" value="${taxPercent}">
 			</div>
 			<div class="asn-new-cell asn-new-remove">
 				<button type="button" class="btn btn-outline-danger btn-sm remove-row" aria-label="Remove row">×</button>
 			</div>
 		</div>
 	`;
+	}
+
+	function refreshInvoiceAmount() {
+		const amountInput = document.getElementById("supplier-invoice-amount");
+		if (!amountInput) return;
+		let total = 0;
+		rowsRoot.querySelectorAll(".single-row").forEach((row) => {
+			const qty = Number(row.querySelector("[name='single_manual_qty']")?.value);
+			const rateInput = row.querySelector("[name='single_manual_rate']");
+			const typedRate = rateInput ? rateInput.value : "";
+			const rate = typedRate === "" ? Number(row.getAttribute("data-po-rate")) : Number(typedRate);
+			const tax = Number(row.getAttribute("data-tax-percent"));
+			const safeQty = Number.isFinite(qty) ? qty : 0;
+			const safeRate = Number.isFinite(rate) ? rate : 0;
+			const safeTax = Number.isFinite(tax) ? tax : 0;
+			total += safeQty * safeRate * (1 + safeTax / 100);
+		});
+		amountInput.value = total.toFixed(2);
 	}
 
 	function addRowForItem(entry) {
@@ -1082,6 +1106,7 @@
 		selectedItemKeys.add(itemKey);
 		selectedItemByKey.set(itemKey, entry);
 		addRowForItem(entry);
+		refreshInvoiceAmount();
 	}
 
 	function deselectItemByKey(itemKey) {
@@ -1089,6 +1114,7 @@
 		selectedItemKeys.delete(itemKey);
 		selectedItemByKey.delete(itemKey);
 		removeRowForItemKey(itemKey);
+		refreshInvoiceAmount();
 	}
 
 	async function loadPoItems(po) {
@@ -1294,6 +1320,14 @@
 		renderItemPicker();
 	});
 
+	rowsRoot.addEventListener("input", (event) => {
+		if (!(event.target instanceof HTMLElement)) return;
+		const name = event.target.getAttribute("name") || "";
+		if (name === "single_manual_qty" || name === "single_manual_rate") {
+			refreshInvoiceAmount();
+		}
+	});
+
 	rowsRoot.addEventListener("click", (event) => {
 		if (!(event.target instanceof HTMLElement)) return;
 		if (!event.target.classList.contains("remove-row")) return;
@@ -1333,11 +1367,14 @@
 							String(item.value || "") === String(row.item_code || "")
 					);
 					if (!entry) return;
-					entry.rate = row.rate;
-					entry.qty = row.qty;
+					entry.po_rate = entry.rate;
+					if (row.rate != null && row.rate !== "") entry.rate = row.rate;
+					if (row.qty != null && row.qty !== "") entry.qty = row.qty;
+					if (row.tax_percent != null && row.tax_percent !== "") entry.tax_percent = row.tax_percent;
 					selectItem(entry);
 				});
 				renderItemPicker();
+				refreshInvoiceAmount();
 			});
 		}
 	}

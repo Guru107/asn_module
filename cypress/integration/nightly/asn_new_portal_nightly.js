@@ -12,7 +12,6 @@ context("ASN New portal nightly — single mode errors", () => {
 
 	function fillCommonSingleFields(invoiceNo) {
 		cy.get("form#single-asn-form input[name='supplier_invoice_no']").clear().type(invoiceNo);
-		cy.get("form#single-asn-form input[name='supplier_invoice_amount']").clear().type("100");
 	}
 
 	before(() => {
@@ -27,15 +26,18 @@ context("ASN New portal nightly — single mode errors", () => {
 		cy.login(seededData.portal_user, seededData.portal_password);
 	});
 
-	it("rejects zero qty", () => {
+	it("keeps a zero qty draft on the form", () => {
 		const po = seededData.purchase_orders[0];
+		const invoiceNo = "ZERO-QTY-" + Date.now();
 		cy.visit("/asn_new", { failOnStatusCode: false });
 		selectFirstInvoiceItem(po.name);
-		fillCommonSingleFields("ZERO-QTY-" + Date.now());
+		fillCommonSingleFields(invoiceNo);
+		cy.get("input[name='single_manual_rate']").first().invoke("val").should("not.equal", "");
 		cy.get("input[name='single_manual_qty']").first().clear().type("0");
-		cy.get("input[name='single_manual_rate']").first().clear().type("100");
-		cy.get("form#single-asn-form button[type='submit']").click();
-		cy.get("#single-pane .alert.alert-danger", { timeout: 15000 }).should("be.visible");
+		cy.get("button[form='single-asn-form']").click();
+		cy.location("search", { timeout: 15000 }).should("include", "asn_name=");
+		cy.get("form#single-asn-form input[name='supplier_invoice_no']").should("have.value", invoiceNo);
+		cy.get("input[name='single_manual_qty']").first().should("have.value", "0");
 	});
 
 	it("rejects negative rate", () => {
@@ -45,7 +47,7 @@ context("ASN New portal nightly — single mode errors", () => {
 		fillCommonSingleFields("NEG-RATE-" + Date.now());
 		cy.get("input[name='single_manual_qty']").first().clear().type("1");
 		cy.get("input[name='single_manual_rate']").first().clear().type("-1");
-		cy.get("form#single-asn-form button[type='submit']").click();
+		cy.get("button[form='single-asn-form']").click();
 		cy.get("input[name='single_manual_rate']")
 			.first()
 			.then(($input) => {

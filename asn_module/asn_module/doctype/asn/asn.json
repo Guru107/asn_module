@@ -27,6 +27,7 @@
 		"supplier_invoice_date",
 		"column_break_3",
 		"supplier_invoice_amount",
+		"draft_purchase_order",
 		"qr_section",
 		"scan_code_label",
 		"qr_code",
@@ -155,7 +156,16 @@
 			"fieldname": "supplier_invoice_amount",
 			"fieldtype": "Currency",
 			"label": "Supplier Invoice Amount",
+			"description": "Calculated from item quantity, rate, and the tax on the Purchase Order.",
 			"reqd": 1
+		},
+		{
+			"fieldname": "draft_purchase_order",
+			"fieldtype": "Link",
+			"hidden": 1,
+			"label": "Draft Purchase Order",
+			"no_copy": 1,
+			"options": "Purchase Order"
 		},
 		{
 			"fieldname": "qr_section",

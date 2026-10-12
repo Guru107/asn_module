@@ -433,6 +433,75 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 		self.assertEqual(local.flags.redirect_location, "/asn/asn-0002")
 
+	def test_get_context_returns_an_incomplete_draft_to_the_form(self):
+		context = SimpleNamespace()
+		local = SimpleNamespace(flags=SimpleNamespace())
+		request = SimpleNamespace(method="POST", files={})
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"mode": "single"}),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
+			),
+			patch(
+				"asn_module.templates.pages.asn_new._create_single_asn",
+				return_value=asn_new.CreateResult(asn_names=["ASN-0003"], incomplete=True),
+			),
+			patch("asn_module.templates.pages.asn_new.frappe.local", local),
+			self.assertRaises(frappe.Redirect),
+		):
+			asn_new.get_context(context)
+
+		self.assertEqual(local.flags.redirect_location, "/asn_new?asn_name=ASN-0003")
+
+	def test_get_context_keeps_posted_single_fields_when_save_fails(self):
+		class _FakeForm:
+			def getlist(self, fieldname):
+				return {
+					"selected_purchase_orders": ["PO-0001"],
+					"single_manual_sr_no": ["1"],
+					"single_manual_item_code": ["ITEM-001"],
+					"single_manual_qty": ["2"],
+					"single_manual_rate": ["40"],
+					"single_manual_tax_percent": ["18"],
+				}.get(fieldname, [])
+
+		context = SimpleNamespace()
+		request = SimpleNamespace(method="POST", files={}, form=_FakeForm())
+
+		def _boom(*_args, **_kwargs):
+			raise PortalValidationError([{"field": "rows", "message": "nope", "row_number": None}])
+
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.request", request),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.form_dict",
+				{"mode": "single", "supplier_invoice_no": "INV-KEEP"},
+			),
+			patch(
+				"asn_module.templates.pages.asn_new.frappe.session",
+				SimpleNamespace(user="supplier@example.com"),
+			),
+			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
+			patch(
+				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
+			),
+			patch("asn_module.templates.pages.asn_new._create_single_asn", side_effect=_boom),
+			patch("asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(flags=SimpleNamespace())),
+		):
+			asn_new.get_context(context)
+
+		self.assertEqual(context.draft_form["supplier_invoice_no"], "INV-KEEP")
+		self.assertEqual(context.draft_form["purchase_order"], "PO-0001")
+		self.assertEqual(context.draft_form["rows"][0]["item_code"], "ITEM-001")
+		self.assertEqual(context.draft_form["rows"][0]["rate"], "40")
+		self.assertEqual(context.draft_form["rows"][0]["tax_percent"], "18")
+
 	def test_get_context_sets_bulk_success_after_bulk_create(self):
 		context = SimpleNamespace()
 		request = SimpleNamespace(method="POST", files={})
@@ -602,24 +671,82 @@ class TestASNNewPortalPage(FrappeTestCase):
 			patch("asn_module.templates.pages.asn_new.supplier_draft_asn_name", return_value="ASN-DRAFT"),
 			patch("asn_module.templates.pages.asn_new._request_value", return_value="INV-1"),
 			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=[]),
-			self.assertRaises(PortalValidationError),
+			patch(
+				"asn_module.templates.pages.asn_new._insert_and_submit_asn",
+				return_value=SimpleNamespace(name="ASN-DRAFT"),
+			),
 		):
-			asn_new._create_single_asn("Supp-001")
+			result = asn_new._create_single_asn("Supp-001")
 
 		self.assertEqual(seen["exclude"], "ASN-DRAFT")
+		self.assertEqual(result.asn_names, ["ASN-DRAFT"])
+		self.assertTrue(result.incomplete)
 
-	def test_create_single_asn_rejects_empty_rows(self):
+	def test_parse_single_rows_allows_a_blank_quantity_on_a_draft(self):
+		class _FakeForm:
+			def __init__(self):
+				self.data = {
+					"single_manual_purchase_order": ["PO-0001"],
+					"single_manual_sr_no": ["1"],
+					"single_manual_item_code": ["ITEM-001"],
+					"single_manual_uom": ["Nos"],
+					"single_manual_qty": [""],
+					"single_manual_rate": ["10"],
+				}
+
+			def getlist(self, fieldname):
+				return self.data.get(fieldname, [])
+
+		request = SimpleNamespace(form=_FakeForm())
+		with patch("asn_module.templates.pages.asn_new.frappe.request", request):
+			rows = asn_new._parse_single_rows()
+		self.assertEqual(rows[0].qty, 0)
+		self.assertEqual(rows[0].rate, 10)
+
+	def test_create_single_asn_saves_an_incomplete_draft_without_rows(self):
 		with (
 			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001"]),
 			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
 			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
-			patch("asn_module.templates.pages.asn_new._request_value", return_value="INV-1"),
+			patch("asn_module.templates.pages.asn_new._request_value", return_value=""),
 			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=[]),
-			self.assertRaises(PortalValidationError) as ctx,
+			patch(
+				"asn_module.templates.pages.asn_new._insert_and_submit_asn",
+				return_value=SimpleNamespace(name="ASN-DRAFT-1"),
+			) as insert_submit,
 		):
-			asn_new._create_single_asn("Supp-001")
+			result = asn_new._create_single_asn("Supp-001")
 
-		self.assertEqual(ctx.exception.errors[0]["field"], "rows")
+		self.assertEqual(result.asn_names, ["ASN-DRAFT-1"])
+		self.assertTrue(result.incomplete)
+		self.assertEqual(insert_submit.call_args.kwargs["items"], [])
+		self.assertEqual(insert_submit.call_args.kwargs["header"]["draft_purchase_order"], "PO-0001")
+		self.assertFalse(insert_submit.call_args.kwargs["submit"])
+
+	def test_portal_draft_form_keeps_the_purchase_order_when_the_draft_has_no_rows(self):
+		doc = SimpleNamespace(
+			name="ASN-1",
+			supplier="Supp-001",
+			docstatus=0,
+			supplier_invoice_no="",
+			supplier_invoice_date=None,
+			expected_delivery_date=None,
+			supplier_invoice_amount=0,
+			lr_no="",
+			lr_date=None,
+			transporter_name="",
+			vehicle_number="",
+			driver_contact="",
+			draft_purchase_order="PO-0001",
+		)
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.db.get_value", return_value=doc),
+			patch("asn_module.templates.pages.asn_new.frappe.get_all", return_value=[]),
+		):
+			form = asn_new.portal_draft_form("Supp-001", "ASN-1")
+
+		self.assertEqual(form["purchase_order"], "PO-0001")
+		self.assertEqual(form["rows"], [])
 
 	def test_create_single_asn_rejects_unselected_purchase_order_row(self):
 		rows = [
@@ -692,6 +819,43 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(kwargs["supplier"], "Supp-001")
 		self.assertEqual(kwargs["items"][0]["purchase_order_item"], "POI-1")
 		self.assertEqual(kwargs["items"][0]["uom"], "Nos")
+		self.assertEqual(kwargs["items"][0]["rate"], 10)
+		self.assertFalse(result.incomplete)
+
+	def test_create_single_asn_prefills_a_blank_rate_from_the_purchase_order(self):
+		rows = [
+			ParsedSingleRow(
+				row_number=1,
+				purchase_order="PO-0001",
+				sr_no="1",
+				item_code="ITEM-001",
+				uom="Nos",
+				qty=2,
+				rate=None,
+			)
+		]
+		po_item = SimpleNamespace(name="POI-1", item_code="ITEM-001", uom="Nos", rate=55)
+		with (
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=["PO-0001"]),
+			patch("asn_module.templates.pages.asn_new.validate_selected_purchase_orders"),
+			patch("asn_module.templates.pages.asn_new.validate_supplier_invoices_not_reused"),
+			patch(
+				"asn_module.templates.pages.asn_new._request_value",
+				side_effect=lambda field: {"supplier_invoice_no": "INV-1"}.get(field, ""),
+			),
+			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=rows),
+			patch(
+				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
+				return_value=({("PO-0001", "1"): [po_item]}, {"POI-1": 5}),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new._insert_and_submit_asn",
+				return_value=SimpleNamespace(name="ASN-0001"),
+			) as insert_submit,
+		):
+			asn_new._create_single_asn("Supp-001")
+
+		self.assertEqual(insert_submit.call_args.kwargs["items"][0]["rate"], 55)
 
 	def test_create_bulk_asn_rejects_multiple_purchase_orders_in_invoice_group(self):
 		rows = [
@@ -946,7 +1110,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 					"single_manual_sr_no": ["1", "2"],
 					"single_manual_item_code": ["ITEM-001", "ITEM-002"],
 					"single_manual_uom": ["Nos", "Nos"],
-					"single_manual_qty": ["0", "1"],
+					"single_manual_qty": ["-2", "1"],
 					"single_manual_rate": ["10", "-1"],
 				}
 

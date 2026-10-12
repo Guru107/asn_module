@@ -79,10 +79,9 @@ context("Portal Remaining Qty while editing a draft", () => {
 		cy.get("form#single-asn-form input[name='supplier_invoice_no']")
 			.clear()
 			.type(`OVER-E2E-${Date.now()}`);
-		cy.get("form#single-asn-form input[name='supplier_invoice_amount']").clear().type("1000");
 		cy.get("input[name='single_manual_qty']").first().clear().type("10");
 		cy.get("input[name='single_manual_rate']").first().clear().type("100");
-		cy.get("form#single-asn-form button[type='submit']").click();
+		cy.get("button[form='single-asn-form']").click();
 		cy.get("#single-pane .alert.alert-danger", { timeout: 20000 }).should(
 			"contain",
 			"exceeds remaining"
@@ -119,10 +118,9 @@ context("Portal submit updates the draft being edited", () => {
 		openPurchaseOrder(seeded.purchase_order);
 		cy.get("#single-item-picker-list input[type='checkbox']").first().check({ force: true });
 		cy.get("form#single-asn-form input[name='supplier_invoice_no']").clear().type(invoiceNo);
-		cy.get("form#single-asn-form input[name='supplier_invoice_amount']").clear().type("1000");
 		cy.get("input[name='single_manual_qty']").first().clear().type("10");
 		cy.get("input[name='single_manual_rate']").first().clear().type("100");
-		cy.get("form#single-asn-form button[type='submit']").click();
+		cy.get("button[form='single-asn-form']").click();
 		cy.location("pathname", { timeout: 20000 }).should(
 			"include",
 			seeded.draft_name.toLowerCase()

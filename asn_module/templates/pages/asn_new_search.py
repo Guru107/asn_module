@@ -5,6 +5,7 @@ from frappe import _
 from frappe.utils import cint, flt
 
 from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
+from asn_module.invoice_amount import tax_percent_by_purchase_order_item
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
 
 
@@ -102,5 +103,9 @@ def search_purchase_order_items(
 				"purchase_order_item": row.name,
 			}
 		)
+
+	tax_by_item = tax_percent_by_purchase_order_item([row["purchase_order_item"] for row in filtered])
+	for row in filtered:
+		row["tax_percent"] = tax_by_item.get(row["purchase_order_item"], 0)
 
 	return filtered[start : start + page_len]
