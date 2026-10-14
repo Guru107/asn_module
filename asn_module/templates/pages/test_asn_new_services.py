@@ -375,7 +375,7 @@ def _bulk_row(po, po_item, *, row_number, invoice_no, qty):
 		lr_no="",
 		lr_date="",
 		transporter_name="",
-		vehicle_number="",
+		vehicle_number="MH12AB1234",
 		driver_contact="",
 		supplier_invoice_amount=qty * float(po_item.rate or 1),
 		purchase_order=po.name,

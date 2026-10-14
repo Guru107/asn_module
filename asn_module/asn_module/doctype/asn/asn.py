@@ -46,6 +46,7 @@ class ASN(WebsiteGenerator):
 		return f"asn/{self.scrubbed_title()}"
 
 	def validate(self):
+		self._validate_vehicle_number_present()
 		if cint(self.docstatus) == 1:
 			self._validate_items_present()
 			self._validate_item_qty()
@@ -186,6 +187,11 @@ class ASN(WebsiteGenerator):
 				continue
 
 			frappe.throw(_("Row {0}: Quantity must be greater than 0").format(row.idx))
+
+	def _validate_vehicle_number_present(self):
+		if (self.vehicle_number or "").strip():
+			return
+		frappe.throw(_("Vehicle Number is required."))
 
 	def _validate_supplier_invoice_no_present(self):
 		if (self.supplier_invoice_no or "").strip():

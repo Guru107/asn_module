@@ -193,6 +193,7 @@ def make_test_asn(*, purchase_order=None, supplier=None, supplier_invoice_no=Non
 			"supplier_invoice_date": today(),
 			"expected_delivery_date": today(),
 			"supplier_invoice_amount": flt(qty) * flt(po_item.rate),
+			"vehicle_number": "MH12AB1234",
 			"items": [
 				{
 					"purchase_order": po.name,
@@ -364,6 +365,24 @@ class TestASN(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			asn.insert(ignore_permissions=True)
+
+	def test_insert_rejects_blank_vehicle_number(self):
+		asn = make_test_asn()
+		asn.vehicle_number = ""
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("Vehicle Number is required", str(raised.exception))
+
+	def test_insert_saves_when_vehicle_number_is_present(self):
+		asn = make_test_asn()
+		asn.vehicle_number = "MH12AB1234"
+
+		doc = asn.insert(ignore_permissions=True)
+
+		self.assertEqual(doc.vehicle_number, "MH12AB1234")
+		self.assertTrue(doc.name)
 
 	def test_draft_insert_allows_non_positive_qty_and_submit_rejects_it(self):
 		asn = make_test_asn(qty=0)
@@ -1154,6 +1173,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 			"supplier_invoice_date": dates["supplier_invoice_date"],
 			"expected_delivery_date": dates["expected_delivery_date"],
 			"supplier_invoice_amount": str(float(po_item.rate or 1) * qty),
+			"vehicle_number": "MH12AB1234",
 		}
 		row = ParsedSingleRow(
 			row_number=1,
