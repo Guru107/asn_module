@@ -204,6 +204,8 @@ doc_events = {
 
 before_tests = "asn_module.utils.test_setup.before_tests"
 
+after_migrate = "asn_module.setup.after_migrate"
+
 # Extend DocType Class
 # ------------------------------
 #

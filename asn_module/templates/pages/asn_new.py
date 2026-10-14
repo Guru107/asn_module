@@ -17,6 +17,7 @@ from asn_module.templates.pages.asn_new_services import (
 	PortalValidationError,
 	consume_remaining_qty,
 	create_bulk_asns_for_supplier,
+	create_job_asn_for_supplier,
 	error_entry,
 	fetch_purchase_order_items,
 	insert_and_submit_asn,
@@ -106,6 +107,10 @@ def get_context(context):
 
 
 def _create_single_asn(supplier: str) -> CreateResult:
+	subcontracting_order = _posted_subcontracting_order()
+	if subcontracting_order:
+		return _create_job_asn(supplier, subcontracting_order)
+
 	selected_purchase_orders = _request_list("selected_purchase_orders")
 	if len(selected_purchase_orders) > 1:
 		raise PortalValidationError(
@@ -211,6 +216,38 @@ def _create_single_asn(supplier: str) -> CreateResult:
 		items=items,
 	)
 	return CreateResult(asn_names=[asn.name], incomplete=not _single_draft_is_complete(header, items))
+
+
+def _create_job_asn(supplier: str, subcontracting_order: str) -> CreateResult:
+	header = _single_header("")
+	asn = create_job_asn_for_supplier(
+		supplier=supplier,
+		subcontracting_order=subcontracting_order,
+		header=header,
+		lines=_job_asn_lines_from_request(),
+	)
+	return CreateResult(
+		asn_names=[asn.name],
+		incomplete=not _single_draft_is_complete(header, [row.as_dict() for row in asn.items]),
+	)
+
+
+def _job_asn_lines_from_request() -> list[dict] | None:
+	item_names = _request_row_list("subcontracting_order_item")
+	qty_values = _request_row_list("job_asn_qty")
+	if not any(item_names):
+		return None
+	lines = []
+	for idx, item_name in enumerate(item_names):
+		if not item_name:
+			continue
+		lines.append(
+			{
+				"subcontracting_order_item": item_name,
+				"qty": flt(_safe_get(qty_values, idx) or 0),
+			}
+		)
+	return lines
 
 
 def _single_header(purchase_order: str = "") -> dict:
@@ -511,6 +548,18 @@ def _request_row_list(fieldname: str) -> list[str]:
 
 def _request_value(fieldname: str) -> str:
 	return (frappe.form_dict.get(fieldname) or "").strip()
+
+
+def _posted_subcontracting_order() -> str:
+	"""The Subcontracting Order field, only when the form actually posted it.
+
+	``_request_value`` is the shared header reader. A Job ASN is a different
+	submit, so a missing key stays on the Purchase Order path.
+	"""
+	form_dict = getattr(frappe, "form_dict", None) or {}
+	if "subcontracting_order" not in form_dict:
+		return ""
+	return (form_dict.get("subcontracting_order") or "").strip()
 
 
 def _optional_supplier_invoice_amount() -> float:

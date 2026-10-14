@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, now_datetime
+from frappe.utils import cint, get_datetime, now_datetime
 
 from asn_module.qr_engine.scan_codes import (
 	RESCAN_SAFE_ACTIONS,
@@ -120,12 +120,13 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 	return handler_fn(source_doctype=source_doctype, source_name=source_name, payload=payload)
 
 
-def _get_existing_success_result(
+def _latest_success_document(
 	action_key: str,
 	source_doctype: str,
 	source_name: str,
 	scan_code: str,
-) -> dict | None:
+):
+	"""Most recent document a successful scan of this code opened, if it still exists."""
 	logs = frappe.get_all(
 		"Scan Log",
 		filters={
@@ -145,7 +146,7 @@ def _get_existing_success_result(
 		try:
 			if not frappe.db.exists(log["result_doctype"], log["result_name"]):
 				continue
-			doc = frappe.get_doc(log["result_doctype"], log["result_name"])
+			return frappe.get_doc(log["result_doctype"], log["result_name"])
 		except (frappe.DoesNotExistError, frappe.PermissionError, ImportError):
 			continue
 		except Exception:
@@ -154,13 +155,29 @@ def _get_existing_success_result(
 				_("Failed to resolve existing result from Scan Log"),
 			)
 			raise
-		return {
-			"doctype": doc.doctype,
-			"name": doc.name,
-			"url": doc.get_url(),
-			"message": _("Existing {0} {1} opened").format(doc.doctype, doc.name),
-		}
 	return None
+
+
+def _is_cancelled(doc) -> bool:
+	docstatus = frappe.db.get_value(doc.doctype, doc.name, "docstatus")
+	return cint(docstatus if docstatus is not None else getattr(doc, "docstatus", 0)) == 2
+
+
+def _get_existing_success_result(
+	action_key: str,
+	source_doctype: str,
+	source_name: str,
+	scan_code: str,
+) -> dict | None:
+	doc = _latest_success_document(action_key, source_doctype, source_name, scan_code)
+	if doc is None or _is_cancelled(doc):
+		return None
+	return {
+		"doctype": doc.doctype,
+		"name": doc.name,
+		"url": doc.get_url(),
+		"message": _("Existing {0} {1} opened").format(doc.doctype, doc.name),
+	}
 
 
 def _can_open_existing_result(scan_doc: frappe.model.document.Document, action_key: str) -> bool:
@@ -217,13 +234,19 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		_check_permission(action["allowed_roles"])
 
 		if _can_open_existing_result(scan_doc, action_key):
-			existing_result = _get_existing_success_result(
+			logged = _latest_success_document(
 				action_key,
 				source_doctype,
 				source_name,
 				scan_doc.name,
 			)
-			if existing_result:
+			if logged is not None and not _is_cancelled(logged):
+				existing_result = {
+					"doctype": logged.doctype,
+					"name": logged.name,
+					"url": logged.get_url(),
+					"message": _("Existing {0} {1} opened").format(logged.doctype, logged.name),
+				}
 				record_successful_scan(scan_doc.name, action_key)
 				_log_scan(
 					action=action_key,
@@ -241,8 +264,11 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 					"action": action_key,
 					**existing_result,
 				}
-
-		validate_scan_code_row(scan_doc, action_key)
+			# A cancelled result must not block a new draft. A missing result still rejects.
+			if logged is None or not _is_cancelled(logged):
+				validate_scan_code_row(scan_doc, action_key)
+		else:
+			validate_scan_code_row(scan_doc, action_key)
 
 		payload = _payload_from_scan_code_registry(scan_doc, device_info)
 

@@ -774,6 +774,61 @@ def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[di
 	return errors
 
 
+def create_job_asn_for_supplier(
+	supplier: str,
+	subcontracting_order: str,
+	header: dict,
+	lines: list[dict] | None = None,
+):
+	"""Raise a Job ASN for one open Subcontracting Order.
+
+	The single-ASN page calls this when the form posts ``subcontracting_order``.
+	Each line names that order's finished good. Shipped Qty is the line qty.
+	"""
+	order_name = (subcontracting_order or "").strip()
+	if not order_name:
+		frappe.throw(_("Select one open Subcontracting Order."))
+
+	sco = frappe.get_doc("Subcontracting Order", order_name)
+	if sco.docstatus != 1 or (sco.status or "") in ("Completed", "Closed", "Cancelled"):
+		frappe.throw(_("Subcontracting Order {0} is not open.").format(order_name))
+	if sco.supplier != supplier:
+		frappe.throw(_("Subcontracting Order {0} is not for this supplier.").format(order_name))
+
+	finished_goods = {row.name: row for row in sco.items}
+	requested = lines
+	if not requested:
+		requested = [
+			{
+				"subcontracting_order_item": row.name,
+				"qty": flt(row.qty) - flt(row.received_qty),
+			}
+			for row in sco.items
+			if flt(row.qty) - flt(row.received_qty) > 0
+		]
+
+	items = []
+	for line in requested:
+		item_name = (line.get("subcontracting_order_item") or "").strip()
+		finished_good = finished_goods.get(item_name)
+		if not finished_good:
+			frappe.throw(
+				_("Subcontracting Order line {0} is not on {1}.").format(item_name, order_name)
+			)
+		items.append(
+			{
+				"subcontracting_order": sco.name,
+				"subcontracting_order_item": finished_good.name,
+				"item_code": finished_good.item_code,
+				"uom": finished_good.stock_uom,
+				"qty": flt(line.get("qty")),
+				"rate": flt(line.get("rate")) if line.get("rate") is not None else flt(finished_good.rate),
+			}
+		)
+
+	return insert_and_submit_asn(supplier=supplier, header=header, items=items, submit=False)
+
+
 def insert_and_submit_asn(
 	*,
 	supplier: str,

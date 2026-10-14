@@ -6,6 +6,8 @@
 	"field_order": [
 		"purchase_order",
 		"purchase_order_item",
+		"subcontracting_order",
+		"subcontracting_order_item",
 		"item_code",
 		"item_name",
 		"column_break_1",
@@ -24,8 +26,7 @@
 			"fieldtype": "Link",
 			"in_list_view": 1,
 			"label": "Purchase Order",
-			"options": "Purchase Order",
-			"reqd": 1
+			"options": "Purchase Order"
 		},
 		{
 			"fieldname": "purchase_order_item",
@@ -33,7 +34,20 @@
 			"hidden": 1,
 			"label": "Purchase Order Item",
 			"read_only": 1,
-			"reqd": 1,
+			"search_index": 1
+		},
+		{
+			"fieldname": "subcontracting_order",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "Subcontracting Order",
+			"options": "Subcontracting Order"
+		},
+		{
+			"fieldname": "subcontracting_order_item",
+			"fieldtype": "Data",
+			"label": "Subcontracting Order Item",
+			"read_only": 1,
 			"search_index": 1
 		},
 		{
@@ -115,7 +129,7 @@
 	"index_web_pages_for_search": 0,
 	"istable": 1,
 	"links": [],
-	"modified": "2026-08-04 09:00:00.000000",
+	"modified": "2026-10-14 09:00:00.000000",
 	"modified_by": "Administrator",
 	"module": "ASN Module",
 	"name": "ASN Item",
