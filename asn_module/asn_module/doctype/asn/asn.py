@@ -256,7 +256,9 @@ class ASN(WebsiteGenerator):
 			if has_purchase_order:
 				if not purchase_order or not purchase_order_item:
 					frappe.throw(
-						_("Row {0}: a Purchase Order line needs the order and the order line.").format(row.idx)
+						_("Row {0}: a Purchase Order line needs the order and the order line.").format(
+							row.idx
+						)
 					)
 				orders.add(("Purchase Order", purchase_order))
 				continue

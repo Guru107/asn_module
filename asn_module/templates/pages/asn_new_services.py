@@ -812,9 +812,7 @@ def create_job_asn_for_supplier(
 		item_name = (line.get("subcontracting_order_item") or "").strip()
 		finished_good = finished_goods.get(item_name)
 		if not finished_good:
-			frappe.throw(
-				_("Subcontracting Order line {0} is not on {1}.").format(item_name, order_name)
-			)
+			frappe.throw(_("Subcontracting Order line {0} is not on {1}.").format(item_name, order_name))
 		items.append(
 			{
 				"subcontracting_order": sco.name,

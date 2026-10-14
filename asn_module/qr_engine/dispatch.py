@@ -310,9 +310,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 				}
 			# Only an ASN scan may start a new draft after its previous result was cancelled.
 			# Other Used codes, including Subcontracting Order codes, stay rejected.
-			allow_new_asn_draft = (
-				source_doctype == "ASN" and logged is not None and _is_cancelled(logged)
-			)
+			allow_new_asn_draft = source_doctype == "ASN" and logged is not None and _is_cancelled(logged)
 			if not allow_new_asn_draft:
 				validate_scan_code_row(scan_doc, action_key)
 		else:
