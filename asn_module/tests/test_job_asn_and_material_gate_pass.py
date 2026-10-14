@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.tests.utils import FrappeTestCase
@@ -8,15 +11,23 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn,
 	real_asn_attachment_context,
 )
-from asn_module.handlers.purchase_receipt import create_from_asn
+from asn_module.handlers.purchase_receipt import (
+	_apply_shipped_qty_to_subcontracting_receipt,
+	_ensure_gate_pass_asn_link,
+	_get_single_purchase_order,
+	_set_if_present,
+	create_from_asn,
+)
 from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
 	patch_subcontracting_incoming_rate,
 )
+from asn_module.qr_engine.dispatch import _draft_purchase_receipt_result as draft_receipt_from_scan
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
-from asn_module.templates.pages.asn_new_services import create_job_asn_for_supplier
+from asn_module.templates.pages import asn_new
+from asn_module.templates.pages.asn_new_services import PortalValidationError, create_job_asn_for_supplier
 from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
 from asn_module.utils.test_setup import before_tests
 
@@ -66,6 +77,49 @@ class TestAsnOrderIdentity(FrappeTestCase):
 
 		self.assertIn("one order", str(raised.exception).lower())
 
+	def test_save_refuses_a_line_that_names_both_orders(self):
+		purchase_order = create_purchase_order(qty=2)
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		asn = make_test_asn(purchase_order=purchase_order, qty=1)
+		finished_good = subcontracting_order.items[0]
+		asn.items[0].subcontracting_order = subcontracting_order.name
+		asn.items[0].subcontracting_order_item = finished_good.name
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("one order", str(raised.exception).lower())
+
+	def test_save_refuses_a_purchase_order_line_that_is_missing_the_order_line(self):
+		asn = make_test_asn()
+		asn.items[0].purchase_order_item = ""
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("order line", str(raised.exception).lower())
+
+	def test_save_refuses_a_subcontracting_order_line_that_is_missing_the_order(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = subcontracting_order.items[0]
+		asn = make_test_asn()
+		asn.items = []
+		asn.append(
+			"items",
+			{
+				"subcontracting_order_item": finished_good.name,
+				"item_code": finished_good.item_code,
+				"qty": 1,
+				"uom": finished_good.stock_uom,
+				"rate": finished_good.rate,
+			},
+		)
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("order line", str(raised.exception).lower())
+
 
 class TestJobAsnPortal(FrappeTestCase):
 	def test_supplier_portal_raises_a_job_asn_against_one_open_subcontracting_order(self):
@@ -94,6 +148,111 @@ class TestJobAsnPortal(FrappeTestCase):
 		self.assertEqual(line.item_code, finished_good.item_code)
 		self.assertFalse(line.purchase_order)
 		self.assertFalse(line.purchase_order_item)
+
+	def test_omitted_lines_use_the_remaining_finished_good_qty(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = subcontracting_order.items[0]
+		remaining = flt(finished_good.qty) - flt(finished_good.received_qty)
+
+		asn = create_job_asn_for_supplier(
+			supplier=subcontracting_order.supplier,
+			subcontracting_order=subcontracting_order.name,
+			header={
+				"supplier_invoice_no": f"JOB-REST-{frappe.generate_hash(length=8)}",
+				"supplier_invoice_date": today(),
+				"vehicle_number": "MH12AB1234",
+				"supplier_invoice_amount": remaining * finished_good.rate,
+			},
+		)
+
+		self.assertEqual(asn.items[0].qty, remaining)
+
+	def test_refuses_a_blank_closed_foreign_or_unknown_order_line(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		header = {
+			"supplier_invoice_no": f"JOB-BAD-{frappe.generate_hash(length=8)}",
+			"supplier_invoice_date": today(),
+			"vehicle_number": "MH12AB1234",
+			"supplier_invoice_amount": 1,
+		}
+		with self.assertRaises(frappe.ValidationError):
+			create_job_asn_for_supplier(
+				supplier=subcontracting_order.supplier,
+				subcontracting_order=" ",
+				header=header,
+			)
+
+		frappe.db.set_value("Subcontracting Order", subcontracting_order.name, "status", "Closed")
+		with self.assertRaises(frappe.ValidationError):
+			create_job_asn_for_supplier(
+				supplier=subcontracting_order.supplier,
+				subcontracting_order=subcontracting_order.name,
+				header=header,
+			)
+		frappe.db.set_value("Subcontracting Order", subcontracting_order.name, "status", "Open")
+
+		with self.assertRaises(frappe.ValidationError):
+			create_job_asn_for_supplier(
+				supplier="Another Supplier",
+				subcontracting_order=subcontracting_order.name,
+				header=header,
+			)
+		with self.assertRaises(frappe.ValidationError):
+			create_job_asn_for_supplier(
+				supplier=subcontracting_order.supplier,
+				subcontracting_order=subcontracting_order.name,
+				header=header,
+				lines=[{"subcontracting_order_item": "missing-line", "qty": 1}],
+			)
+
+	def _posted_form(self, fields: dict):
+		form = _PostedForm(fields)
+		return (
+			patch.object(asn_new.frappe, "form_dict", form),
+			patch.object(asn_new.frappe, "request", SimpleNamespace(form=form, files={})),
+		)
+
+	def test_the_single_form_refuses_a_purchase_order_and_a_subcontracting_order_together(self):
+		form_patch, request_patch = self._posted_form(
+			{
+				"subcontracting_order": "SCO-0001",
+				"selected_purchase_orders": ["PO-0001"],
+			}
+		)
+		with form_patch, request_patch, self.assertRaises(PortalValidationError) as raised:
+			asn_new._create_single_asn("_Test Supplier")
+
+		self.assertIn("both", str(raised.exception).lower())
+
+	def test_the_single_form_raises_a_job_asn_from_the_posted_order(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = subcontracting_order.items[0]
+		form_patch, request_patch = self._posted_form(
+			{
+				"subcontracting_order": subcontracting_order.name,
+				"supplier_invoice_no": f"JOB-FORM-{frappe.generate_hash(length=8)}",
+				"supplier_invoice_date": today(),
+				"vehicle_number": "MH12AB1234",
+				"supplier_invoice_amount": str(finished_good.rate),
+				"subcontracting_order_item": [finished_good.name, ""],
+				"job_asn_qty": ["1"],
+			}
+		)
+		with form_patch, request_patch:
+			result = asn_new._create_single_asn(subcontracting_order.supplier)
+
+		asn = frappe.get_doc("ASN", result.asn_names[0])
+		self.assertEqual(asn.items[0].subcontracting_order, subcontracting_order.name)
+		self.assertEqual(asn.items[0].qty, 1)
+		self.assertFalse(result.incomplete)
+
+
+class _PostedForm(dict):
+	def getlist(self, fieldname):
+		value = self.get(fieldname, [])
+		if isinstance(value, list):
+			return value
+		return [value]
 
 
 class TestJobAsnScan(FrappeTestCase):
@@ -449,3 +608,117 @@ class TestMaterialGatePassScan(FrappeTestCase):
 
 		self.assertEqual(result["doctype"], "Subcontracting Receipt")
 		self.assertEqual(frappe.db.count("Gate Pass", {"asn": asn.name}), 0)
+
+	def test_a_second_create_reopens_the_draft_gate_pass(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context():
+				_purchase_order, asn = self._submitted_material_asn()
+				first = create_from_asn("ASN", asn.name, {})
+				second = create_from_asn("ASN", asn.name, {})
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertEqual(second["name"], first["name"])
+
+	def test_scanning_refuses_when_gate_pass_is_not_installed(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		real_exists = frappe.db.exists
+
+		def exists(doctype, name=None, *args, **kwargs):
+			if doctype == "DocType" and name == "Gate Pass":
+				return None
+			return real_exists(doctype, name, *args, **kwargs)
+
+		try:
+			with integration_user_context():
+				_purchase_order, asn = self._submitted_material_asn()
+				with (
+					patch("asn_module.handlers.purchase_receipt.frappe.db.exists", side_effect=exists),
+					self.assertRaises(frappe.ValidationError) as raised,
+				):
+					create_from_asn("ASN", asn.name, {})
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertIn("not set up", str(raised.exception).lower())
+
+	def test_a_missing_asn_link_on_gate_pass_is_added_before_save(self):
+		real_has_column = frappe.db.has_column
+
+		def has_column(doctype, fieldname):
+			if doctype == "Gate Pass" and fieldname == "asn":
+				return False
+			return real_has_column(doctype, fieldname)
+
+		with patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", side_effect=has_column):
+			_ensure_gate_pass_asn_link()
+
+		self.assertTrue(frappe.get_meta("Gate Pass").has_field("asn"))
+
+	def test_optional_gate_pass_fields_are_left_unset(self):
+		gate_pass = frappe.new_doc("Gate Pass")
+		_set_if_present(gate_pass, "vehicle_number", None)
+		_set_if_present(gate_pass, "not_a_field", "MH12AB1234")
+		self.assertFalse(gate_pass.vehicle_number)
+
+
+class TestReceiptHelpers(FrappeTestCase):
+	def test_shipped_qty_skips_a_receipt_line_that_is_not_on_the_notice(self):
+		asn = SimpleNamespace(
+			items=[
+				SimpleNamespace(subcontracting_order_item="", qty=1),
+				SimpleNamespace(subcontracting_order_item="FG-1", qty=2),
+			]
+		)
+		receipt = SimpleNamespace(
+			items=[
+				SimpleNamespace(
+					subcontracting_order_item="FG-OTHER", qty=9, received_qty=9, rate=3, amount=27
+				),
+				SimpleNamespace(subcontracting_order_item="FG-1", qty=9, received_qty=9, rate=4, amount=36),
+			]
+		)
+
+		_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
+
+		self.assertEqual(receipt.items[0].qty, 9)
+		self.assertEqual(receipt.items[1].qty, 2)
+		self.assertEqual(receipt.items[1].received_qty, 2)
+		self.assertEqual(receipt.items[1].amount, 8)
+
+	def test_a_material_notice_must_name_one_purchase_order_and_its_lines(self):
+		with self.assertRaises(frappe.ValidationError):
+			_get_single_purchase_order(
+				SimpleNamespace(
+					name="ASN-1",
+					items=[SimpleNamespace(purchase_order="", purchase_order_item="")],
+				)
+			)
+		with self.assertRaises(frappe.ValidationError):
+			_get_single_purchase_order(
+				SimpleNamespace(
+					name="ASN-1",
+					items=[
+						SimpleNamespace(purchase_order="PO-1", purchase_order_item="POI-1"),
+						SimpleNamespace(purchase_order="PO-2", purchase_order_item="POI-2"),
+					],
+				)
+			)
+		with self.assertRaises(frappe.ValidationError):
+			_get_single_purchase_order(
+				SimpleNamespace(
+					name="ASN-1",
+					items=[SimpleNamespace(purchase_order="PO-1", purchase_order_item="")],
+				)
+			)
+
+	def test_a_blank_asn_name_does_not_reopen_a_purchase_receipt(self):
+		self.assertIsNone(draft_receipt_from_scan(""))
+		with patch(
+			"asn_module.qr_engine.dispatch.frappe.db.has_column",
+			return_value=False,
+		):
+			self.assertIsNone(draft_receipt_from_scan("ASN-1"))

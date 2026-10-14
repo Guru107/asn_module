@@ -5,6 +5,7 @@ from frappe.tests.utils import FrappeTestCase
 
 import asn_module.custom_fields.purchase_invoice as purchase_invoice_fields
 import asn_module.custom_fields.purchase_receipt as purchase_receipt_fields
+import asn_module.custom_fields.subcontracting_receipt as subcontracting_receipt_fields
 import asn_module.hooks as hooks
 import asn_module.setup as setup_module
 
@@ -70,6 +71,16 @@ class TestHooks(FrappeTestCase):
 
 		self.assertIn("asn_module.patches.remove_item_max_stock_field", post_sync)
 		self.assertNotIn("asn_module.patches.create_item_max_stock_field", post_sync)
+
+	def test_subcontracting_receipt_custom_fields_define_asn_link(self):
+		with patch(
+			"asn_module.custom_fields.subcontracting_receipt.create_custom_fields"
+		) as create_custom_fields:
+			subcontracting_receipt_fields.setup()
+
+		fields = create_custom_fields.call_args.args[0]["Subcontracting Receipt"]
+		self.assertEqual(fields[0]["fieldname"], "asn")
+		self.assertEqual(fields[0]["options"], "ASN")
 
 	def test_purchase_invoice_custom_fields_define_asn_link(self):
 		with patch("asn_module.custom_fields.purchase_invoice.create_custom_fields") as create_custom_fields:
