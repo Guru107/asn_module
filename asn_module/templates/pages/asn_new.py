@@ -108,10 +108,19 @@ def get_context(context):
 
 def _create_single_asn(supplier: str) -> CreateResult:
 	subcontracting_order = _posted_subcontracting_order()
+	selected_purchase_orders = _request_list("selected_purchase_orders")
+	if subcontracting_order and selected_purchase_orders:
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="subcontracting_order",
+					message=_("A notice cannot name both a Purchase Order and a Subcontracting Order."),
+				)
+			]
+		)
 	if subcontracting_order:
 		return _create_job_asn(supplier, subcontracting_order)
 
-	selected_purchase_orders = _request_list("selected_purchase_orders")
 	if len(selected_purchase_orders) > 1:
 		raise PortalValidationError(
 			[

@@ -602,6 +602,22 @@
 						</div>
 
 						<div class="asn-form-section">
+						<h3 class="asn-form-section-title">{{ _("Job ASN") }}</h3>
+						<div class="mb-3">
+							<label class="form-label" for="single-sco-input">{{ _("Subcontracting Order") }}</label>
+							<input
+								class="form-control"
+								id="single-sco-input"
+								name="subcontracting_order"
+								maxlength="140"
+								placeholder="{{ _('Leave empty for a Purchase Order notice') }}"
+								autocomplete="off"
+							>
+							<div class="form-text">{{ _("Leave this empty for a Purchase Order notice. Do not also select a Purchase Order.") }}</div>
+						</div>
+						</div>
+
+						<div class="asn-form-section">
 						<h3 class="asn-form-section-title">{{ _("Items") }}</h3>
 						<div class="mb-3">
 							<label class="form-label" for="single-po-input">{{ _("Purchase Order") }}</label>
