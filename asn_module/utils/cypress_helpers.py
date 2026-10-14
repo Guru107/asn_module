@@ -557,6 +557,7 @@ def _insert_cypress_asn(*, supplier: str, purchase_order, qty: float, submit: bo
 			"supplier_invoice_date": today(),
 			"expected_delivery_date": add_days(today(), 1),
 			"supplier_invoice_amount": flt(qty) * flt(po_item.rate),
+			"vehicle_number": "MH12AB1234",
 			"items": [
 				{
 					"purchase_order": purchase_order.name,

@@ -1498,6 +1498,7 @@ class TestSingleFormSavesDraft(FrappeTestCase):
 					"supplier_invoice_no": self.invoice_no,
 					"supplier_invoice_date": _test_dates()["supplier_invoice_date"],
 					"expected_delivery_date": _test_dates()["expected_delivery_date"],
+					"vehicle_number": "MH12AB1234",
 				}.get(field, ""),
 			),
 			patch(

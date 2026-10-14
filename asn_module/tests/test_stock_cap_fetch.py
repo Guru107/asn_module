@@ -427,6 +427,7 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 				"supplier_invoice_date": today(),
 				"expected_delivery_date": today(),
 				"supplier_invoice_amount": sum(flt(row.get("qty")) * flt(row.get("rate")) for row in items),
+				"vehicle_number": "MH12AB1234",
 				"items": items,
 			}
 		)
