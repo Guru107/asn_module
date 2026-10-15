@@ -11,12 +11,14 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn,
 	real_asn_attachment_context,
 )
+from asn_module.handlers.purchase_invoice import create_from_purchase_receipt
 from asn_module.handlers.purchase_receipt import (
 	_apply_shipped_qty_to_subcontracting_receipt,
 	_ensure_gate_pass_asn_link,
 	_get_single_purchase_order,
 	_set_if_present,
 	create_from_asn,
+	create_receipt_from_gate_pass,
 )
 from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
@@ -359,6 +361,29 @@ def ensure_gate_pass_for_tests() -> None:
 		frappe.get_doc({"doctype": "Gate Pass Type", "gate_pass_type": "Material"}).insert(
 			ignore_permissions=True
 		)
+	if not frappe.db.exists("Gate Pass Type", "Job"):
+		frappe.get_doc({"doctype": "Gate Pass Type", "gate_pass_type": "Job"}).insert(ignore_permissions=True)
+
+	if not frappe.db.exists("DocType", "Gate Pass Item Table"):
+		frappe.get_doc(
+			{
+				"doctype": "DocType",
+				"name": "Gate Pass Item Table",
+				"module": "Custom",
+				"custom": 1,
+				"istable": 1,
+				"fields": [
+					{"fieldname": "item_code", "fieldtype": "Link", "options": "Item", "label": "Item Code"},
+					{
+						"fieldname": "subcontracting_order_item",
+						"fieldtype": "Data",
+						"label": "Subcontracting Order Item",
+					},
+					{"fieldname": "qty", "fieldtype": "Float", "label": "Qty"},
+					{"fieldname": "pending_qty", "fieldtype": "Float", "label": "Pending Qty"},
+				],
+			}
+		).insert(ignore_permissions=True)
 
 	if not frappe.db.exists("DocType", "Gate Pass"):
 		frappe.get_doc(
@@ -398,6 +423,12 @@ def ensure_gate_pass_for_tests() -> None:
 						"fieldtype": "Table",
 						"options": "Gate Pass Item",
 						"label": "Items",
+					},
+					{
+						"fieldname": "item",
+						"fieldtype": "Table",
+						"options": "Gate Pass Item Table",
+						"label": "Item",
 					},
 				],
 				"permissions": [
@@ -457,6 +488,16 @@ def ensure_gate_pass_for_tests() -> None:
 				"options": "Gate Pass Item",
 				"label": "Items",
 				"insert_after": "supplier",
+			}
+		)
+	if not meta.has_field("item"):
+		custom_fields.append(
+			{
+				"fieldname": "item",
+				"fieldtype": "Table",
+				"options": "Gate Pass Item Table",
+				"label": "Item",
+				"insert_after": "items",
 			}
 		)
 	if custom_fields:
@@ -581,33 +622,183 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(opened["name"], receipt["name"])
 		self.assertEqual(frappe.db.count("Gate Pass", {"asn": asn.name, "docstatus": 0}), 0)
 
-	def test_a_job_asn_still_opens_a_subcontracting_receipt_when_gate_pass_mode_is_on(self):
+	def _submitted_job_asn(self, shipped_qty=1):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = subcontracting_order.items[0]
+		asn = create_job_asn_for_supplier(
+			supplier=subcontracting_order.supplier,
+			subcontracting_order=subcontracting_order.name,
+			header={
+				"supplier_invoice_no": f"JOB-GP-{frappe.generate_hash(length=8)}",
+				"supplier_invoice_date": today(),
+				"vehicle_number": "MH12AB1234",
+				"supplier_invoice_amount": shipped_qty * finished_good.rate,
+			},
+			lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
+		)
+		with real_asn_attachment_context():
+			asn.submit()
+		return subcontracting_order, asn
+
+	def test_scanning_a_job_asn_with_gate_pass_mode_on_opens_a_draft_job_gate_pass(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context(), patch_subcontracting_incoming_rate(5):
+				subcontracting_order, asn = self._submitted_job_asn()
+				code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				result = dispatch(code=code, device_info="job-gate-pass-on")
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		finished_good = subcontracting_order.items[0]
+		self.assertEqual(result["doctype"], "Gate Pass")
+		gate_pass = frappe.get_doc("Gate Pass", result["name"])
+		self.assertEqual(gate_pass.docstatus, 0)
+		self.assertEqual(gate_pass.entry_type, "Gate In")
+		self.assertEqual(gate_pass.gate_pass_type, "Job")
+		self.assertEqual(gate_pass.document_reference, "Subcontracting Order")
+		self.assertEqual(gate_pass.reference_number, subcontracting_order.name)
+		self.assertEqual(gate_pass.company, subcontracting_order.company)
+		self.assertEqual(gate_pass.vehicle_number, asn.vehicle_number)
+		self.assertEqual(gate_pass.invoice_number, asn.supplier_invoice_no)
+		self.assertEqual(gate_pass.asn, asn.name)
+		self.assertEqual(len(gate_pass.item), 1)
+		self.assertEqual(gate_pass.item[0].subcontracting_order_item, finished_good.name)
+		self.assertEqual(flt(gate_pass.item[0].qty), 1)
+		self.assertEqual(
+			flt(gate_pass.item[0].pending_qty),
+			flt(finished_good.qty) - flt(finished_good.received_qty),
+		)
+		self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name}), 0)
+		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name}), 0)
+
+	def test_a_later_scan_opens_the_same_job_gate_pass(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context(), patch_subcontracting_incoming_rate(5):
+				_order, asn = self._submitted_job_asn()
+				code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				first = dispatch(code=code, device_info="job-gate-pass-on")
+				second = dispatch(code=code, device_info="job-gate-pass-on-again")
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertEqual(second["name"], first["name"])
+		self.assertEqual(frappe.db.count("Gate Pass", {"asn": asn.name, "docstatus": 0}), 1)
+
+	def test_a_cancelled_job_gate_pass_does_not_block_a_new_draft(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context(), patch_subcontracting_incoming_rate(5):
+				_order, asn = self._submitted_job_asn()
+				code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				first = dispatch(code=code, device_info="job-gate-pass-on")
+				frappe.db.set_value("Gate Pass", first["name"], "docstatus", 2, update_modified=False)
+				second = dispatch(code=code, device_info="job-gate-pass-after-cancel")
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertNotEqual(second["name"], first["name"])
+		self.assertEqual(frappe.db.get_value("Gate Pass", second["name"], "docstatus"), 0)
+
+	def test_a_subcontracting_order_receipt_code_stays_a_receipt(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
 		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
 		try:
 			subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
-			finished_good = subcontracting_order.items[0]
-			asn = create_job_asn_for_supplier(
-				supplier=subcontracting_order.supplier,
-				subcontracting_order=subcontracting_order.name,
-				header={
-					"supplier_invoice_no": f"JOB-GP-{frappe.generate_hash(length=8)}",
-					"supplier_invoice_date": today(),
-					"vehicle_number": "MH12AB1234",
-					"supplier_invoice_amount": finished_good.rate,
-				},
-				lines=[{"subcontracting_order_item": finished_good.name, "qty": 1}],
+			code = get_or_create_scan_code(
+				"create_subcontracting_receipt",
+				"Subcontracting Order",
+				subcontracting_order.name,
 			)
-			with real_asn_attachment_context():
-				asn.submit()
-			code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
 			with integration_user_context(), patch_subcontracting_incoming_rate(5):
-				result = dispatch(code=code, device_info="job-asn-gate-pass-on")
+				result = dispatch(code=code, device_info="sco-receipt-code")
 		finally:
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
 
 		self.assertEqual(result["doctype"], "Subcontracting Receipt")
-		self.assertEqual(frappe.db.count("Gate Pass", {"asn": asn.name}), 0)
+		self.assertFalse(frappe.db.get_value("Subcontracting Receipt", result["name"], "asn"))
+		self.assertEqual(frappe.db.count("Gate Pass", {"reference_number": subcontracting_order.name}), 0)
+
+	def test_create_on_a_submitted_material_gate_pass_opens_a_purchase_receipt_carrying_the_asn(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context():
+				purchase_order = create_purchase_order(qty=4)
+				batch_id = f"BATCH-{frappe.generate_hash(length=6)}"
+				item_code = purchase_order.items[0].item_code
+				frappe.db.set_value("Item", item_code, "has_batch_no", 1, update_modified=False)
+				frappe.get_doc({"doctype": "Batch", "batch_id": batch_id, "item": item_code}).insert(
+					ignore_permissions=True
+				)
+				asn = make_test_asn(
+					purchase_order=purchase_order,
+					supplier_invoice_no=f"GP-CREATE-{frappe.generate_hash(length=8)}",
+					qty=1,
+				)
+				asn.lr_no = "LR-44"
+				asn.lr_date = today()
+				asn.items[0].batch_no = batch_id
+				asn.items[0].serial_nos = "SER-44"
+				asn.insert(ignore_permissions=True)
+				with real_asn_attachment_context():
+					asn.submit()
+				code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				opened = dispatch(code=code, device_info="gate-pass-before-create")
+				self.assertEqual(frappe.db.get_value("Gate Pass", opened["name"], "docstatus"), 0)
+				self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name}), 0)
+				frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
+				created = create_receipt_from_gate_pass(opened["name"])
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertEqual(created["doctype"], "Purchase Receipt")
+		receipt = frappe.get_doc("Purchase Receipt", created["name"])
+		self.assertEqual(receipt.docstatus, 0)
+		self.assertEqual(receipt.asn, asn.name)
+		self.assertEqual(receipt.supplier_delivery_note, asn.supplier_invoice_no)
+		self.assertEqual(receipt.lr_no, "LR-44")
+		self.assertEqual(receipt.items[0].batch_no, batch_id)
+		self.assertEqual(receipt.items[0].serial_no, "SER-44")
+		self.assertEqual(flt(receipt.items[0].qty), 1)
+
+		with (
+			real_asn_attachment_context(),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+		):
+			receipt.submit()
+		invoice = create_from_purchase_receipt("Purchase Receipt", receipt.name, {})
+		self.assertEqual(invoice["doctype"], "Purchase Invoice")
+		self.assertEqual(frappe.db.get_value("Purchase Invoice", invoice["name"], "asn"), asn.name)
+		self.assertEqual(frappe.db.get_value("Purchase Invoice", invoice["name"], "docstatus"), 0)
+
+	def test_create_on_a_submitted_job_gate_pass_opens_a_subcontracting_receipt_linked_to_the_asn(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context(), patch_subcontracting_incoming_rate(5):
+				_order, asn = self._submitted_job_asn(shipped_qty=1)
+				code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				opened = dispatch(code=code, device_info="job-gate-pass-before-create")
+				self.assertEqual(frappe.db.get_value("Gate Pass", opened["name"], "docstatus"), 0)
+				self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name}), 0)
+				with self.assertRaises(frappe.ValidationError):
+					create_receipt_from_gate_pass(opened["name"])
+				frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
+				created = create_receipt_from_gate_pass(opened["name"])
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertEqual(created["doctype"], "Subcontracting Receipt")
+		receipt = frappe.get_doc("Subcontracting Receipt", created["name"])
+		self.assertEqual(receipt.docstatus, 0)
+		self.assertEqual(receipt.asn, asn.name)
+		self.assertEqual(flt(receipt.items[0].qty), 1)
 
 	def test_a_second_create_reopens_the_draft_gate_pass(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))

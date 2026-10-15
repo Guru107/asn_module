@@ -26,6 +26,8 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 		)
 
 	if _is_job_asn(asn):
+		if _gate_pass_mode_on():
+			return _open_or_create_job_gate_pass(asn)
 		return _open_or_create_subcontracting_receipt(asn)
 
 	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": source_name, "docstatus": 0}, "name")
@@ -367,6 +369,135 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 	}
 
 
+def _open_or_create_job_gate_pass(asn) -> dict:
+	"""Save a draft Gate In of type Job for one Subcontracting Order and open it.
+
+	Arriving qty on each line is the Shipped Qty. A cancelled Gate Pass is ignored.
+	"""
+	existing = _reopen_draft_gate_pass(asn)
+	if existing:
+		return existing
+
+	order_name = next(row.subcontracting_order for row in asn.items if row.subcontracting_order)
+	order = frappe.get_doc("Subcontracting Order", order_name)
+	order_lines = {row.name: row for row in order.items}
+
+	gate_pass = frappe.new_doc("Gate Pass")
+	_set_if_present(gate_pass, "entry_type", "Gate In")
+	_set_if_present(gate_pass, "gate_pass_type", "Job")
+	_set_if_present(gate_pass, "document_reference", "Subcontracting Order")
+	_set_if_present(gate_pass, "reference_number", order.name)
+	_set_if_present(gate_pass, "company", order.company)
+	_set_if_present(gate_pass, "supplier", asn.supplier)
+	_set_if_present(gate_pass, "vehicle_number", asn.vehicle_number)
+	_set_if_present(gate_pass, "invoice_number", asn.supplier_invoice_no)
+	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
+	_set_if_present(gate_pass, "asn", asn.name)
+
+	table_field, child_fields = _job_line_table(gate_pass)
+	if table_field:
+		for asn_item in asn.items:
+			if not asn_item.subcontracting_order_item:
+				continue
+			order_line = order_lines.get(asn_item.subcontracting_order_item)
+			row = {}
+			if "item_code" in child_fields:
+				row["item_code"] = asn_item.item_code
+			if "subcontracting_order_item" in child_fields:
+				row["subcontracting_order_item"] = asn_item.subcontracting_order_item
+			if "qty" in child_fields:
+				row["qty"] = flt(asn_item.qty)
+			if order_line and "pending_qty" in child_fields:
+				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
+			gate_pass.append(table_field, row)
+
+	gate_pass.flags.ignore_validate = True
+	gate_pass.insert(ignore_permissions=True, ignore_mandatory=True)
+
+	return {
+		"doctype": "Gate Pass",
+		"name": gate_pass.name,
+		"url": f"/app/gate-pass/{gate_pass.name}",
+		"message": _("Gate Pass {0} created from ASN {1}").format(gate_pass.name, asn.name),
+	}
+
+
+def _reopen_draft_gate_pass(asn) -> dict | None:
+	if not frappe.db.exists("DocType", "Gate Pass"):
+		frappe.throw(_("Gate Pass is not set up on this site."))
+
+	_ensure_gate_pass_asn_link()
+	existing = frappe.db.get_value("Gate Pass", {"asn": asn.name, "docstatus": 0}, "name")
+	if not existing:
+		return None
+	return {
+		"doctype": "Gate Pass",
+		"name": existing,
+		"url": f"/app/gate-pass/{existing}",
+		"message": _("Existing draft Gate Pass {0} opened").format(existing),
+	}
+
+
+def _job_line_table(gate_pass) -> tuple[str | None, set[str]]:
+	"""The child table Create copies onto a Subcontracting Receipt.
+
+	Staging keeps job lines on ``item``. A site that only has ``items`` still
+	receives the lines when that table can name a Subcontracting Order line.
+	"""
+	for fieldname in ("item", "items"):
+		field = gate_pass.meta.get_field(fieldname)
+		if not field or field.fieldtype != "Table":
+			continue
+		child_fields = {df.fieldname for df in frappe.get_meta(field.options).fields}
+		if fieldname == "item" or "subcontracting_order_item" in child_fields:
+			return fieldname, child_fields
+	return None, set()
+
+
+def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
+	"""Open the draft receipt for a submitted Gate Pass. The scan does not call this.
+
+	A Material Gate In becomes a Purchase Receipt that still carries the ASN.
+	A Job Gate In becomes a Subcontracting Receipt linked to the ASN.
+	"""
+	gate_pass = frappe.get_doc("Gate Pass", gate_pass_name)
+	if cint(gate_pass.docstatus) != 1:
+		frappe.throw(_("Submit the Gate Pass before creating a receipt."))
+
+	if _is_job_gate_pass(gate_pass):
+		return _create_subcontracting_receipt_from_gate_pass(gate_pass)
+	return _create_purchase_receipt_from_gate_pass(gate_pass)
+
+
+def _is_job_gate_pass(gate_pass) -> bool:
+	if (getattr(gate_pass, "gate_pass_type", None) or "") == "Job":
+		return True
+	return (getattr(gate_pass, "document_reference", None) or "") == "Subcontracting Order"
+
+
+def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
+	asn = frappe.get_doc("ASN", gate_pass.asn)
+	purchase_order_items = [row.purchase_order_item for row in asn.items if row.purchase_order_item]
+	pr = make_purchase_receipt(
+		gate_pass.reference_number or asn.items[0].purchase_order,
+		args={"filtered_children": purchase_order_items},
+	)
+	_apply_asn_fields(pr, asn)
+	_set_if_present(pr, "custom_gate_pass_reference", gate_pass.name)
+	pr.insert(ignore_permissions=True)
+	return {
+		"doctype": "Purchase Receipt",
+		"name": pr.name,
+		"url": f"/app/purchase-receipt/{pr.name}",
+		"message": _("Purchase Receipt {0} created from Gate Pass {1}").format(pr.name, gate_pass.name),
+	}
+
+
+def _create_subcontracting_receipt_from_gate_pass(gate_pass) -> dict:
+	asn = frappe.get_doc("ASN", gate_pass.asn)
+	return _open_or_create_subcontracting_receipt(asn)
+
+
 def _is_job_asn(asn) -> bool:
 	for row in getattr(asn, "items", None) or []:
 		if (getattr(row, "subcontracting_order", None) or "").strip():
@@ -377,7 +508,8 @@ def _is_job_asn(asn) -> bool:
 def _open_or_create_subcontracting_receipt(asn) -> dict:
 	"""Draft Subcontracting Receipt for a Job ASN. Finished-good qty is the Shipped Qty.
 
-	Gate Pass Mode does not change this path. A later scan opens the same draft.
+	Used when Gate Pass Mode is off, and when Create runs on a submitted Job Gate Pass.
+	A later call opens the same draft.
 	"""
 	from asn_module.custom_fields.subcontracting_receipt import setup as setup_scr_asn_link
 
