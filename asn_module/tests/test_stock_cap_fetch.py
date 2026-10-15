@@ -358,11 +358,13 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 		frappe.db.delete("ASN Stock Cap Warehouse")
 		frappe.db.delete("ASN Stock Cap Settings")
 
-		# Let both POs resolve create_purchase_order's own default warehouse rather than
-		# handing them one built separately: a hand-picked Warehouse must belong to the
-		# same Company create_purchase_order defaults to, or Purchase Order validation
-		# rejects it, and that default company need not be whichever Company happens to
-		# sort first.
+		# Let the Purchase Order resolve create_purchase_order's own default warehouse
+		# rather than handing it one built separately: a hand-picked Warehouse must
+		# belong to the same Company create_purchase_order defaults to, or Purchase
+		# Order validation rejects it.
+		# One Purchase Order, two lines. An ASN can name only one order, and the
+		# sibling assertions below need both lines on that same notice.
+		create_purchase_order(item_code=self.item_b, do_not_save=True, qty=10)
 		po_a = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,
 			tax_description="_Test Stock Cap Fetch ExcludePO Tax A",
@@ -371,21 +373,26 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 			# 5-unit ASN against this same Purchase Order Item on top of setUp's own 7, and
 			# ASN._validate_po_qty rejects shipping more than the PO's remaining qty.
 			qty=20,
+			do_not_submit=True,
 		)
 		self.warehouse = po_a.items[0].warehouse
-		po_b = build_purchase_order_with_mandatory_fields(
-			create_purchase_order,
-			tax_description="_Test Stock Cap Fetch ExcludePO Tax B",
-			item_code=self.item_b,
-			warehouse=self.warehouse,
-			supplier=po_a.supplier,
+		po_a.append(
+			"items",
+			{
+				"item_code": self.item_b,
+				"warehouse": self.warehouse,
+				"qty": 10,
+				"rate": po_a.items[0].rate,
+				"schedule_date": po_a.items[0].schedule_date,
+			},
 		)
+		po_a.save()
+		po_a.submit()
 		frappe.db.set_value("Purchase Order", po_a.name, "branch", self.branch)
-		frappe.db.set_value("Purchase Order", po_b.name, "branch", self.branch)
 
 		self.po_a = po_a
 		self.po_item_a = po_a.items[0]
-		self.po_item_b = po_b.items[0]
+		self.po_item_b = po_a.items[1]
 
 		frappe.get_doc(
 			{
@@ -408,7 +415,7 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 					"rate": self.po_item_a.rate,
 				},
 				{
-					"purchase_order": po_b.name,
+					"purchase_order": po_a.name,
 					"purchase_order_item": self.po_item_b.name,
 					"item_code": self.item_b,
 					"qty": 4,

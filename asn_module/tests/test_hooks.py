@@ -5,6 +5,7 @@ from frappe.tests.utils import FrappeTestCase
 
 import asn_module.custom_fields.purchase_invoice as purchase_invoice_fields
 import asn_module.custom_fields.purchase_receipt as purchase_receipt_fields
+import asn_module.custom_fields.subcontracting_receipt as subcontracting_receipt_fields
 import asn_module.hooks as hooks
 import asn_module.setup as setup_module
 
@@ -26,6 +27,7 @@ class TestHooks(FrappeTestCase):
 		self.assertTrue((public_js_dir / "asn_module.js").exists())
 
 	@patch("asn_module.setup.setup_pi_fields")
+	@patch("asn_module.setup.setup_scr_fields")
 	@patch("asn_module.setup.setup_pr_fields")
 	@patch("asn_module.setup.create_notifications")
 	@patch("asn_module.setup.register_actions")
@@ -34,10 +36,12 @@ class TestHooks(FrappeTestCase):
 		register_actions,
 		create_notifications,
 		setup_pr_fields,
+		setup_scr_fields,
 		setup_pi_fields,
 	):
 		call_order = []
 		setup_pr_fields.side_effect = lambda: call_order.append("pr")
+		setup_scr_fields.side_effect = lambda: call_order.append("scr")
 		setup_pi_fields.side_effect = lambda: call_order.append("pi")
 		create_notifications.side_effect = lambda: call_order.append("notif")
 		register_actions.side_effect = lambda: call_order.append("actions")
@@ -45,10 +49,11 @@ class TestHooks(FrappeTestCase):
 		setup_module.after_install()
 
 		setup_pr_fields.assert_called_once_with()
+		setup_scr_fields.assert_called_once_with()
 		setup_pi_fields.assert_called_once_with()
 		create_notifications.assert_called_once_with()
 		register_actions.assert_called_once_with()
-		self.assertEqual(call_order, ["pr", "pi", "notif", "actions"])
+		self.assertEqual(call_order, ["pr", "scr", "pi", "notif", "actions"])
 
 	def test_purchase_receipt_custom_fields_define_asn_link_and_item_mapping(self):
 		with patch("asn_module.custom_fields.purchase_receipt.create_custom_fields") as create_custom_fields:
@@ -66,6 +71,16 @@ class TestHooks(FrappeTestCase):
 
 		self.assertIn("asn_module.patches.remove_item_max_stock_field", post_sync)
 		self.assertNotIn("asn_module.patches.create_item_max_stock_field", post_sync)
+
+	def test_subcontracting_receipt_custom_fields_define_asn_link(self):
+		with patch(
+			"asn_module.custom_fields.subcontracting_receipt.create_custom_fields"
+		) as create_custom_fields:
+			subcontracting_receipt_fields.setup()
+
+		fields = create_custom_fields.call_args.args[0]["Subcontracting Receipt"]
+		self.assertEqual(fields[0]["fieldname"], "asn")
+		self.assertEqual(fields[0]["options"], "ASN")
 
 	def test_purchase_invoice_custom_fields_define_asn_link(self):
 		with patch("asn_module.custom_fields.purchase_invoice.create_custom_fields") as create_custom_fields:

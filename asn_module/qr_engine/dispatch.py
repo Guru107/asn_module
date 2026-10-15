@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, now_datetime
+from frappe.utils import cint, get_datetime, now_datetime
 
 from asn_module.qr_engine.scan_codes import (
 	RESCAN_SAFE_ACTIONS,
@@ -120,12 +120,13 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 	return handler_fn(source_doctype=source_doctype, source_name=source_name, payload=payload)
 
 
-def _get_existing_success_result(
+def _latest_success_document(
 	action_key: str,
 	source_doctype: str,
 	source_name: str,
 	scan_code: str,
-) -> dict | None:
+):
+	"""Most recent document a successful scan of this code opened, if it still exists."""
 	logs = frappe.get_all(
 		"Scan Log",
 		filters={
@@ -145,7 +146,7 @@ def _get_existing_success_result(
 		try:
 			if not frappe.db.exists(log["result_doctype"], log["result_name"]):
 				continue
-			doc = frappe.get_doc(log["result_doctype"], log["result_name"])
+			return frappe.get_doc(log["result_doctype"], log["result_name"])
 		except (frappe.DoesNotExistError, frappe.PermissionError, ImportError):
 			continue
 		except Exception:
@@ -154,13 +155,42 @@ def _get_existing_success_result(
 				_("Failed to resolve existing result from Scan Log"),
 			)
 			raise
-		return {
-			"doctype": doc.doctype,
-			"name": doc.name,
-			"url": doc.get_url(),
-			"message": _("Existing {0} {1} opened").format(doc.doctype, doc.name),
-		}
 	return None
+
+
+def _draft_purchase_receipt_result(asn_name: str) -> dict | None:
+	if not asn_name or not frappe.db.has_column("Purchase Receipt", "asn"):
+		return None
+	name = frappe.db.get_value("Purchase Receipt", {"asn": asn_name, "docstatus": 0}, "name")
+	if not name:
+		return None
+	doc = frappe.get_doc("Purchase Receipt", name)
+	return {
+		"doctype": doc.doctype,
+		"name": doc.name,
+		"url": doc.get_url(),
+		"message": _("Existing {0} {1} opened").format(doc.doctype, doc.name),
+	}
+
+
+def _record_reopened_scan(scan_doc, action_key, source_doctype, source_name, device_info, result) -> None:
+	record_successful_scan(scan_doc.name, action_key)
+	_log_scan(
+		action=action_key,
+		source_doctype=source_doctype,
+		source_name=source_name,
+		result="Success",
+		device_info=device_info,
+		scan_code=scan_doc.name,
+		result_doctype=result["doctype"],
+		result_name=result["name"],
+	)
+	frappe.local.flags.commit = True
+
+
+def _is_cancelled(doc) -> bool:
+	docstatus = frappe.db.get_value(doc.doctype, doc.name, "docstatus")
+	return cint(docstatus if docstatus is not None else getattr(doc, "docstatus", 0)) == 2
 
 
 def _can_open_existing_result(scan_doc: frappe.model.document.Document, action_key: str) -> bool:
@@ -217,32 +247,57 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		_check_permission(action["allowed_roles"])
 
 		if _can_open_existing_result(scan_doc, action_key):
-			existing_result = _get_existing_success_result(
+			# A draft Purchase Receipt already on the notice wins over a Gate Pass,
+			# including when Gate Pass Mode was turned on after the receipt existed.
+			if source_doctype == "ASN":
+				draft_receipt = _draft_purchase_receipt_result(source_name)
+				if draft_receipt:
+					_record_reopened_scan(
+						scan_doc,
+						action_key,
+						source_doctype,
+						source_name,
+						device_info,
+						draft_receipt,
+					)
+					return {
+						"success": True,
+						"action": action_key,
+						**draft_receipt,
+					}
+			logged = _latest_success_document(
 				action_key,
 				source_doctype,
 				source_name,
 				scan_doc.name,
 			)
-			if existing_result:
-				record_successful_scan(scan_doc.name, action_key)
-				_log_scan(
-					action=action_key,
-					source_doctype=source_doctype,
-					source_name=source_name,
-					result="Success",
-					device_info=device_info,
-					scan_code=scan_doc.name,
-					result_doctype=existing_result["doctype"],
-					result_name=existing_result["name"],
+			if logged is not None and not _is_cancelled(logged):
+				existing_result = {
+					"doctype": logged.doctype,
+					"name": logged.name,
+					"url": logged.get_url(),
+					"message": _("Existing {0} {1} opened").format(logged.doctype, logged.name),
+				}
+				_record_reopened_scan(
+					scan_doc,
+					action_key,
+					source_doctype,
+					source_name,
+					device_info,
+					existing_result,
 				)
-				frappe.local.flags.commit = True
 				return {
 					"success": True,
 					"action": action_key,
 					**existing_result,
 				}
-
-		validate_scan_code_row(scan_doc, action_key)
+			# Only an ASN scan may start a new draft after its previous result was cancelled.
+			# Other Used codes, including Subcontracting Order codes, stay rejected.
+			allow_new_asn_draft = source_doctype == "ASN" and logged is not None and _is_cancelled(logged)
+			if not allow_new_asn_draft:
+				validate_scan_code_row(scan_doc, action_key)
+		else:
+			validate_scan_code_row(scan_doc, action_key)
 
 		payload = _payload_from_scan_code_registry(scan_doc, device_info)
 

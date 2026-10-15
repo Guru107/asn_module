@@ -47,6 +47,7 @@ class ASN(WebsiteGenerator):
 
 	def validate(self):
 		self._validate_vehicle_number_present()
+		self._validate_one_order()
 		if cint(self.docstatus) == 1:
 			self._validate_items_present()
 			self._validate_item_qty()
@@ -54,6 +55,7 @@ class ASN(WebsiteGenerator):
 		super().validate()
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
+		self._validate_subcontracting_lines()
 		self._warn_stock_cap()
 
 	def before_submit(self):
@@ -236,6 +238,47 @@ class ASN(WebsiteGenerator):
 			frappe.LinkExistsError,
 		)
 
+	def _validate_one_order(self):
+		"""A line is one Purchase Order line or one Subcontracting Order line.
+
+		Every line on the notice names that same order. Purchase Order quantity
+		checks stay in ``_validate_po_qty`` and only see Purchase Order lines.
+		"""
+		orders: set[tuple[str, str]] = set()
+		for row in self.items or []:
+			purchase_order = (row.purchase_order or "").strip()
+			purchase_order_item = (row.purchase_order_item or "").strip()
+			subcontracting_order = (row.subcontracting_order or "").strip()
+			subcontracting_order_item = (row.subcontracting_order_item or "").strip()
+			has_purchase_order = bool(purchase_order or purchase_order_item)
+			has_subcontracting_order = bool(subcontracting_order or subcontracting_order_item)
+			if has_purchase_order and has_subcontracting_order:
+				frappe.throw(_("An ASN can reference only one order."))
+			if has_purchase_order:
+				if not purchase_order or not purchase_order_item:
+					frappe.throw(
+						_("Row {0}: a Purchase Order line needs the order and the order line.").format(
+							row.idx
+						)
+					)
+				orders.add(("Purchase Order", purchase_order))
+				continue
+			if has_subcontracting_order:
+				if not subcontracting_order or not subcontracting_order_item:
+					frappe.throw(
+						_("Row {0}: a Subcontracting Order line needs the order and the order line.").format(
+							row.idx
+						)
+					)
+				orders.add(("Subcontracting Order", subcontracting_order))
+				continue
+			frappe.throw(
+				_("Row {0}: reference one Purchase Order or one Subcontracting Order.").format(row.idx)
+			)
+
+		if len(orders) > 1:
+			frappe.throw(_("An ASN can reference only one order."))
+
 	def _validate_po_qty(self):
 		rows_by_purchase_order_item = {}
 		for row in self.items or []:
@@ -279,6 +322,54 @@ class ASN(WebsiteGenerator):
 				_("Rows {0}: Shipped qty {1} exceeds remaining PO qty {2}").format(
 					row_numbers,
 					current_qty,
+					remaining_qty,
+				)
+			)
+
+	def _validate_subcontracting_lines(self):
+		"""One row per Subcontracting Order line, and Shipped Qty within what is still open.
+
+		A receipt maps each order line once. Two notice rows for the same line would
+		keep only the first quantity. Remaining qty is the order line's qty minus
+		what that line has already received.
+		"""
+		rows_by_line: dict[str, list] = {}
+		for row in self.items or []:
+			line_name = (row.subcontracting_order_item or "").strip()
+			if not line_name:
+				continue
+			rows_by_line.setdefault(line_name, []).append(row)
+
+		for line_name, rows in rows_by_line.items():
+			if len(rows) < 2:
+				continue
+			row_numbers = ", ".join(str(row.idx) for row in rows)
+			frappe.throw(
+				_("Rows {0}: duplicate Subcontracting Order line {1} is not allowed.").format(
+					row_numbers,
+					line_name,
+				)
+			)
+
+		if not rows_by_line:
+			return
+
+		order_lines = frappe.get_all(
+			"Subcontracting Order Item",
+			filters={"name": ["in", list(rows_by_line)]},
+			fields=["name", "qty", "received_qty"],
+		)
+		remaining_by_line = {row.name: flt(row.qty) - flt(row.received_qty) for row in order_lines}
+		for line_name, rows in rows_by_line.items():
+			shipped_qty = sum(flt(row.qty) for row in rows)
+			remaining_qty = remaining_by_line.get(line_name, 0)
+			if shipped_qty <= remaining_qty:
+				continue
+			row_numbers = ", ".join(str(row.idx) for row in rows)
+			frappe.throw(
+				_("Rows {0}: Shipped qty {1} exceeds remaining Subcontracting Order qty {2}").format(
+					row_numbers,
+					shipped_qty,
 					remaining_qty,
 				)
 			)

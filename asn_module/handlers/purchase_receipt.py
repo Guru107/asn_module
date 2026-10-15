@@ -3,7 +3,7 @@ import json
 import frappe
 from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_receipt
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from asn_module.handlers.utils import attach_qr_to_doc
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
@@ -25,6 +25,9 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 			_("Cannot create Purchase Receipt from ASN {0} with status {1}").format(source_name, asn.status)
 		)
 
+	if _is_job_asn(asn):
+		return _open_or_create_subcontracting_receipt(asn)
+
 	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": source_name, "docstatus": 0}, "name")
 	if existing_pr:
 		return {
@@ -33,6 +36,9 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 			"url": f"/app/purchase-receipt/{existing_pr}",
 			"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
 		}
+
+	if _gate_pass_mode_on():
+		return _open_or_create_material_gate_pass(asn)
 
 	purchase_order, purchase_order_items = _get_single_purchase_order(asn)
 	pr = make_purchase_receipt(purchase_order, args={"filtered_children": purchase_order_items})
@@ -259,6 +265,219 @@ def on_purchase_receipt_before_submit(doc, method=None):
 		return
 
 	throw_stock_cap_exceeded(breaches)
+
+
+def _gate_pass_mode_on() -> bool:
+	if not frappe.db.exists("DocType", "ASN Settings"):
+		return False
+	return cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode")) == 1
+
+
+def _set_if_present(doc, fieldname: str, value) -> None:
+	if value is None or not doc.meta.has_field(fieldname):
+		return
+	doc.set(fieldname, value)
+
+
+def _ensure_gate_pass_asn_link() -> None:
+	if frappe.db.has_column("Gate Pass", "asn"):
+		return
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	create_custom_fields(
+		{
+			"Gate Pass": [
+				{
+					"fieldname": "asn",
+					"fieldtype": "Link",
+					"label": "ASN",
+					"options": "ASN",
+					"insert_after": "supplier",
+				}
+			]
+		}
+	)
+	frappe.clear_cache(doctype="Gate Pass")
+
+
+def _open_or_create_material_gate_pass(asn) -> dict:
+	"""Save a draft Gate Pass for a Material ASN and open it.
+
+	A non-cancelled draft for this ASN is reopened. A cancelled Gate Pass is ignored.
+	"""
+	if not frappe.db.exists("DocType", "Gate Pass"):
+		frappe.throw(_("Gate Pass is not set up on this site."))
+
+	_ensure_gate_pass_asn_link()
+	existing = frappe.db.get_value("Gate Pass", {"asn": asn.name, "docstatus": 0}, "name")
+	if existing:
+		return {
+			"doctype": "Gate Pass",
+			"name": existing,
+			"url": f"/app/gate-pass/{existing}",
+			"message": _("Existing draft Gate Pass {0} opened").format(existing),
+		}
+
+	purchase_order_name, _purchase_order_items = _get_single_purchase_order(asn)
+	purchase_order = frappe.get_doc("Purchase Order", purchase_order_name)
+	order_lines = {row.name: row for row in purchase_order.items}
+
+	gate_pass = frappe.new_doc("Gate Pass")
+	_set_if_present(gate_pass, "entry_type", "Gate In")
+	_set_if_present(gate_pass, "gate_pass_type", "Material")
+	_set_if_present(gate_pass, "document_reference", "Purchase Order")
+	_set_if_present(gate_pass, "reference_number", purchase_order.name)
+	_set_if_present(gate_pass, "company", purchase_order.company)
+	_set_if_present(gate_pass, "supplier", asn.supplier)
+	_set_if_present(gate_pass, "vehicle_number", asn.vehicle_number)
+	_set_if_present(gate_pass, "invoice_number", asn.supplier_invoice_no)
+	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
+	_set_if_present(gate_pass, "asn", asn.name)
+
+	invoice_no = (asn.supplier_invoice_no or "").strip()
+	invoices_field = gate_pass.meta.get_field("gate_pass_invoices")
+	if invoices_field and invoices_field.fieldtype == "Table" and invoice_no:
+		invoice_fields = {df.fieldname for df in frappe.get_meta(invoices_field.options).fields}
+		invoice_row = {}
+		if "supplier_delivery_note" in invoice_fields:
+			invoice_row["supplier_delivery_note"] = invoice_no
+		if "invoice_date" in invoice_fields:
+			invoice_row["invoice_date"] = asn.supplier_invoice_date
+		gate_pass.append("gate_pass_invoices", invoice_row)
+
+	for items_fieldname, items_field in _gate_pass_line_tables(gate_pass):
+		child_fields = {df.fieldname for df in frappe.get_meta(items_field.options).fields}
+		for asn_item in asn.items:
+			order_line = order_lines.get(asn_item.purchase_order_item)
+			shipped_qty = flt(asn_item.qty)
+			row = {}
+			if "item_code" in child_fields:
+				row["item_code"] = asn_item.item_code
+			if "uom" in child_fields:
+				row["uom"] = asn_item.uom
+			if "rate" in child_fields:
+				row["rate"] = asn_item.rate
+			if "purchase_order_item" in child_fields:
+				row["purchase_order_item"] = asn_item.purchase_order_item
+			if "order_item_name" in child_fields:
+				row["order_item_name"] = asn_item.purchase_order_item
+			if "supplier_delivery_note" in child_fields and invoice_no:
+				row["supplier_delivery_note"] = invoice_no
+			if "receive_qty" in child_fields:
+				row["receive_qty"] = shipped_qty
+			if "received_qty" in child_fields:
+				row["received_qty"] = shipped_qty
+			if order_line and "qty" in child_fields:
+				row["qty"] = flt(order_line.qty)
+			if order_line and "ordered_qty" in child_fields:
+				row["ordered_qty"] = flt(order_line.qty)
+			if order_line and "pending_qty" in child_fields:
+				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
+			gate_pass.append(items_fieldname, row)
+
+	gate_pass.insert(ignore_permissions=True)
+
+	return {
+		"doctype": "Gate Pass",
+		"name": gate_pass.name,
+		"url": f"/app/gate-pass/{gate_pass.name}",
+		"message": _("Gate Pass {0} created from ASN {1}").format(gate_pass.name, asn.name),
+	}
+
+
+def _gate_pass_line_tables(gate_pass) -> list[tuple[str, object]]:
+	"""Child tables that hold material lines.
+
+	Sites that use the Gate Entry app store lines on ``gate_pass_table``. The
+	scan fixture uses ``items``. A site can have both, and each one is filled.
+	"""
+	tables = []
+	for fieldname in ("gate_pass_table", "items"):
+		field = gate_pass.meta.get_field(fieldname)
+		if field and field.fieldtype == "Table":
+			tables.append((fieldname, field))
+	return tables
+
+
+def _is_job_asn(asn) -> bool:
+	for row in getattr(asn, "items", None) or []:
+		if (getattr(row, "subcontracting_order", None) or "").strip():
+			return True
+	return False
+
+
+def _open_or_create_subcontracting_receipt(asn) -> dict:
+	"""Draft Subcontracting Receipt for a Job ASN. Finished-good qty is the Shipped Qty.
+
+	Gate Pass Mode does not change this path. A later scan opens the same draft.
+	"""
+	from asn_module.custom_fields.subcontracting_receipt import setup as setup_scr_asn_link
+
+	if not frappe.db.has_column("Subcontracting Receipt", "asn"):
+		setup_scr_asn_link()
+
+	existing = frappe.db.get_value(
+		"Subcontracting Receipt",
+		{"asn": asn.name, "docstatus": 0},
+		"name",
+	)
+	if existing:
+		return {
+			"doctype": "Subcontracting Receipt",
+			"name": existing,
+			"url": f"/app/subcontracting-receipt/{existing}",
+			"message": _("Existing draft Subcontracting Receipt {0} opened").format(existing),
+		}
+
+	order_name = next(row.subcontracting_order for row in asn.items if row.subcontracting_order)
+	mapped_items = [
+		{"name": row.subcontracting_order_item, "qty": flt(row.qty)}
+		for row in asn.items
+		if row.subcontracting_order_item
+	]
+	from erpnext.subcontracting.doctype.subcontracting_order.subcontracting_order import (
+		make_subcontracting_receipt,
+	)
+
+	previous_args = getattr(frappe.flags, "args", None)
+	frappe.flags.args = frappe._dict(items=mapped_items)
+	try:
+		receipt = make_subcontracting_receipt(order_name)
+	finally:
+		frappe.flags.args = previous_args
+
+	_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
+	receipt.asn = asn.name
+	receipt.insert(ignore_permissions=True)
+
+	return {
+		"doctype": "Subcontracting Receipt",
+		"name": receipt.name,
+		"url": f"/app/subcontracting-receipt/{receipt.name}",
+		"message": _("Subcontracting Receipt {0} created from ASN {1}").format(receipt.name, asn.name),
+	}
+
+
+def _apply_shipped_qty_to_subcontracting_receipt(receipt, asn) -> None:
+	pending: dict[str, list] = {}
+	for row in asn.items:
+		if not row.subcontracting_order_item:
+			continue
+		pending.setdefault(row.subcontracting_order_item, []).append(row)
+
+	for receipt_item in receipt.items:
+		matches = pending.get(receipt_item.subcontracting_order_item) or []
+		asn_item = matches.pop(0) if matches else None
+		if not asn_item:
+			continue
+		receipt_item.qty = flt(asn_item.qty)
+		receipt_item.received_qty = flt(asn_item.qty)
+		# Shipped Qty is the finished-good quantity on the receipt. ERPNext may already
+		# have split a process-loss percentage out of the mapped qty; that split would
+		# no longer match the quantity the supplier shipped.
+		if hasattr(receipt_item, "process_loss_qty"):
+			receipt_item.process_loss_qty = 0
+		receipt_item.amount = flt(receipt_item.qty) * flt(receipt_item.rate)
 
 
 def _get_single_purchase_order(asn) -> tuple[str, list[str]]:

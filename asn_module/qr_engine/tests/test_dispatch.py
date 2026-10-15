@@ -8,7 +8,7 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.qr_engine.dispatch import (
 	ActionNotFoundError,
 	PermissionDeniedError,
-	_get_existing_success_result,
+	_latest_success_document,
 	_resolve_action,
 	dispatch,
 )
@@ -230,7 +230,7 @@ class TestDispatch(FrappeTestCase):
 			patch("asn_module.qr_engine.dispatch.frappe.log_error") as log_error,
 			self.assertRaises(RuntimeError),
 		):
-			_get_existing_success_result(
+			_latest_success_document(
 				"create_purchase_receipt",
 				"DocType",
 				"QR Action Registry",
