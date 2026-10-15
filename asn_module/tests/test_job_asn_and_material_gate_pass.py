@@ -653,10 +653,15 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				return False
 			return real_has_column(doctype, fieldname)
 
-		with patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", side_effect=has_column):
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", side_effect=has_column),
+			patch("frappe.custom.doctype.custom_field.custom_field.create_custom_fields") as create_custom_fields,
+		):
 			_ensure_gate_pass_asn_link()
 
-		self.assertTrue(frappe.get_meta("Gate Pass").has_field("asn"))
+		fields = create_custom_fields.call_args.args[0]["Gate Pass"]
+		self.assertEqual(fields[0]["fieldname"], "asn")
+		self.assertEqual(fields[0]["options"], "ASN")
 
 	def test_optional_gate_pass_fields_are_left_unset(self):
 		gate_pass = frappe.new_doc("Gate Pass")
