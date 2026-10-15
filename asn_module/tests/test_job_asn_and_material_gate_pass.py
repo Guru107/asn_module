@@ -284,7 +284,9 @@ class TestJobAsnPortal(FrappeTestCase):
 		asn = frappe.get_doc("ASN", created.asn_names[0])
 		self.assertEqual(asn.vehicle_number, "MH01CD5678")
 		self.assertEqual(
-			frappe.db.count("ASN", {"supplier": subcontracting_order.supplier, "supplier_invoice_no": invoice_no}),
+			frappe.db.count(
+				"ASN", {"supplier": subcontracting_order.supplier, "supplier_invoice_no": invoice_no}
+			),
 			1,
 		)
 
