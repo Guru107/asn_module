@@ -234,6 +234,7 @@ def _create_job_asn(supplier: str, subcontracting_order: str) -> CreateResult:
 		subcontracting_order=subcontracting_order,
 		header=header,
 		lines=_job_asn_lines_from_request(),
+		asn_name=supplier_draft_asn_name(supplier, _request_value("asn_name")),
 	)
 	return CreateResult(
 		asn_names=[asn.name],
@@ -242,6 +243,12 @@ def _create_job_asn(supplier: str, subcontracting_order: str) -> CreateResult:
 
 
 def _job_asn_lines_from_request() -> list[dict] | None:
+	"""Per-line shipped qty, when the request posts it.
+
+	The supplier page posts only the Subcontracting Order. A normal save therefore
+	ships each finished good's remaining qty. ``subcontracting_order_item`` and
+	``job_asn_qty`` are read when a caller posts them.
+	"""
 	item_names = _request_row_list("subcontracting_order_item")
 	qty_values = _request_row_list("job_asn_qty")
 	if not any(item_names):

@@ -193,23 +193,6 @@ def _is_cancelled(doc) -> bool:
 	return cint(docstatus if docstatus is not None else getattr(doc, "docstatus", 0)) == 2
 
 
-def _get_existing_success_result(
-	action_key: str,
-	source_doctype: str,
-	source_name: str,
-	scan_code: str,
-) -> dict | None:
-	doc = _latest_success_document(action_key, source_doctype, source_name, scan_code)
-	if doc is None or _is_cancelled(doc):
-		return None
-	return {
-		"doctype": doc.doctype,
-		"name": doc.name,
-		"url": doc.get_url(),
-		"message": _("Existing {0} {1} opened").format(doc.doctype, doc.name),
-	}
-
-
 def _can_open_existing_result(scan_doc: frappe.model.document.Document, action_key: str) -> bool:
 	if scan_doc.status != "Used" or action_key in RESCAN_SAFE_ACTIONS:
 		return False
