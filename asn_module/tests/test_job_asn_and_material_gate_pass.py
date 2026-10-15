@@ -700,16 +700,23 @@ class TestMaterialGatePassScan(FrappeTestCase):
 	def test_a_gate_pass_draft_runs_gate_pass_validation(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
 		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		# CI's Gate Pass is a custom DocType on Document, which has no validate
+		# method. The gate_entry controller does. create=True covers both.
 		controller = type(frappe.new_doc("Gate Pass"))
+		original_validate = getattr(controller, "validate", None)
 
 		def validate(doc, *args, **kwargs):
+			if doc.doctype != "Gate Pass":
+				if original_validate:
+					return original_validate(doc, *args, **kwargs)
+				return None
 			frappe.throw(_("refused by gate pass rules"))
 
 		try:
 			with integration_user_context():
 				_purchase_order, asn = self._submitted_material_asn()
 				with (
-					patch.object(controller, "validate", validate),
+					patch.object(controller, "validate", validate, create=True),
 					self.assertRaises(frappe.ValidationError) as raised,
 				):
 					create_from_asn("ASN", asn.name, {})
