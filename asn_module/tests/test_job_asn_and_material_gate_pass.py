@@ -14,12 +14,14 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 )
 from asn_module.handlers.purchase_invoice import create_from_purchase_receipt
 from asn_module.handlers.purchase_receipt import (
+	_apply_gate_pass_qty_to_subcontracting_receipt,
 	_apply_shipped_qty_to_subcontracting_receipt,
 	_ensure_gate_pass_asn_link,
 	_get_single_purchase_order,
 	_set_if_present,
 	create_from_asn,
 	create_receipt_from_gate_pass,
+	stamp_receipt_built_by_gate_pass,
 )
 from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
@@ -31,7 +33,10 @@ from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import register_actions
 from asn_module.templates.pages import asn_new
 from asn_module.templates.pages.asn_new_services import PortalValidationError, create_job_asn_for_supplier
-from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
+from asn_module.tests.integration.fixtures import (
+	ensure_integration_user,
+	integration_user_context,
+)
 from asn_module.utils.test_setup import before_tests
 
 
@@ -865,6 +870,64 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("Purchase Invoice", invoice["name"], "asn"), asn.name)
 		self.assertEqual(frappe.db.get_value("Purchase Invoice", invoice["name"], "docstatus"), 0)
 
+	def test_a_second_create_opens_the_same_purchase_receipt(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context():
+				_purchase_order, asn = self._submitted_material_asn()
+				code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				opened = dispatch(code=code, device_info="gate-pass-before-second-create")
+				frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
+				first = create_receipt_from_gate_pass(opened["name"])
+				second = create_receipt_from_gate_pass(opened["name"])
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertEqual(second["name"], first["name"])
+		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name, "docstatus": 0}), 1)
+
+	def test_create_opens_a_draft_purchase_receipt_already_on_the_notice(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context():
+				_purchase_order, asn = self._submitted_material_asn()
+				code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				opened = dispatch(code=code, device_info="gate-pass-before-existing-receipt")
+				frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
+				frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+				existing = create_from_asn("ASN", asn.name, {})
+				created = create_receipt_from_gate_pass(opened["name"])
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertEqual(created["name"], existing["name"])
+		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name}), 1)
+
+	def test_create_refuses_a_gate_pass_that_is_not_linked_to_an_asn(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context():
+				_purchase_order, asn = self._submitted_material_asn()
+				code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+				opened = dispatch(code=code, device_info="gate-pass-without-asn")
+				frappe.db.set_value(
+					"Gate Pass", opened["name"], {"asn": "", "docstatus": 1}, update_modified=False
+				)
+				with self.assertRaises(frappe.ValidationError) as raised:
+					create_receipt_from_gate_pass(opened["name"])
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertIn("not linked to an asn", str(raised.exception).lower())
+
+	def test_create_refuses_a_user_without_a_stock_role(self):
+		email = ensure_integration_user("asn.accounts.only@asn-module.test", roles=("Accounts User",))
+		with integration_user_context(email), self.assertRaises(frappe.PermissionError):
+			create_receipt_from_gate_pass("GP-NO-STOCK")
+
 	def test_create_on_a_submitted_job_gate_pass_opens_a_subcontracting_receipt_linked_to_the_asn(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
 		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
@@ -1057,6 +1120,129 @@ class TestReceiptHelpers(FrappeTestCase):
 
 	def test_a_blank_asn_name_does_not_reopen_a_purchase_receipt(self):
 		self.assertIsNone(draft_receipt_from_scan(""))
+		with patch(
+			"asn_module.qr_engine.dispatch.frappe.db.has_column",
+			return_value=False,
+		):
+			self.assertIsNone(draft_receipt_from_scan("ASN-1"))
+
+	def test_stamp_keeps_the_quantity_received_at_the_gate(self):
+		pr_item = SimpleNamespace(
+			purchase_order_item="POI-1",
+			qty=8,
+			stock_qty=8,
+			conversion_factor=1,
+			rate=2,
+			batch_no=None,
+			serial_no=None,
+			idx=1,
+		)
+		receipt = SimpleNamespace(
+			doctype="Purchase Receipt",
+			asn=None,
+			items=[pr_item],
+			supplier=None,
+			supplier_name="Kept",
+			title=None,
+			supplier_delivery_note=None,
+			transporter_name=None,
+			vehicle_no=None,
+			driver_name=None,
+			lr_no=None,
+			lr_date=None,
+			conversion_rate=1,
+			asn_items=None,
+			get=lambda field: "GP-1" if field == "custom_gate_pass_reference" else None,
+		)
+		asn = SimpleNamespace(
+			name="ASN-1",
+			supplier="Sup",
+			supplier_name="Sup",
+			supplier_invoice_no="INV-1",
+			transporter_name=None,
+			vehicle_number=None,
+			driver_contact=None,
+			lr_no="LR-1",
+			lr_date=None,
+			items=[
+				SimpleNamespace(
+					name="ASNI-1",
+					purchase_order_item="POI-1",
+					qty=10,
+					batch_no="BATCH",
+					serial_nos="SER",
+				)
+			],
+		)
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.db.exists", return_value=True),
+			patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", return_value=True),
+			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value="ASN-1"),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
+		):
+			stamp_receipt_built_by_gate_pass(receipt)
+
+		self.assertEqual(receipt.asn, "ASN-1")
+		self.assertEqual(receipt.supplier_delivery_note, "INV-1")
+		self.assertEqual(pr_item.qty, 8)
+		self.assertEqual(pr_item.batch_no, "BATCH")
+		self.assertEqual(pr_item.serial_no, "SER")
+
+	def test_arriving_qty_is_read_from_the_items_table(self):
+		items_field = SimpleNamespace(fieldtype="Table", options="Gate Pass Items")
+		gate_pass = SimpleNamespace(
+			meta=SimpleNamespace(get_field=lambda name: items_field if name == "items" else None),
+			get=lambda name: (
+				[SimpleNamespace(subcontracting_order_item="FG-1", qty=3)] if name == "items" else []
+			),
+		)
+		receipt = SimpleNamespace(
+			items=[SimpleNamespace(subcontracting_order_item="FG-1", qty=1, received_qty=1, rate=4, amount=4)]
+		)
+		child_meta = SimpleNamespace(
+			fields=[
+				SimpleNamespace(fieldname="subcontracting_order_item"),
+				SimpleNamespace(fieldname="qty"),
+			]
+		)
+		with patch("asn_module.handlers.purchase_receipt.frappe.get_meta", return_value=child_meta):
+			changed = _apply_gate_pass_qty_to_subcontracting_receipt(receipt, gate_pass)
+
+		self.assertTrue(changed)
+		self.assertEqual(receipt.items[0].qty, 3)
+		self.assertEqual(receipt.items[0].received_qty, 3)
+
+	def test_stamp_installs_the_subcontracting_receipt_asn_link(self):
+		receipt = SimpleNamespace(
+			doctype="Subcontracting Receipt",
+			asn=None,
+			get=lambda field: "GP-1" if field == "custom_gate_pass_reference" else None,
+			meta=SimpleNamespace(has_field=lambda _name: False),
+		)
+
+		def has_column(doctype, fieldname):
+			if doctype == "Gate Pass" and fieldname == "asn":
+				return True
+			if doctype == "Subcontracting Receipt" and fieldname == "asn":
+				return False
+			return True
+
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.db.exists", return_value=True),
+			patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", side_effect=has_column),
+			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value="ASN-9"),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=SimpleNamespace()),
+			patch("asn_module.custom_fields.subcontracting_receipt.setup") as setup,
+			patch("asn_module.handlers.purchase_receipt.frappe.clear_cache"),
+			patch(
+				"asn_module.handlers.purchase_receipt.frappe.get_meta",
+				return_value=SimpleNamespace(has_field=lambda name: name == "asn"),
+			),
+		):
+			stamp_receipt_built_by_gate_pass(receipt)
+
+		setup.assert_called_once()
+		self.assertEqual(receipt.asn, "ASN-9")
 		with patch(
 			"asn_module.qr_engine.dispatch.frappe.db.has_column",
 			return_value=False,

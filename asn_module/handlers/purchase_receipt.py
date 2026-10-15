@@ -420,6 +420,9 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
 			gate_pass.append(table_field, row)
 
+	# Material drafts run the site Gate Pass controller. That controller checks
+	# material lines on gate_pass_table, so a Job draft that only fills the job
+	# line table would be rejected. Skip that validation for Job drafts.
 	gate_pass.flags.ignore_validate = True
 	gate_pass.insert(ignore_permissions=True, ignore_mandatory=True)
 
@@ -476,10 +479,14 @@ def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 
 	A Material Gate In becomes a Purchase Receipt that still carries the ASN.
 	A Job Gate In becomes a Subcontracting Receipt linked to the ASN.
+	The same roles as the ASN and Subcontracting Order scan actions may call this.
 	"""
+	frappe.only_for(("Stock User", "Stock Manager"))
 	gate_pass = frappe.get_doc("Gate Pass", gate_pass_name)
 	if cint(gate_pass.docstatus) != 1:
 		frappe.throw(_("Submit the Gate Pass before creating a receipt."))
+	if not (getattr(gate_pass, "asn", None) or "").strip():
+		frappe.throw(_("Gate Pass {0} is not linked to an ASN").format(gate_pass.name))
 
 	if _is_job_gate_pass(gate_pass):
 		return _create_subcontracting_receipt_from_gate_pass(gate_pass)
@@ -493,6 +500,10 @@ def _is_job_gate_pass(gate_pass) -> bool:
 
 
 def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
+	existing = _existing_purchase_receipt(gate_pass.asn, gate_pass.name)
+	if existing:
+		return existing
+
 	asn = frappe.get_doc("ASN", gate_pass.asn)
 	purchase_order_items = [row.purchase_order_item for row in asn.items if row.purchase_order_item]
 	pr = make_purchase_receipt(
@@ -519,10 +530,41 @@ def _create_subcontracting_receipt_from_gate_pass(gate_pass) -> dict:
 	return result
 
 
+def _existing_purchase_receipt(asn_name: str, gate_pass_name: str) -> dict | None:
+	"""Open a draft already created for this ASN or Gate Pass.
+
+	A submitted receipt that already names the Gate Pass is refused, so Create
+	cannot add a second draft that would receive the same stock again.
+	"""
+	draft_name = frappe.db.get_value("Purchase Receipt", {"asn": asn_name, "docstatus": 0}, "name")
+	if not draft_name and frappe.get_meta("Purchase Receipt").has_field("custom_gate_pass_reference"):
+		linked = frappe.db.get_value(
+			"Purchase Receipt",
+			{"custom_gate_pass_reference": gate_pass_name, "docstatus": ["!=", 2]},
+			["name", "docstatus"],
+			as_dict=True,
+		)
+		if linked and cint(linked.docstatus) == 0:
+			draft_name = linked.name
+		elif linked:
+			frappe.throw(
+				_("Purchase Receipt {0} already exists for Gate Pass {1}").format(linked.name, gate_pass_name)
+			)
+	if not draft_name:
+		return None
+	return {
+		"doctype": "Purchase Receipt",
+		"name": draft_name,
+		"url": f"/app/purchase-receipt/{draft_name}",
+		"message": _("Existing draft Purchase Receipt {0} opened").format(draft_name),
+	}
+
+
 def _apply_gate_pass_qty_to_subcontracting_receipt(receipt, gate_pass) -> bool:
-	"""Copy arriving qty from the Job Gate Pass ``item`` lines onto the receipt."""
+	"""Copy arriving qty from the job line table onto the receipt."""
+	table_field, _child_fields = _job_line_table(gate_pass)
 	qty_by_line = {}
-	for row in gate_pass.get("item") or []:
+	for row in (gate_pass.get(table_field) if table_field else []) or []:
 		line_name = getattr(row, "subcontracting_order_item", None)
 		if line_name and flt(row.qty) > 0:
 			qty_by_line[line_name] = flt(row.qty)
@@ -557,8 +599,15 @@ def stamp_receipt_built_by_gate_pass(doc, method=None) -> None:
 	asn_name = frappe.db.get_value("Gate Pass", gate_pass_name, "asn")
 	if not asn_name:
 		return
+	asn = frappe.get_doc("ASN", asn_name)
 	if doc.doctype == "Purchase Receipt":
-		_apply_asn_fields(doc, frappe.get_doc("ASN", asn_name))
+		# Create on the Gate Pass already mapped the quantity received at the gate.
+		# Keep that quantity. The ASN still supplies the link, invoice, batch, and serial.
+		_apply_asn_fields(doc, asn, preserve_qty=True)
+		return
+	_ensure_subcontracting_receipt_asn_link()
+	doc.meta = frappe.get_meta(doc.doctype)
+	if not doc.meta.has_field("asn"):
 		return
 	doc.asn = asn_name
 
@@ -590,10 +639,7 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 	Used when Gate Pass Mode is off, and when Create runs on a submitted Job Gate Pass.
 	A later call opens the same draft.
 	"""
-	from asn_module.custom_fields.subcontracting_receipt import setup as setup_scr_asn_link
-
-	if not frappe.db.has_column("Subcontracting Receipt", "asn"):
-		setup_scr_asn_link()
+	_ensure_subcontracting_receipt_asn_link()
 
 	existing = frappe.db.get_value(
 		"Subcontracting Receipt",
@@ -679,7 +725,16 @@ def _unique(values: list[str]) -> list[str]:
 	return list(dict.fromkeys(values))
 
 
-def _apply_asn_fields(pr, asn) -> None:
+def _ensure_subcontracting_receipt_asn_link() -> None:
+	if frappe.db.has_column("Subcontracting Receipt", "asn"):
+		return
+	from asn_module.custom_fields.subcontracting_receipt import setup as setup_scr_asn_link
+
+	setup_scr_asn_link()
+	frappe.clear_cache(doctype="Subcontracting Receipt")
+
+
+def _apply_asn_fields(pr, asn, *, preserve_qty: bool = False) -> None:
 	pr.supplier = asn.supplier
 	if not getattr(pr, "supplier_name", None):
 		pr.supplier_name = getattr(asn, "supplier_name", None) or asn.supplier
@@ -705,8 +760,9 @@ def _apply_asn_fields(pr, asn) -> None:
 		if not asn_item:
 			continue
 
-		pr_item.qty = flt(asn_item.qty)
-		pr_item.stock_qty = flt(asn_item.qty) * flt(pr_item.conversion_factor or 1)
+		if not preserve_qty:
+			pr_item.qty = flt(asn_item.qty)
+			pr_item.stock_qty = flt(asn_item.qty) * flt(pr_item.conversion_factor or 1)
 		pr_item.batch_no = asn_item.batch_no
 		pr_item.serial_no = asn_item.serial_nos
 		_set_amounts_from_qty(pr, pr_item)
