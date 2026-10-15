@@ -655,7 +655,9 @@ class TestMaterialGatePassScan(FrappeTestCase):
 
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", side_effect=has_column),
-			patch("frappe.custom.doctype.custom_field.custom_field.create_custom_fields") as create_custom_fields,
+			patch(
+				"frappe.custom.doctype.custom_field.custom_field.create_custom_fields"
+			) as create_custom_fields,
 		):
 			_ensure_gate_pass_asn_link()
 
