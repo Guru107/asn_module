@@ -7,12 +7,28 @@ Advance Shipping Notices: a supplier declares what is being shipped against a Pu
 ### Shipment
 
 **ASN**:
-A supplier's declaration of goods dispatched against one or more Purchase Orders, submitted before the goods physically arrive.
+A supplier's declaration of goods dispatched against one Purchase Order or one Subcontracting Order, submitted before the goods physically arrive. It carries the vehicle that will bring the goods.
 _Avoid_: Advance Ship Notice, shipping notice, dispatch note, notice
 
+**Material ASN**:
+An ASN whose lines reference one Purchase Order.
+_Avoid_: Purchase ASN
+
+**Job ASN**:
+An ASN whose lines reference one Subcontracting Order.
+_Avoid_: Subcontract ASN, SCO ASN
+
 **ASN Line**:
-One item row on an ASN, always traceable to a specific Purchase Order Item.
+One item row on an ASN, traceable to one Purchase Order Item or one Subcontracting Order Item.
 _Avoid_: ASN row, line item, item
+
+**Gate Pass Mode**:
+A site-wide switch, off unless the site turns it on. It is read when the ASN barcode or QR is scanned. When it is on, that scan creates a draft Gate Pass. When it is off, a Material ASN scan creates a draft Purchase Receipt and a Job ASN scan creates a draft Subcontracting Receipt.
+_Avoid_: a per-ASN flag, a Gate Pass Type
+
+**Gate Pass**:
+The security record of the vehicle at the gate. In Gate Pass Mode the supplier-invoice barcode opens it as a draft, with the Purchase Order or Subcontracting Order as its reference. The Purchase Receipt or Subcontracting Receipt is created from the submitted Gate Pass, and a Purchase Receipt still leads to a Purchase Invoice.
+_Avoid_: treating the scan as the receipt
 
 **Shipped Qty**:
 The quantity declared on an ASN Line, expressed in the Purchase Order line's purchase UOM.
