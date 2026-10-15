@@ -158,6 +158,7 @@ after_install = "asn_module.setup.after_install"
 # }
 doc_events = {
 	"Purchase Receipt": {
+		"before_insert": "asn_module.handlers.purchase_receipt.stamp_receipt_built_by_gate_pass",
 		"before_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_before_submit",
 		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
 		"on_cancel": "asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",
@@ -175,6 +176,9 @@ doc_events = {
 	},
 	"Subcontracting Order": {
 		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_order_submit",
+	},
+	"Subcontracting Receipt": {
+		"before_insert": "asn_module.handlers.purchase_receipt.stamp_receipt_built_by_gate_pass",
 	},
 }
 

@@ -789,7 +789,11 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name}), 0)
 				with self.assertRaises(frappe.ValidationError):
 					create_receipt_from_gate_pass(opened["name"])
+				line_name = frappe.db.get_value("Gate Pass Item Table", {"parent": opened["name"]}, "name")
+				frappe.db.set_value("Gate Pass Item Table", line_name, "qty", 2, update_modified=False)
 				frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
+				reopened = dispatch(code=code, device_info="job-gate-pass-after-submit")
+				self.assertEqual(reopened["name"], opened["name"])
 				created = create_receipt_from_gate_pass(opened["name"])
 		finally:
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
@@ -798,7 +802,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		receipt = frappe.get_doc("Subcontracting Receipt", created["name"])
 		self.assertEqual(receipt.docstatus, 0)
 		self.assertEqual(receipt.asn, asn.name)
-		self.assertEqual(flt(receipt.items[0].qty), 1)
+		self.assertEqual(flt(receipt.items[0].qty), 2)
 
 	def test_a_second_create_reopens_the_draft_gate_pass(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))

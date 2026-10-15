@@ -305,20 +305,11 @@ def _ensure_gate_pass_asn_link() -> None:
 def _open_or_create_material_gate_pass(asn) -> dict:
 	"""Save a draft Gate Pass for a Material ASN and open it.
 
-	A non-cancelled draft for this ASN is reopened. A cancelled Gate Pass is ignored.
+	A non-cancelled Gate Pass for this ASN is reopened. A cancelled one is ignored.
 	"""
-	if not frappe.db.exists("DocType", "Gate Pass"):
-		frappe.throw(_("Gate Pass is not set up on this site."))
-
-	_ensure_gate_pass_asn_link()
-	existing = frappe.db.get_value("Gate Pass", {"asn": asn.name, "docstatus": 0}, "name")
+	existing = _reopen_uncancelled_gate_pass(asn)
 	if existing:
-		return {
-			"doctype": "Gate Pass",
-			"name": existing,
-			"url": f"/app/gate-pass/{existing}",
-			"message": _("Existing draft Gate Pass {0} opened").format(existing),
-		}
+		return existing
 
 	purchase_order_name, _purchase_order_items = _get_single_purchase_order(asn)
 	purchase_order = frappe.get_doc("Purchase Order", purchase_order_name)
@@ -374,7 +365,7 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 
 	Arriving qty on each line is the Shipped Qty. A cancelled Gate Pass is ignored.
 	"""
-	existing = _reopen_draft_gate_pass(asn)
+	existing = _reopen_uncancelled_gate_pass(asn)
 	if existing:
 		return existing
 
@@ -422,19 +413,26 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 	}
 
 
-def _reopen_draft_gate_pass(asn) -> dict | None:
+def _reopen_uncancelled_gate_pass(asn) -> dict | None:
 	if not frappe.db.exists("DocType", "Gate Pass"):
 		frappe.throw(_("Gate Pass is not set up on this site."))
 
 	_ensure_gate_pass_asn_link()
-	existing = frappe.db.get_value("Gate Pass", {"asn": asn.name, "docstatus": 0}, "name")
+	existing = frappe.get_all(
+		"Gate Pass",
+		filters={"asn": asn.name, "docstatus": ["!=", 2]},
+		pluck="name",
+		order_by="modified desc",
+		limit=1,
+	)
 	if not existing:
 		return None
+	name = existing[0]
 	return {
 		"doctype": "Gate Pass",
-		"name": existing,
-		"url": f"/app/gate-pass/{existing}",
-		"message": _("Existing draft Gate Pass {0} opened").format(existing),
+		"name": name,
+		"url": f"/app/gate-pass/{name}",
+		"message": _("Existing Gate Pass {0} opened").format(name),
 	}
 
 
@@ -454,6 +452,7 @@ def _job_line_table(gate_pass) -> tuple[str | None, set[str]]:
 	return None, set()
 
 
+@frappe.whitelist()
 def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 	"""Open the draft receipt for a submitted Gate Pass. The scan does not call this.
 
@@ -495,7 +494,55 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 
 def _create_subcontracting_receipt_from_gate_pass(gate_pass) -> dict:
 	asn = frappe.get_doc("ASN", gate_pass.asn)
-	return _open_or_create_subcontracting_receipt(asn)
+	result = _open_or_create_subcontracting_receipt(asn)
+	receipt = frappe.get_doc("Subcontracting Receipt", result["name"])
+	if _apply_gate_pass_qty_to_subcontracting_receipt(receipt, gate_pass):
+		receipt.save(ignore_permissions=True)
+	return result
+
+
+def _apply_gate_pass_qty_to_subcontracting_receipt(receipt, gate_pass) -> bool:
+	"""Copy arriving qty from the Job Gate Pass ``item`` lines onto the receipt."""
+	qty_by_line = {}
+	for row in gate_pass.get("item") or []:
+		line_name = getattr(row, "subcontracting_order_item", None)
+		if line_name and flt(row.qty) > 0:
+			qty_by_line[line_name] = flt(row.qty)
+	if not qty_by_line:
+		return False
+	changed = False
+	for item in receipt.items:
+		qty = qty_by_line.get(item.subcontracting_order_item)
+		if qty is None:
+			continue
+		item.qty = qty
+		item.received_qty = qty
+		item.amount = flt(qty) * flt(item.rate)
+		changed = True
+	return changed
+
+
+def stamp_receipt_built_by_gate_pass(doc, method=None) -> None:
+	"""Stamp the ASN onto a receipt the Gate Pass Create action has already mapped.
+
+	Create sets ``custom_gate_pass_reference`` before insert. This runs then, so the
+	stores button keeps the ASN, supplier invoice, lorry receipt, batch, and serial.
+	"""
+	del method
+	if getattr(doc, "asn", None):
+		return
+	gate_pass_name = doc.get("custom_gate_pass_reference")
+	if not gate_pass_name or not frappe.db.exists("DocType", "Gate Pass"):
+		return
+	if not frappe.db.has_column("Gate Pass", "asn"):
+		return
+	asn_name = frappe.db.get_value("Gate Pass", gate_pass_name, "asn")
+	if not asn_name:
+		return
+	if doc.doctype == "Purchase Receipt":
+		_apply_asn_fields(doc, frappe.get_doc("ASN", asn_name))
+		return
+	doc.asn = asn_name
 
 
 def _is_job_asn(asn) -> bool:
