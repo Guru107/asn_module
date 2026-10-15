@@ -10,7 +10,7 @@ import secrets
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, now_datetime
+from frappe.utils import cint, now_datetime
 
 # Uppercase compact alphabet without ambiguous characters (0/O, 1/I/L).
 SCAN_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -105,16 +105,7 @@ def normalize_scan_code(code: str | None) -> str:
 
 
 def validate_scan_code_row(doc: frappe.model.document.Document, action_key: str) -> None:
-	"""Validate lifecycle: status, expiry, and re-scan rules."""
-	if doc.status == "Revoked":
-		frappe.throw(_("This scan code has been revoked."), title=_("Scan not allowed"))
-
-	if doc.status == "Expired":
-		frappe.throw(_("This scan code has expired."), title=_("Scan not allowed"))
-
-	if doc.expires_on and get_datetime(doc.expires_on) < now_datetime():
-		frappe.throw(_("This scan code has expired."), title=_("Scan not allowed"))
-
+	"""Validate status and re-scan rules."""
 	if doc.status == "Used":
 		if action_key in RESCAN_SAFE_ACTIONS:
 			return

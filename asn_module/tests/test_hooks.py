@@ -15,6 +15,7 @@ class TestHooks(FrappeTestCase):
 		self.assertEqual(
 			hooks.app_include_js,
 			[
+				"/assets/asn_module/js/scan_utils.js",
 				"/assets/asn_module/js/scan_dialog.js",
 				"/assets/asn_module/js/asn_module.js",
 			],
@@ -23,6 +24,7 @@ class TestHooks(FrappeTestCase):
 	def test_global_scan_asset_files_exist(self):
 		public_js_dir = Path(__file__).resolve().parents[1] / "public" / "js"
 
+		self.assertTrue((public_js_dir / "scan_utils.js").exists())
 		self.assertTrue((public_js_dir / "scan_dialog.js").exists())
 		self.assertTrue((public_js_dir / "asn_module.js").exists())
 
@@ -30,10 +32,8 @@ class TestHooks(FrappeTestCase):
 	@patch("asn_module.setup.setup_scr_fields")
 	@patch("asn_module.setup.setup_pr_fields")
 	@patch("asn_module.setup.create_notifications")
-	@patch("asn_module.setup.register_actions")
-	def test_after_install_sets_up_fields_notifications_and_actions(
+	def test_after_install_sets_up_fields_and_notifications(
 		self,
-		register_actions,
 		create_notifications,
 		setup_pr_fields,
 		setup_scr_fields,
@@ -44,7 +44,6 @@ class TestHooks(FrappeTestCase):
 		setup_scr_fields.side_effect = lambda: call_order.append("scr")
 		setup_pi_fields.side_effect = lambda: call_order.append("pi")
 		create_notifications.side_effect = lambda: call_order.append("notif")
-		register_actions.side_effect = lambda: call_order.append("actions")
 
 		setup_module.after_install()
 
@@ -52,8 +51,7 @@ class TestHooks(FrappeTestCase):
 		setup_scr_fields.assert_called_once_with()
 		setup_pi_fields.assert_called_once_with()
 		create_notifications.assert_called_once_with()
-		register_actions.assert_called_once_with()
-		self.assertEqual(call_order, ["pr", "scr", "pi", "notif", "actions"])
+		self.assertEqual(call_order, ["pr", "scr", "pi", "notif"])
 
 	def test_purchase_receipt_custom_fields_define_asn_link_and_item_mapping(self):
 		with patch("asn_module.custom_fields.purchase_receipt.create_custom_fields") as create_custom_fields:
@@ -70,6 +68,7 @@ class TestHooks(FrappeTestCase):
 		post_sync = patches.split("[post_model_sync]", 1)[1]
 
 		self.assertIn("asn_module.patches.remove_item_max_stock_field", post_sync)
+		self.assertIn("asn_module.patches.retire_qr_machinery", post_sync)
 		self.assertNotIn("asn_module.patches.create_item_max_stock_field", post_sync)
 
 	def test_subcontracting_receipt_custom_fields_define_asn_link(self):

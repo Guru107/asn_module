@@ -9,7 +9,6 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 )
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
-from asn_module.setup_actions import register_actions
 from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
 from asn_module.utils.test_setup import before_tests
 
@@ -36,7 +35,6 @@ class TestMaterialAsnScanWhenGatePassModeIsOff(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
-		register_actions()
 		ensure_integration_user()
 
 	def test_scanning_a_material_asn_twice_opens_the_same_draft_purchase_receipt(self):

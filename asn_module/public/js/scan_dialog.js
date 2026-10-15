@@ -40,45 +40,10 @@ asn_module.ScanDialog = class ScanDialog {
 		}, 100);
 	}
 
-	parse_scan_input(value) {
-		const input = (value || "").trim();
-		if (!input) {
-			return { error: __("Please scan or paste a scan code or dispatch URL.") };
-		}
-
-		try {
-			const parsed = new URL(input, window.location.origin);
-			const code_param = parsed.searchParams.get("code");
-			if (code_param) {
-				return { code: decodeURIComponent(code_param).trim() };
-			}
-
-			if (parsed.pathname && parsed.pathname.startsWith("/files/")) {
-				return {
-					error: __(
-						"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or URL."
-					),
-				};
-			}
-
-			if (/^https?:\/\//i.test(input)) {
-				return {
-					error: __(
-						"Scanned URL is missing the code query parameter (expected ...dispatch?code=...)."
-					),
-				};
-			}
-		} catch (e) {
-			// Not a URL. Treat as raw scan code.
-		}
-
-		return { code: input.replace(/\s/g, "") };
-	}
-
 	process_scan(value) {
 		if (this.is_processing || !value || !value.trim()) return;
 
-		const parsed = this.parse_scan_input(value);
+		const parsed = asn_module.parse_scan_input(value);
 		if (parsed.error) {
 			frappe.show_alert(
 				{

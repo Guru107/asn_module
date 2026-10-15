@@ -1,12 +1,10 @@
-from copy import deepcopy
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.commands import verify_qr_action_registry, verify_scan_code_registry
+from asn_module.commands import verify_scan_code_registry
 from asn_module.qr_engine.scan_codes import _random_scan_code_value
-from asn_module.setup_actions import register_actions
 
 
 class TestVerifyScanCodeRegistry(FrappeTestCase):
@@ -64,45 +62,3 @@ class TestVerifyScanCodeRegistry(FrappeTestCase):
 			self.assertRaises(frappe.PermissionError),
 		):
 			verify_scan_code_registry()
-
-
-class TestVerifyQrActionRegistry(FrappeTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		register_actions()
-
-	def test_all_canonical_actions_present_returns_ok(self):
-		result = verify_qr_action_registry()
-		self.assertTrue(result["ok"])
-		self.assertEqual(result["missing"], [])
-		self.assertEqual(result["mismatched"], [])
-
-	def test_missing_action_detected(self):
-		reg = frappe.get_doc("QR Action Registry")
-		saved_actions = list(reg.actions)
-		reg.actions = [row for row in saved_actions if row.action_key != "confirm_putaway"]
-		reg.save(ignore_permissions=True)
-		try:
-			result = verify_qr_action_registry()
-			self.assertFalse(result["ok"])
-			self.assertIn("confirm_putaway", result["missing"])
-		finally:
-			reg.actions = saved_actions
-			reg.save(ignore_permissions=True)
-
-	def test_mismatched_handler_detected(self):
-		reg = frappe.get_doc("QR Action Registry")
-		saved_actions = deepcopy(reg.actions)
-		for row in reg.actions:
-			if row.action_key == "confirm_putaway":
-				row.handler_method = "wrong.handler.path"
-				break
-		reg.save(ignore_permissions=True)
-		try:
-			result = verify_qr_action_registry()
-			self.assertFalse(result["ok"])
-			self.assertTrue(any(m["action_key"] == "confirm_putaway" for m in result["mismatched"]))
-		finally:
-			reg.actions = saved_actions
-			reg.save(ignore_permissions=True)

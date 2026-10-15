@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, now_datetime
+from frappe.utils import cint
 
 from asn_module.qr_engine.scan_codes import (
 	RESCAN_SAFE_ACTIONS,
@@ -9,6 +9,7 @@ from asn_module.qr_engine.scan_codes import (
 	record_successful_scan,
 	validate_scan_code_row,
 )
+from asn_module.setup_actions import get_action
 
 
 class ActionNotFoundError(frappe.ValidationError):
@@ -24,23 +25,10 @@ class ScanCodeNotFoundError(frappe.ValidationError):
 
 
 def _resolve_action(action_key: str) -> dict:
-	registry = frappe.get_single("QR Action Registry")
-	action = registry.get_action(action_key)
+	action = get_action(action_key)
 	if not action:
-		# Self-heal: re-apply canonical action registry when singleton rows are stale.
-		from asn_module.setup_actions import register_actions
-
-		register_actions()
-		registry = frappe.get_single("QR Action Registry")
-		action = registry.get_action(action_key)
-		if not action:
-			raise ActionNotFoundError(f"Unknown QR action: {action_key}")
-
-	return {
-		"handler": action["handler_method"],
-		"source_doctype": action["source_doctype"],
-		"allowed_roles": action["allowed_roles"],
-	}
+		raise ActionNotFoundError(f"Unknown QR action: {action_key}")
+	return action
 
 
 def _check_permission(allowed_roles: list[str]) -> None:
@@ -82,7 +70,8 @@ def _get_failure_log_identity(source_doctype: str | None, source_name: str | Non
 	except Exception:
 		pass
 
-	return "DocType", "QR Action Registry"
+	user = frappe.session.user or "Administrator"
+	return "User", user
 
 
 def _log_scan(
@@ -158,21 +147,6 @@ def _latest_success_document(
 	return None
 
 
-def _draft_purchase_receipt_result(asn_name: str) -> dict | None:
-	if not asn_name or not frappe.db.has_column("Purchase Receipt", "asn"):
-		return None
-	name = frappe.db.get_value("Purchase Receipt", {"asn": asn_name, "docstatus": 0}, "name")
-	if not name:
-		return None
-	doc = frappe.get_doc("Purchase Receipt", name)
-	return {
-		"doctype": doc.doctype,
-		"name": doc.name,
-		"url": doc.get_url(),
-		"message": _("Existing {0} {1} opened").format(doc.doctype, doc.name),
-	}
-
-
 def _record_reopened_scan(scan_doc, action_key, source_doctype, source_name, device_info, result) -> None:
 	record_successful_scan(scan_doc.name, action_key)
 	_log_scan(
@@ -195,8 +169,6 @@ def _is_cancelled(doc) -> bool:
 
 def _can_open_existing_result(scan_doc: frappe.model.document.Document, action_key: str) -> bool:
 	if scan_doc.status != "Used" or action_key in RESCAN_SAFE_ACTIONS:
-		return False
-	if scan_doc.expires_on and get_datetime(scan_doc.expires_on) < now_datetime():
 		return False
 	return True
 
@@ -223,8 +195,8 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 	normalized = normalize_scan_code(raw_input)
 
 	action_key = "unknown"
-	source_doctype = "DocType"
-	source_name = "QR Action Registry"
+	source_doctype = None
+	source_name = None
 	scan_code_name = None
 
 	try:
@@ -246,25 +218,11 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		_validate_source_doctype(action["source_doctype"], source_doctype)
 		_check_permission(action["allowed_roles"])
 
-		if _can_open_existing_result(scan_doc, action_key):
-			# A draft Purchase Receipt already on the notice wins over a Gate Pass,
-			# including when Gate Pass Mode was turned on after the receipt existed.
-			if source_doctype == "ASN":
-				draft_receipt = _draft_purchase_receipt_result(source_name)
-				if draft_receipt:
-					_record_reopened_scan(
-						scan_doc,
-						action_key,
-						source_doctype,
-						source_name,
-						device_info,
-						draft_receipt,
-					)
-					return {
-						"success": True,
-						"action": action_key,
-						**draft_receipt,
-					}
+		if action["source_doctype"] == "ASN":
+			# The ASN handler reopens its own draft. A Used code is not rejected here.
+			if scan_doc.status != "Used":
+				validate_scan_code_row(scan_doc, action_key)
+		elif _can_open_existing_result(scan_doc, action_key):
 			logged = _latest_success_document(
 				action_key,
 				source_doctype,
@@ -291,11 +249,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 					"action": action_key,
 					**existing_result,
 				}
-			# Only an ASN scan may start a new draft after its previous result was cancelled.
-			# Other Used codes, including Subcontracting Order codes, stay rejected.
-			allow_new_asn_draft = source_doctype == "ASN" and logged is not None and _is_cancelled(logged)
-			if not allow_new_asn_draft:
-				validate_scan_code_row(scan_doc, action_key)
+			validate_scan_code_row(scan_doc, action_key)
 		else:
 			validate_scan_code_row(scan_doc, action_key)
 

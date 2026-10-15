@@ -27,6 +27,7 @@ required_apps = ["erpnext"]
 # include js, css files in header of desk.html
 # app_include_css = "/assets/asn_module/css/asn_module.css"
 app_include_js = [
+	"/assets/asn_module/js/scan_utils.js",
 	"/assets/asn_module/js/scan_dialog.js",
 	"/assets/asn_module/js/asn_module.js",
 ]

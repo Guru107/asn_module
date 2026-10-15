@@ -15,59 +15,21 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 	let scan_code_length = 16;
 	let scan_timeout = null;
 
-	frappe.call({
-		method: "asn_module.qr_engine.scan_codes.get_scan_code_length",
-		callback(r) {
-			const value = Number(r.message);
-			if (Number.isInteger(value) && value > 0) {
-				scan_code_length = value;
-			}
-		},
-		error() {
-			// Keep default fallback when the config call fails.
-			scan_code_length = 16;
-		},
+	asn_module.load_scan_code_length((length) => {
+		scan_code_length = length;
 	});
-
-	function parse_scan_input(value) {
-		const input = (value || "").trim();
-		if (!input) {
-			return { error: __("Please scan or paste a scan code or dispatch URL.") };
-		}
-
-		try {
-			const parsed = new URL(input, window.location.origin);
-			const code_param = parsed.searchParams.get("code");
-			if (code_param) {
-				return { code: decodeURIComponent(code_param).trim() };
-			}
-
-			if (parsed.pathname && parsed.pathname.startsWith("/files/")) {
-				return {
-					error: __(
-						"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or dispatch URL."
-					),
-				};
-			}
-
-			if (/^https?:\/\//i.test(input)) {
-				return {
-					error: __(
-						"Scanned URL is missing the code query parameter. Expected ...dispatch?code=..."
-					),
-				};
-			}
-		} catch (e) {
-			// Not a URL. Treat as raw scan code.
-		}
-
-		return { code: input.replace(/\s/g, "") };
-	}
 
 	function process_scan(value) {
 		if (!value || !value.trim()) return;
 
-		const parsed = parse_scan_input(value);
+		const parsed = asn_module.parse_scan_input(value, {
+			file: __(
+				"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or dispatch URL."
+			),
+			missing_code: __(
+				"Scanned URL is missing the code query parameter. Expected ...dispatch?code=..."
+			),
+		});
 		if (parsed.error) {
 			$error.text(parsed.error).show();
 			setTimeout(() => $error.fadeOut(), 5000);

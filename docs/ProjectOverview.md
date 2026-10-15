@@ -56,8 +56,7 @@ HYPOTHESIS_PROFILE=local bench --site frappe16.localhost run-tests \
 # Full property suite: run each module explicitly
 for m in \
   asn_module.property_tests.test_asn_new_services_properties \
-  asn_module.property_tests.test_scan_code_properties \
-  asn_module.property_tests.test_token_properties; do
+  asn_module.property_tests.test_scan_code_properties; do
   HYPOTHESIS_PROFILE=local bench --site frappe16.localhost run-tests --module "$m" --lightmode
 done
 

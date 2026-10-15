@@ -8,7 +8,6 @@ from frappe.tests.utils import FrappeTestCase
 
 from asn_module.qr_engine.dispatch import ScanCodeNotFoundError, dispatch
 from asn_module.qr_engine.scan_codes import SCAN_CODE_ALPHABET, SCAN_CODE_LENGTH
-from asn_module.setup_actions import register_actions
 from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
 from asn_module.utils.test_setup import before_tests
 
@@ -18,7 +17,6 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 	def setUpClass(cls):
 		before_tests()
 		super().setUpClass()
-		register_actions()
 		ensure_integration_user()
 
 	def _create_scan_code(self, action_key, source_doctype, source_name):
