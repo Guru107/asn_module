@@ -779,11 +779,13 @@ def create_job_asn_for_supplier(
 	subcontracting_order: str,
 	header: dict,
 	lines: list[dict] | None = None,
+	asn_name: str | None = None,
 ):
 	"""Raise a Job ASN for one open Subcontracting Order.
 
 	The single-ASN page calls this when the form posts ``subcontracting_order``.
 	Each line names that order's finished good. Shipped Qty is the line qty.
+	``asn_name`` is this supplier's unsubmitted draft; that draft is updated.
 	"""
 	order_name = (subcontracting_order or "").strip()
 	if not order_name:
@@ -824,7 +826,13 @@ def create_job_asn_for_supplier(
 			}
 		)
 
-	return insert_and_submit_asn(supplier=supplier, header=header, items=items, submit=False)
+	return insert_and_submit_asn(
+		supplier=supplier,
+		header=header,
+		items=items,
+		asn_name=asn_name,
+		submit=False,
+	)
 
 
 def insert_and_submit_asn(

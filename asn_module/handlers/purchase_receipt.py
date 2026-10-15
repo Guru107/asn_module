@@ -334,11 +334,22 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
 	_set_if_present(gate_pass, "asn", asn.name)
 
-	items_field = gate_pass.meta.get_field("items")
-	if items_field and items_field.fieldtype == "Table":
+	invoice_no = (asn.supplier_invoice_no or "").strip()
+	invoices_field = gate_pass.meta.get_field("gate_pass_invoices")
+	if invoices_field and invoices_field.fieldtype == "Table" and invoice_no:
+		invoice_fields = {df.fieldname for df in frappe.get_meta(invoices_field.options).fields}
+		invoice_row = {}
+		if "supplier_delivery_note" in invoice_fields:
+			invoice_row["supplier_delivery_note"] = invoice_no
+		if "invoice_date" in invoice_fields:
+			invoice_row["invoice_date"] = asn.supplier_invoice_date
+		gate_pass.append("gate_pass_invoices", invoice_row)
+
+	for items_fieldname, items_field in _gate_pass_line_tables(gate_pass):
 		child_fields = {df.fieldname for df in frappe.get_meta(items_field.options).fields}
 		for asn_item in asn.items:
 			order_line = order_lines.get(asn_item.purchase_order_item)
+			shipped_qty = flt(asn_item.qty)
 			row = {}
 			if "item_code" in child_fields:
 				row["item_code"] = asn_item.item_code
@@ -348,16 +359,23 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 				row["rate"] = asn_item.rate
 			if "purchase_order_item" in child_fields:
 				row["purchase_order_item"] = asn_item.purchase_order_item
+			if "order_item_name" in child_fields:
+				row["order_item_name"] = asn_item.purchase_order_item
+			if "supplier_delivery_note" in child_fields and invoice_no:
+				row["supplier_delivery_note"] = invoice_no
 			if "receive_qty" in child_fields:
-				row["receive_qty"] = flt(asn_item.qty)
+				row["receive_qty"] = shipped_qty
+			if "received_qty" in child_fields:
+				row["received_qty"] = shipped_qty
 			if order_line and "qty" in child_fields:
 				row["qty"] = flt(order_line.qty)
+			if order_line and "ordered_qty" in child_fields:
+				row["ordered_qty"] = flt(order_line.qty)
 			if order_line and "pending_qty" in child_fields:
 				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
-			gate_pass.append("items", row)
+			gate_pass.append(items_fieldname, row)
 
-	gate_pass.flags.ignore_validate = True
-	gate_pass.insert(ignore_permissions=True, ignore_mandatory=True)
+	gate_pass.insert(ignore_permissions=True)
 
 	return {
 		"doctype": "Gate Pass",
@@ -365,6 +383,20 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 		"url": f"/app/gate-pass/{gate_pass.name}",
 		"message": _("Gate Pass {0} created from ASN {1}").format(gate_pass.name, asn.name),
 	}
+
+
+def _gate_pass_line_tables(gate_pass) -> list[tuple[str, object]]:
+	"""Child tables that hold material lines.
+
+	Sites that use the Gate Entry app store lines on ``gate_pass_table``. The
+	scan fixture uses ``items``. A site can have both, and each one is filled.
+	"""
+	tables = []
+	for fieldname in ("gate_pass_table", "items"):
+		field = gate_pass.meta.get_field(fieldname)
+		if field and field.fieldtype == "Table":
+			tables.append((fieldname, field))
+	return tables
 
 
 def _is_job_asn(asn) -> bool:
@@ -440,6 +472,11 @@ def _apply_shipped_qty_to_subcontracting_receipt(receipt, asn) -> None:
 			continue
 		receipt_item.qty = flt(asn_item.qty)
 		receipt_item.received_qty = flt(asn_item.qty)
+		# Shipped Qty is the finished-good quantity on the receipt. ERPNext may already
+		# have split a process-loss percentage out of the mapped qty; that split would
+		# no longer match the quantity the supplier shipped.
+		if hasattr(receipt_item, "process_loss_qty"):
+			receipt_item.process_loss_qty = 0
 		receipt_item.amount = flt(receipt_item.qty) * flt(receipt_item.rate)
 
 

@@ -55,6 +55,7 @@ class ASN(WebsiteGenerator):
 		super().validate()
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
+		self._validate_subcontracting_lines()
 		self._warn_stock_cap()
 
 	def before_submit(self):
@@ -321,6 +322,54 @@ class ASN(WebsiteGenerator):
 				_("Rows {0}: Shipped qty {1} exceeds remaining PO qty {2}").format(
 					row_numbers,
 					current_qty,
+					remaining_qty,
+				)
+			)
+
+	def _validate_subcontracting_lines(self):
+		"""One row per Subcontracting Order line, and Shipped Qty within what is still open.
+
+		A receipt maps each order line once. Two notice rows for the same line would
+		keep only the first quantity. Remaining qty is the order line's qty minus
+		what that line has already received.
+		"""
+		rows_by_line: dict[str, list] = {}
+		for row in self.items or []:
+			line_name = (row.subcontracting_order_item or "").strip()
+			if not line_name:
+				continue
+			rows_by_line.setdefault(line_name, []).append(row)
+
+		for line_name, rows in rows_by_line.items():
+			if len(rows) < 2:
+				continue
+			row_numbers = ", ".join(str(row.idx) for row in rows)
+			frappe.throw(
+				_("Rows {0}: duplicate Subcontracting Order line {1} is not allowed.").format(
+					row_numbers,
+					line_name,
+				)
+			)
+
+		if not rows_by_line:
+			return
+
+		order_lines = frappe.get_all(
+			"Subcontracting Order Item",
+			filters={"name": ["in", list(rows_by_line)]},
+			fields=["name", "qty", "received_qty"],
+		)
+		remaining_by_line = {row.name: flt(row.qty) - flt(row.received_qty) for row in order_lines}
+		for line_name, rows in rows_by_line.items():
+			shipped_qty = sum(flt(row.qty) for row in rows)
+			remaining_qty = remaining_by_line.get(line_name, 0)
+			if shipped_qty <= remaining_qty:
+				continue
+			row_numbers = ", ".join(str(row.idx) for row in rows)
+			frappe.throw(
+				_("Rows {0}: Shipped qty {1} exceeds remaining Subcontracting Order qty {2}").format(
+					row_numbers,
+					shipped_qty,
 					remaining_qty,
 				)
 			)

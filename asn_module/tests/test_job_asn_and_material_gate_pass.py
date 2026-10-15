@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
+from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import cint, flt, today
@@ -246,6 +247,87 @@ class TestJobAsnPortal(FrappeTestCase):
 		self.assertEqual(asn.items[0].qty, 1)
 		self.assertFalse(result.incomplete)
 
+	def test_saving_the_posted_job_draft_again_updates_that_draft(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = subcontracting_order.items[0]
+		invoice_no = f"JOB-RESUME-{frappe.generate_hash(length=8)}"
+		first_form, first_request = self._posted_form(
+			{
+				"subcontracting_order": subcontracting_order.name,
+				"supplier_invoice_no": invoice_no,
+				"supplier_invoice_date": today(),
+				"vehicle_number": "MH12AB1234",
+				"supplier_invoice_amount": str(finished_good.rate),
+				"subcontracting_order_item": [finished_good.name],
+				"job_asn_qty": ["1"],
+			}
+		)
+		with first_form, first_request:
+			created = asn_new._create_single_asn(subcontracting_order.supplier)
+
+		second_form, second_request = self._posted_form(
+			{
+				"asn_name": created.asn_names[0],
+				"subcontracting_order": subcontracting_order.name,
+				"supplier_invoice_no": invoice_no,
+				"supplier_invoice_date": today(),
+				"vehicle_number": "MH01CD5678",
+				"supplier_invoice_amount": str(finished_good.rate),
+				"subcontracting_order_item": [finished_good.name],
+				"job_asn_qty": ["1"],
+			}
+		)
+		with second_form, second_request:
+			updated = asn_new._create_single_asn(subcontracting_order.supplier)
+
+		self.assertEqual(updated.asn_names, created.asn_names)
+		asn = frappe.get_doc("ASN", created.asn_names[0])
+		self.assertEqual(asn.vehicle_number, "MH01CD5678")
+		self.assertEqual(
+			frappe.db.count("ASN", {"supplier": subcontracting_order.supplier, "supplier_invoice_no": invoice_no}),
+			1,
+		)
+
+	def test_shipped_qty_above_the_remaining_finished_good_qty_is_refused(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = subcontracting_order.items[0]
+		remaining = flt(finished_good.qty) - flt(finished_good.received_qty)
+		with self.assertRaises(frappe.ValidationError) as raised:
+			create_job_asn_for_supplier(
+				supplier=subcontracting_order.supplier,
+				subcontracting_order=subcontracting_order.name,
+				header={
+					"supplier_invoice_no": f"JOB-OVER-{frappe.generate_hash(length=8)}",
+					"supplier_invoice_date": today(),
+					"vehicle_number": "MH12AB1234",
+					"supplier_invoice_amount": 1,
+				},
+				lines=[{"subcontracting_order_item": finished_good.name, "qty": remaining + 1}],
+			)
+
+		self.assertIn("remaining", str(raised.exception).lower())
+
+	def test_a_duplicate_subcontracting_order_line_is_refused(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = subcontracting_order.items[0]
+		with self.assertRaises(frappe.ValidationError) as raised:
+			create_job_asn_for_supplier(
+				supplier=subcontracting_order.supplier,
+				subcontracting_order=subcontracting_order.name,
+				header={
+					"supplier_invoice_no": f"JOB-DUP-{frappe.generate_hash(length=8)}",
+					"supplier_invoice_date": today(),
+					"vehicle_number": "MH12AB1234",
+					"supplier_invoice_amount": 1,
+				},
+				lines=[
+					{"subcontracting_order_item": finished_good.name, "qty": 1},
+					{"subcontracting_order_item": finished_good.name, "qty": 1},
+				],
+			)
+
+		self.assertIn("duplicate", str(raised.exception).lower())
+
 
 class _PostedForm(dict):
 	def getlist(self, fieldname):
@@ -264,29 +346,33 @@ class TestJobAsnScan(FrappeTestCase):
 		ensure_integration_user()
 
 	def test_scanning_a_job_asn_opens_a_draft_subcontracting_receipt_for_the_shipped_qty(self):
-		self.assertEqual(cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode")), 0)
-		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
-		finished_good = subcontracting_order.items[0]
-		shipped_qty = 1
-		asn = create_job_asn_for_supplier(
-			supplier=subcontracting_order.supplier,
-			subcontracting_order=subcontracting_order.name,
-			header={
-				"supplier_invoice_no": f"JOB-SCAN-{frappe.generate_hash(length=8)}",
-				"supplier_invoice_date": today(),
-				"vehicle_number": "MH12AB1234",
-				"supplier_invoice_amount": shipped_qty * finished_good.rate,
-			},
-			lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
-		)
-		with real_asn_attachment_context():
-			asn.submit()
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		try:
+			subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+			finished_good = subcontracting_order.items[0]
+			shipped_qty = 1
+			asn = create_job_asn_for_supplier(
+				supplier=subcontracting_order.supplier,
+				subcontracting_order=subcontracting_order.name,
+				header={
+					"supplier_invoice_no": f"JOB-SCAN-{frappe.generate_hash(length=8)}",
+					"supplier_invoice_date": today(),
+					"vehicle_number": "MH12AB1234",
+					"supplier_invoice_amount": shipped_qty * finished_good.rate,
+				},
+				lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
+			)
+			with real_asn_attachment_context():
+				asn.submit()
 
-		code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
-		with integration_user_context(), patch_subcontracting_incoming_rate(5):
-			first = dispatch(code=code, device_info="job-asn")
-			reopened = create_from_asn("ASN", asn.name, {})
-			second = dispatch(code=code, device_info="job-asn-again")
+			code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+			with integration_user_context(), patch_subcontracting_incoming_rate(5):
+				first = dispatch(code=code, device_info="job-asn")
+				reopened = create_from_asn("ASN", asn.name, {})
+				second = dispatch(code=code, device_info="job-asn-again")
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
 
 		self.assertEqual(first["doctype"], "Subcontracting Receipt")
 		self.assertEqual(reopened["name"], first["name"])
@@ -609,6 +695,27 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(result["doctype"], "Subcontracting Receipt")
 		self.assertEqual(frappe.db.count("Gate Pass", {"asn": asn.name}), 0)
 
+	def test_a_gate_pass_draft_runs_gate_pass_validation(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		controller = type(frappe.new_doc("Gate Pass"))
+
+		def validate(doc, *args, **kwargs):
+			frappe.throw(_("refused by gate pass rules"))
+
+		try:
+			with integration_user_context():
+				_purchase_order, asn = self._submitted_material_asn()
+				with (
+					patch.object(controller, "validate", validate),
+					self.assertRaises(frappe.ValidationError) as raised,
+				):
+					create_from_asn("ASN", asn.name, {})
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertIn("refused by gate pass rules", str(raised.exception).lower())
+
 	def test_a_second_create_reopens_the_draft_gate_pass(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
 		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
@@ -695,6 +802,28 @@ class TestReceiptHelpers(FrappeTestCase):
 		self.assertEqual(receipt.items[1].qty, 2)
 		self.assertEqual(receipt.items[1].received_qty, 2)
 		self.assertEqual(receipt.items[1].amount, 8)
+
+	def test_shipped_qty_clears_process_loss_so_the_receipt_line_is_the_shipped_qty(self):
+		asn = SimpleNamespace(items=[SimpleNamespace(subcontracting_order_item="FG-1", qty=2)])
+		receipt = SimpleNamespace(
+			items=[
+				SimpleNamespace(
+					subcontracting_order_item="FG-1",
+					qty=1.5,
+					received_qty=1.5,
+					rate=4,
+					amount=6,
+					process_loss_qty=0.5,
+				)
+			]
+		)
+
+		_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
+
+		self.assertEqual(receipt.items[0].qty, 2)
+		self.assertEqual(receipt.items[0].received_qty, 2)
+		self.assertEqual(receipt.items[0].process_loss_qty, 0)
+		self.assertEqual(receipt.items[0].amount, 8)
 
 	def test_a_material_notice_must_name_one_purchase_order_and_its_lines(self):
 		with self.assertRaises(frappe.ValidationError):
