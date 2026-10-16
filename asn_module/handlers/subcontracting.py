@@ -1,8 +1,11 @@
 import frappe
 from frappe import _
 
-from asn_module.handlers.utils import attach_qr_to_doc
+from asn_module.handlers.utils import attach_qr_to_doc, attach_scan_codes_to_doc
 from asn_module.qr_engine.generate import generate_qr
+from asn_module.qr_engine.scan_codes import void_scan_codes
+
+SUBCONTRACTING_RECEIPT_PR_ACTION = "create_purchase_receipt_from_subcontracting_receipt"
 
 
 def create_dispatch_from_subcontracting_order(source_doctype: str, source_name: str, payload: dict) -> dict:
@@ -54,6 +57,63 @@ def create_receipt_from_subcontracting_order(source_doctype: str, source_name: s
 		"url": f"/app/subcontracting-receipt/{scr.name}",
 		"message": _("Subcontracting Receipt {0} created from {1}").format(scr.name, source_name),
 	}
+
+
+def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Create a draft Purchase Receipt from a submitted Subcontracting Receipt.
+
+	The finished goods the supplier returned are received into stock through
+	a Purchase Receipt; the invoice for that receipt is raised from it in turn,
+	never from the Subcontracting Receipt itself.
+	"""
+	del source_doctype, payload
+
+	scr = frappe.get_doc("Subcontracting Receipt", source_name)
+	if scr.docstatus != 1:
+		frappe.throw(_("Subcontracting Receipt {0} must be submitted").format(source_name))
+	if getattr(scr, "is_return", 0):
+		frappe.throw(_("A subcontracting return does not create a Purchase Receipt."))
+
+	existing = frappe.db.get_value(
+		"Purchase Receipt",
+		{"subcontracting_receipt": scr.name, "docstatus": 0},
+		"name",
+	)
+	if existing:
+		return {
+			"doctype": "Purchase Receipt",
+			"name": existing,
+			"url": f"/app/purchase-receipt/{existing}",
+			"message": _("Existing draft Purchase Receipt {0} opened").format(existing),
+		}
+
+	from erpnext.subcontracting.doctype.subcontracting_receipt.subcontracting_receipt import (
+		make_purchase_receipt,
+	)
+
+	pr = make_purchase_receipt(scr.name)
+	pr.insert(ignore_permissions=True)
+
+	return {
+		"doctype": "Purchase Receipt",
+		"name": pr.name,
+		"url": f"/app/purchase-receipt/{pr.name}",
+		"message": _("Purchase Receipt {0} created from Subcontracting Receipt {1}").format(
+			pr.name, scr.name
+		),
+	}
+
+
+def on_subcontracting_receipt_submit(doc, method=None):
+	"""Attach the Purchase Receipt scan code when a Subcontracting Receipt is submitted."""
+	del method
+	attach_scan_codes_to_doc(doc, SUBCONTRACTING_RECEIPT_PR_ACTION, "subcontracting-receipt-pr")
+
+
+def on_subcontracting_receipt_cancel(doc, method=None):
+	"""Void the receipt scan code so a cancelled receipt cannot be scanned."""
+	del method
+	void_scan_codes(SUBCONTRACTING_RECEIPT_PR_ACTION, "Subcontracting Receipt", doc.name)
 
 
 def on_subcontracting_order_submit(doc, method):

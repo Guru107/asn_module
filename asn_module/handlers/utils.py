@@ -18,6 +18,21 @@ def attach_qr_to_doc(doc, qr_result, prefix):
 	).save(ignore_permissions=True)
 
 
+def attach_scan_codes_to_doc(doc, action: str, prefix: str) -> None:
+	"""Attach the QR and barcode that create this document's successor.
+
+	Both images carry one scan code: ``get_or_create_scan_code`` shares a
+	registry row per (action, source) pair, so a QR scan and a barcode scan
+	of the same printed document dispatch the same action.
+	"""
+	from asn_module.qr_engine.generate import generate_barcode, generate_qr
+
+	qr_result = generate_qr(action=action, source_doctype=doc.doctype, source_name=doc.name)
+	attach_qr_to_doc(doc, qr_result, f"{prefix}-qr")
+	barcode_result = generate_barcode(action=action, source_doctype=doc.doctype, source_name=doc.name)
+	attach_qr_to_doc(doc, barcode_result, f"{prefix}-barcode")
+
+
 def find_pr_row_for_qi(qi, purchase_receipt):
 	"""Resolve the Purchase Receipt row a Quality Inspection refers to.
 

@@ -5,7 +5,8 @@ from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_r
 from frappe import _
 from frappe.utils import cint, flt
 
-from asn_module.handlers.utils import attach_qr_to_doc
+from asn_module.handlers.utils import attach_qr_to_doc, attach_scan_codes_to_doc
+from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
 from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
 from asn_module.stock_cap.messages import throw_stock_cap_exceeded
@@ -473,9 +474,12 @@ def _job_line_table(gate_pass) -> tuple[str | None, set[str]]:
 	return None, set()
 
 
+GATE_PASS_RECEIPT_ACTION = "create_receipt_from_gate_pass"
+
+
 @frappe.whitelist()
 def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
-	"""Open the draft receipt for a submitted Gate Pass. The scan does not call this.
+	"""Open the draft receipt for a submitted Gate Pass.
 
 	A Material Gate In becomes a Purchase Receipt that still carries the ASN.
 	A Job Gate In becomes a Subcontracting Receipt linked to the ASN.
@@ -491,6 +495,35 @@ def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 	if _is_job_gate_pass(gate_pass):
 		return _create_subcontracting_receipt_from_gate_pass(gate_pass)
 	return _create_purchase_receipt_from_gate_pass(gate_pass)
+
+
+def create_receipt_from_gate_pass_scan(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Dispatch adapter: scan the Gate Pass's own code to open its receipt.
+
+	The gate scans the ASN barcode to raise the draft Gate Pass; this action
+	is the next link, run from the code attached to the Gate Pass on submit.
+	"""
+	del source_doctype, payload
+	return create_receipt_from_gate_pass(source_name)
+
+
+def on_gate_pass_submit(doc, method=None):
+	"""Attach the receipt scan code when a Gate Pass is submitted.
+
+	Only a Gate Pass linked to an ASN gets a code: the receipt action refuses
+	the others, so their codes would never dispatch. Drafts carry no code; the
+	code is attached when the pass is submitted and printed at the gate.
+	"""
+	del method
+	if not (getattr(doc, "asn", None) or "").strip():
+		return
+	attach_scan_codes_to_doc(doc, GATE_PASS_RECEIPT_ACTION, "gate-pass-receipt")
+
+
+def on_gate_pass_cancel(doc, method=None):
+	"""Void the Gate Pass's scan code so a cancelled pass cannot be scanned."""
+	del method
+	void_scan_codes(GATE_PASS_RECEIPT_ACTION, "Gate Pass", doc.name)
 
 
 def _is_job_gate_pass(gate_pass) -> bool:
@@ -862,12 +895,17 @@ def on_purchase_receipt_trash(doc, method):
 def on_purchase_receipt_submit(doc, method):
 	"""Update ASN receipt tracking and attach follow-up QR codes on submit.
 
+	Every non-return receipt carries its next step's code, including a
+	receipt raised from a Subcontracting Receipt, which has no ASN.
+
 	A return does not record against the ASN. The supplier's shipment already arrived;
 	sending some of it back is its own transaction and leaves ``received_qty`` as it is.
 	"""
 	del method
 	if getattr(doc, "is_return", 0):
 		return
+
+	_attach_followup_codes(doc)
 
 	if doc.asn:
 		mapped_names, _updated = _record_linked_received_qty(doc, sign=1)
@@ -902,6 +940,14 @@ def on_purchase_receipt_submit(doc, method):
 			ref_name=doc.name,
 		)
 
+
+def _attach_followup_codes(doc) -> None:
+	"""Attach the codes that create this receipt's follow-up documents.
+
+	Runs before the ASN bookkeeping so an unlinked receipt (one born from a
+	Subcontracting Receipt) is not skipped. The putaway code is attached only
+	when an item does not call for inspection first.
+	"""
 	from asn_module.qr_engine.generate import generate_qr
 
 	purchase_invoice_qr = generate_qr(

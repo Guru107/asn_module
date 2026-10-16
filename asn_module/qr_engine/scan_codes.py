@@ -135,6 +135,24 @@ def record_successful_scan(doc_name: str, action_key: str) -> None:
 		frappe.db.set_value("Scan Code", doc_name, "status", "Used", update_modified=True)
 
 
+def void_scan_codes(action_key: str, source_doctype: str, source_name: str) -> None:
+	"""Mark every code for one (action, source) Voided so it cannot be scanned.
+
+	``validate_scan_code_row`` refuses any status other than Active, so a
+	voided code fails the scan with a clear message and the reopen path is
+	closed as well. Codes are looked up row by row: ``db.set_value`` with a
+	primary key stays supported across the Frappe versions this app runs on.
+	"""
+	filters = {
+		"action_key": (action_key or "").strip(),
+		"source_doctype": (source_doctype or "").strip(),
+		"source_name": (source_name or "").strip(),
+		"status": ("in", ("Active", "Used")),
+	}
+	for name in frappe.get_all("Scan Code", filters=filters, pluck="name"):
+		frappe.db.set_value("Scan Code", name, "status", "Voided", update_modified=True)
+
+
 def verify_registry_row_points_to_existing_source(doc: frappe.model.document.Document) -> bool:
 	"""Return True if ``source_doctype`` / ``source_name`` resolves to an existing document."""
 	try:

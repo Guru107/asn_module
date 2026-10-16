@@ -27,8 +27,12 @@ A site-wide switch, off unless the site turns it on. It is read when the ASN bar
 _Avoid_: a per-ASN flag, a Gate Pass Type
 
 **Gate Pass**:
-The security record of the vehicle at the gate. In Gate Pass Mode the supplier-invoice barcode opens it as a draft, with the Purchase Order or Subcontracting Order as its reference. The Purchase Receipt or Subcontracting Receipt is created from the submitted Gate Pass, and a Purchase Receipt still leads to a Purchase Invoice.
+The security record of the vehicle at the gate. In Gate Pass Mode the supplier-invoice barcode opens it as a draft, with the Purchase Order or Subcontracting Order as its reference. Its own barcode, attached on submit, opens the receipt: a Purchase Receipt for Material, a Subcontracting Receipt for Job.
 _Avoid_: treating the scan as the receipt
+
+**Scan Chain**:
+The rule that every document in the flow carries the code that creates its successor: the ASN opens the Gate Pass, the Gate Pass opens its receipt, a Subcontracting Receipt opens its Purchase Receipt, and every Purchase Receipt opens a Purchase Invoice. A Purchase Invoice is raised from a Purchase Receipt only, never from a Subcontracting Receipt.
+_Avoid_: manual Create buttons between scanned steps, billing a Subcontracting Receipt directly
 
 **Shipped Qty**:
 The quantity declared on an ASN Line, expressed in the Purchase Order line's purchase UOM.

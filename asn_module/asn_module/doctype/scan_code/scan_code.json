@@ -57,7 +57,7 @@
 			"fieldtype": "Select",
 			"in_list_view": 1,
 			"label": "Status",
-			"options": "Active\nUsed",
+			"options": "Active\nUsed\nVoided",
 			"default": "Active",
 			"reqd": 1,
 			"search_index": 1
