@@ -85,9 +85,27 @@ def get_open_purchase_orders_for_supplier(supplier: str) -> list[frappe._dict]:
 		filters={
 			"supplier": supplier,
 			"docstatus": 1,
+			"is_subcontracted": 0,
 			"status": ["in", ["To Receive", "To Receive and Bill"]],
 		},
 		fields=["name", "transaction_date", "schedule_date", "status"],
+		order_by="transaction_date desc",
+		limit_page_length=200,
+	)
+
+
+def get_open_subcontracting_orders_for_supplier(supplier: str) -> list[frappe._dict]:
+	if not supplier:
+		return []
+
+	return frappe.get_all(
+		"Subcontracting Order",
+		filters={
+			"supplier": supplier,
+			"docstatus": 1,
+			"status": ["not in", ["Completed", "Closed", "Cancelled"]],
+		},
+		fields=["name", "transaction_date", "status"],
 		order_by="transaction_date desc",
 		limit_page_length=200,
 	)

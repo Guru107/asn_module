@@ -307,3 +307,35 @@ class TestASNNewSearch(FrappeTestCase):
 			)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0]["value"], "ITEM-001")
+
+	def test_search_open_subcontracting_orders_returns_the_suppliers_open_order(self):
+		from asn_module.handlers.tests.test_subcontracting import TestSubcontractingHandlers
+
+		sco = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user",
+				return_value=sco.supplier,
+			),
+		):
+			rows = asn_new_search.search_open_subcontracting_orders(txt="")
+			closed = asn_new_search.search_open_subcontracting_orders(txt="missing")
+		self.assertIn(sco.name, [row["value"] for row in rows])
+		self.assertEqual(closed, [])
+		frappe.db.set_value("Subcontracting Order", sco.name, "status", "Closed")
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user",
+				return_value=sco.supplier,
+			),
+		):
+			after_close = asn_new_search.search_open_subcontracting_orders(txt=sco.name)
+		self.assertEqual(after_close, [])
