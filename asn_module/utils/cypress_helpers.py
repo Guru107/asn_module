@@ -107,9 +107,6 @@ def seed_scan_station_context():
 		real_asn_attachment_context,
 	)
 	from asn_module.qr_engine.scan_codes import get_or_create_scan_code
-	from asn_module.setup_actions import register_actions
-
-	register_actions()
 
 	po = create_purchase_order(qty=10)
 	asn = make_test_asn(

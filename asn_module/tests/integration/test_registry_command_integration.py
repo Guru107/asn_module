@@ -5,9 +5,8 @@ import secrets
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.commands import verify_qr_action_registry, verify_scan_code_registry
+from asn_module.commands import verify_scan_code_registry
 from asn_module.qr_engine.scan_codes import SCAN_CODE_ALPHABET, SCAN_CODE_LENGTH
-from asn_module.setup_actions import register_actions
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
 from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
 from asn_module.utils.test_setup import before_tests
@@ -15,34 +14,10 @@ from asn_module.utils.test_setup import before_tests
 
 class TestRegistryCommandIntegration(FrappeTestCase):
 	@classmethod
-	def _snapshot_registry_actions(cls) -> list[dict]:
-		reg = frappe.get_doc("QR Action Registry")
-		return [
-			{
-				"action_key": row.action_key,
-				"handler_method": row.handler_method,
-				"source_doctype": row.source_doctype,
-				"allowed_roles": row.allowed_roles,
-			}
-			for row in (reg.actions or [])
-		]
-
-	@classmethod
 	def setUpClass(cls):
 		before_tests()
 		super().setUpClass()
-		cls._registry_snapshot = cls._snapshot_registry_actions()
-		register_actions()
 		ensure_integration_user()
-
-	@classmethod
-	def tearDownClass(cls):
-		reg = frappe.get_doc("QR Action Registry")
-		reg.set("actions", [])
-		for row in cls._registry_snapshot:
-			reg.append("actions", row)
-		reg.save(ignore_permissions=True)
-		super().tearDownClass()
 
 	def test_verify_registry_ok_after_dispatch_flow(self):
 		# Rows from ``test_dispatch_rejects_source_doctype_mismatch`` (legacy fixed code or failed cleanups).
@@ -96,29 +71,3 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 		finally:
 			if orphan_name and frappe.db.exists("Scan Code", orphan_name):
 				frappe.delete_doc("Scan Code", orphan_name, force=True, ignore_permissions=True)
-
-	def test_verify_qr_action_registry_ok_when_canonical(self):
-		result = verify_qr_action_registry()
-		self.assertTrue(result["ok"])
-		self.assertEqual(result["missing"], [])
-		self.assertEqual(result["unexpected"], [])
-		self.assertEqual(result["mismatched"], [])
-
-	def test_verify_qr_action_registry_reports_mismatched_handler(self):
-		reg = frappe.get_doc("QR Action Registry")
-		for row in reg.actions:
-			if row.action_key != "create_purchase_invoice":
-				continue
-			row.handler_method = "asn_module.tests.fake_handler"
-			break
-		reg.save(ignore_permissions=True)
-		try:
-			result = verify_qr_action_registry()
-			self.assertFalse(result["ok"])
-			self.assertEqual(result["missing"], [])
-			self.assertEqual(result["unexpected"], [])
-			self.assertTrue(result["mismatched"])
-			self.assertEqual(result["mismatched"][0]["action_key"], "create_purchase_invoice")
-			self.assertIn("handler_method", result["mismatched"][0]["diffs"])
-		finally:
-			register_actions()

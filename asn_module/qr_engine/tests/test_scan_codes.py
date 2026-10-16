@@ -3,7 +3,6 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, today
 
 from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_ALPHABET,
@@ -183,20 +182,6 @@ class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 		doc = frappe.get_doc("Scan Code", name)
 		validate_scan_code_row(doc, "create_purchase_receipt")
 
-	def test_revoked_blocked(self):
-		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
-		frappe.db.set_value("Scan Code", name, "status", "Revoked", update_modified=False)
-		doc = frappe.get_doc("Scan Code", name)
-		with self.assertRaises(frappe.ValidationError):
-			validate_scan_code_row(doc, "create_purchase_receipt")
-
-	def test_expired_blocked(self):
-		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
-		frappe.db.set_value("Scan Code", name, "status", "Expired", update_modified=False)
-		doc = frappe.get_doc("Scan Code", name)
-		with self.assertRaises(frappe.ValidationError):
-			validate_scan_code_row(doc, "create_purchase_receipt")
-
 	def test_used_blocked(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
 		frappe.db.set_value("Scan Code", name, "status", "Used", update_modified=False)
@@ -209,13 +194,6 @@ class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 		frappe.db.set_value("Scan Code", name, "status", "Used", update_modified=False)
 		doc = frappe.get_doc("Scan Code", name)
 		validate_scan_code_row(doc, "confirm_putaway")
-
-	def test_expiry_date_in_past_blocked(self):
-		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
-		frappe.db.set_value("Scan Code", name, "expires_on", add_days(today(), -1), update_modified=False)
-		doc = frappe.get_doc("Scan Code", name)
-		with self.assertRaises(frappe.ValidationError):
-			validate_scan_code_row(doc, "create_purchase_receipt")
 
 	def test_unknown_status_blocked(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)

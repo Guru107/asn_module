@@ -14,7 +14,6 @@
 		"column_break_0",
 		"generated_on",
 		"generated_by",
-		"expires_on",
 		"last_scanned_on",
 		"scan_count"
 	],
@@ -58,7 +57,7 @@
 			"fieldtype": "Select",
 			"in_list_view": 1,
 			"label": "Status",
-			"options": "Active\nUsed\nRevoked\nExpired",
+			"options": "Active\nUsed",
 			"default": "Active",
 			"reqd": 1,
 			"search_index": 1
@@ -81,11 +80,6 @@
 			"read_only": 1
 		},
 		{
-			"fieldname": "expires_on",
-			"fieldtype": "Datetime",
-			"label": "Expires On"
-		},
-		{
 			"fieldname": "last_scanned_on",
 			"fieldtype": "Datetime",
 			"label": "Last Scanned On",
@@ -101,7 +95,7 @@
 	],
 	"index_web_pages_for_search": 0,
 	"links": [],
-	"modified": "2026-04-03 00:00:00.000000",
+	"modified": "2026-10-15 00:00:00.000000",
 	"modified_by": "Administrator",
 	"module": "ASN Module",
 	"name": "Scan Code",

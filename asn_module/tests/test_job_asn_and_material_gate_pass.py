@@ -27,10 +27,8 @@ from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
 	patch_subcontracting_incoming_rate,
 )
-from asn_module.qr_engine.dispatch import _draft_purchase_receipt_result as draft_receipt_from_scan
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
-from asn_module.setup_actions import register_actions
 from asn_module.templates.pages import asn_new
 from asn_module.templates.pages.asn_new_services import PortalValidationError, create_job_asn_for_supplier
 from asn_module.tests.integration.fixtures import (
@@ -351,7 +349,6 @@ class TestJobAsnScan(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
-		register_actions()
 		ensure_integration_user()
 
 	def test_scanning_a_job_asn_opens_a_draft_subcontracting_receipt_for_the_shipped_qty(self):
@@ -603,7 +600,6 @@ class TestMaterialGatePassScan(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		before_tests()
-		register_actions()
 		ensure_integration_user()
 		ensure_gate_pass_for_tests()
 
@@ -1118,14 +1114,6 @@ class TestReceiptHelpers(FrappeTestCase):
 				)
 			)
 
-	def test_a_blank_asn_name_does_not_reopen_a_purchase_receipt(self):
-		self.assertIsNone(draft_receipt_from_scan(""))
-		with patch(
-			"asn_module.qr_engine.dispatch.frappe.db.has_column",
-			return_value=False,
-		):
-			self.assertIsNone(draft_receipt_from_scan("ASN-1"))
-
 	def test_stamp_keeps_the_quantity_received_at_the_gate(self):
 		pr_item = SimpleNamespace(
 			purchase_order_item="POI-1",
@@ -1243,8 +1231,3 @@ class TestReceiptHelpers(FrappeTestCase):
 
 		setup.assert_called_once()
 		self.assertEqual(receipt.asn, "ASN-9")
-		with patch(
-			"asn_module.qr_engine.dispatch.frappe.db.has_column",
-			return_value=False,
-		):
-			self.assertIsNone(draft_receipt_from_scan("ASN-1"))
