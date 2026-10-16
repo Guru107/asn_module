@@ -211,11 +211,21 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		make_pr.assert_called_once_with("PO-001", args={"filtered_children": ["POI-001"]})
 		emit.assert_called_once()
 
-	def test_on_purchase_receipt_submit_returns_when_not_linked_to_asn(self):
-		with patch("asn_module.handlers.purchase_receipt.frappe.get_doc") as get_doc:
-			on_purchase_receipt_submit(SimpleNamespace(asn=None), "on_submit")
+	def test_on_purchase_receipt_submit_skips_asn_bookkeeping_when_not_linked_to_asn(self):
+		doc = SimpleNamespace(asn=None, is_return=0, name="PR-UNLINKED-UNIT", items=[])
+
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.get_doc") as get_doc,
+			patch(
+				"asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}
+			) as generate_qr,
+			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+		):
+			on_purchase_receipt_submit(doc, "on_submit")
 
 		get_doc.assert_not_called()
+		self.assertEqual(generate_qr.call_count, 1, "an unlinked receipt still gets its invoice code")
+		self.assertEqual(generate_qr.call_args.kwargs.get("action"), "create_purchase_invoice")
 
 	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
 		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0, asn="ASN-UNIT-004")

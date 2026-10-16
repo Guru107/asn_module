@@ -104,11 +104,15 @@ class TestSubcontractingHandlers(FrappeTestCase):
 		bom.submit()
 		return bom.name
 
-	def _make_integration_subcontracting_order(self):
+	def _make_integration_subcontracting_order(self, *, po_item_code=None):
 		company = frappe.db.get_value("Company", {}, "name")
 		source_warehouse = self._ensure_warehouse("_Test Subcontract Source Warehouse", company)
 		supplier_warehouse = self._ensure_warehouse("_Test Subcontract Supplier Warehouse", company)
-		po = create_purchase_order(company=company, warehouse=source_warehouse)
+		po = create_purchase_order(
+			company=company,
+			warehouse=source_warehouse,
+			item_code=po_item_code,
+		)
 		supplier = po.supplier
 		uom = po.items[0].uom
 

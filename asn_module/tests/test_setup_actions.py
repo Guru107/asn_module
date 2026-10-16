@@ -6,8 +6,8 @@ from asn_module.setup_actions import ACTIONS, get_action
 
 
 class TestActionsMap(FrappeTestCase):
-	def test_map_defines_seven_actions(self):
-		self.assertEqual(len(ACTIONS), 7)
+	def test_map_defines_nine_actions(self):
+		self.assertEqual(len(ACTIONS), 9)
 
 	def test_get_action_returns_handler_source_and_roles(self):
 		action = get_action("create_purchase_invoice")
