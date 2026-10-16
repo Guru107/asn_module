@@ -1,3 +1,4 @@
+/* global asn_module */
 frappe.provide("asn_module");
 
 asn_module.parse_scan_input = function (value, copy) {
@@ -50,7 +51,7 @@ asn_module.load_scan_code_length = function (apply_length) {
 		},
 		error(err) {
 			apply_length(16);
-			frappe.msgprint(__("Could not load the scan code length. Using 16."));
+			frappe.msgprint(__("Operation failed. Please retry or contact support."));
 			console.error(err);
 		},
 	});

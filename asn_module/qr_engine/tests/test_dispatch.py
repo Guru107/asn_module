@@ -1,6 +1,5 @@
 import secrets
 from contextlib import contextmanager
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -63,17 +62,15 @@ class TestDispatch(FrappeTestCase):
 		code = self._make_scan_code()
 		frappe.local.flags.commit = False
 
-		def dispatch_success_handler(*, source_doctype, source_name, payload):
+		def call_handler(handler_method, source_doctype, source_name, payload):
+			self.assertEqual(handler_method, "asn_module.handlers.purchase_receipt.create_from_asn")
 			self.assertEqual(source_doctype, SOURCE_DOCTYPE)
 			self.assertEqual(source_name, SOURCE_NAME)
 			self.assertEqual(payload["action"], "create_purchase_receipt")
 			self.assertEqual(payload["scan_code"], code)
-			todo = frappe.get_doc(
-				{
-					"doctype": "ToDo",
-					"description": "Dispatch test",
-				}
-			).insert(ignore_permissions=True)
+			todo = frappe.get_doc({"doctype": "ToDo", "description": "Dispatch test"}).insert(
+				ignore_permissions=True
+			)
 			return {
 				"doctype": "ToDo",
 				"name": todo.name,
@@ -81,20 +78,13 @@ class TestDispatch(FrappeTestCase):
 				"message": "Dispatch test completed",
 			}
 
-		real_get_module = frappe.get_module
-
-		def get_module(module_path):
-			if module_path == "asn_module.qr_engine.tests.test_dispatch":
-				return SimpleNamespace(dispatch_success_handler=dispatch_success_handler)
-			return real_get_module(module_path)
-
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.qr_engine.tests.test_dispatch.dispatch_success_handler",
+				"asn_module.handlers.purchase_receipt.create_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module),
+			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=call_handler),
 		):
 			result = dispatch(code=code, device_info="Mobile")
 
@@ -150,7 +140,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.qr_engine.tests.test_dispatch.dispatch_success_handler",
+				"asn_module.handlers.purchase_receipt.create_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 		):
@@ -230,7 +220,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.qr_engine.tests.test_dispatch.dispatch_success_handler",
+				"asn_module.handlers.purchase_receipt.create_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			self.assertRaises(frappe.ValidationError),
@@ -259,7 +249,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.qr_engine.tests.test_dispatch.dispatch_success_handler",
+				"asn_module.handlers.purchase_receipt.create_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			self.assertRaises(frappe.ValidationError),
@@ -306,7 +296,6 @@ class TestDispatch(FrappeTestCase):
 
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=frappe.get_module),
 		):
 			with self.assertRaises(frappe.ValidationError):
 				dispatch(code=sc.name, device_info="Desktop")
@@ -335,26 +324,16 @@ class TestDispatch(FrappeTestCase):
 			source_name=SOURCE_NAME,
 		)
 
-		def partial_handler(*, source_doctype, source_name, payload):
-			return {
-				"doctype": "ToDo",
-				"name": "TODO-001",
-			}
-
-		real_get_module = frappe.get_module
-
-		def get_module(module_path):
-			if module_path == "asn_module.qr_engine.tests.test_dispatch":
-				return SimpleNamespace(partial_handler=partial_handler)
-			return real_get_module(module_path)
-
 		with (
 			patched_action(
 				"create_purchase_receipt_partial_result",
-				"asn_module.qr_engine.tests.test_dispatch.partial_handler",
+				"asn_module.handlers.purchase_receipt.create_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module),
+			patch(
+				"asn_module.qr_engine.dispatch._call_handler",
+				return_value={"doctype": "ToDo", "name": "TODO-001"},
+			),
 		):
 			with self.assertRaises(frappe.ValidationError):
 				dispatch(code=code, device_info="Desktop")
@@ -384,23 +363,13 @@ class TestDispatch(FrappeTestCase):
 			source_name=SOURCE_NAME,
 		)
 
-		def failing_handler(*, source_doctype, source_name, payload):
-			raise ValueError("handler failed")
-
-		real_get_module = frappe.get_module
-
-		def get_module(module_path):
-			if module_path == "asn_module.qr_engine.tests.test_dispatch":
-				return SimpleNamespace(failing_handler=failing_handler)
-			return real_get_module(module_path)
-
 		with (
 			patched_action(
 				"create_purchase_receipt_failure",
-				"asn_module.qr_engine.tests.test_dispatch.failing_handler",
+				"asn_module.handlers.purchase_receipt.create_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=get_module),
+			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=ValueError("handler failed")),
 		):
 			with self.assertRaises(ValueError):
 				dispatch(code=code, device_info="Desktop")
@@ -430,7 +399,6 @@ class TestDispatch(FrappeTestCase):
 				roles=["Stock User", "Stock Manager"],
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["Accounts User"]),
-			patch("asn_module.qr_engine.dispatch.frappe.get_module", side_effect=frappe.get_module),
 		):
 			with self.assertRaises(PermissionDeniedError):
 				dispatch(code=code)
@@ -450,12 +418,32 @@ class TestDispatch(FrappeTestCase):
 		}
 		success_logs_before = frappe.db.count("Scan Log", success_filters)
 
+		def call_handler(handler_method, source_doctype, source_name, payload):
+			log = frappe.get_doc(
+				{
+					"doctype": "Scan Log",
+					"action": payload["action"],
+					"source_doctype": source_doctype,
+					"source_name": source_name,
+					"scan_code": payload.get("scan_code"),
+					"result": "Success",
+					"device_info": payload.get("device_info") or "Desktop",
+				}
+			).insert(ignore_permissions=True)
+			return {
+				"doctype": "Scan Log",
+				"name": log.name,
+				"url": f"/app/scan-log/{log.name}",
+				"message": "emit scan log test",
+			}
+
 		with (
 			patched_action(
 				"emit_scan_log_success",
-				"asn_module.qr_engine.tests.test_dispatch.scan_log_emitting_handler",
+				"asn_module.handlers.putaway.confirm_putaway",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=call_handler),
 		):
 			result = dispatch(code=code, device_info="Handheld-Scanner-X")
 
@@ -464,33 +452,3 @@ class TestDispatch(FrappeTestCase):
 		log = frappe.get_doc("Scan Log", result["name"])
 		self.assertEqual(log.device_info, "Handheld-Scanner-X")
 		self.assertTrue(frappe.local.flags.commit)
-
-
-def partial_handler(*, source_doctype, source_name, payload):
-	raise NotImplementedError("patched in tests")
-
-
-def failing_handler(*, source_doctype, source_name, payload):
-	raise NotImplementedError("patched in tests")
-
-
-def scan_log_emitting_handler(*, source_doctype, source_name, payload):
-	"""Test handler: persists Scan Log using ``device_info`` from payload (dispatch-injected)."""
-	device = payload.get("device_info") or "Desktop"
-	log = frappe.get_doc(
-		{
-			"doctype": "Scan Log",
-			"action": payload["action"],
-			"source_doctype": source_doctype,
-			"source_name": source_name,
-			"scan_code": payload.get("scan_code"),
-			"result": "Success",
-			"device_info": device,
-		}
-	).insert(ignore_permissions=True)
-	return {
-		"doctype": "Scan Log",
-		"name": log.name,
-		"url": f"/app/scan-log/{log.name}",
-		"message": "emit scan log test",
-	}

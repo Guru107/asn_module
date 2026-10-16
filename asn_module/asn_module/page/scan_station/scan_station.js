@@ -1,3 +1,4 @@
+/* global asn_module */
 frappe.pages["scan-station"].on_page_load = function (wrapper) {
 	let page = frappe.ui.make_app_page({
 		parent: wrapper,
