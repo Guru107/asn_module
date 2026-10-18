@@ -874,6 +874,8 @@
 
 	const poNoMatchMsg = poTypeaheadRoot.dataset.msgNoMatch || "No matching purchase orders.";
 	const rowResetConfirmMsg = "Changing purchase order will clear selected items and rows. Continue?";
+	const scoRowResetConfirmMsg =
+		"Selecting a Subcontracting Order will clear the Purchase Order and its rows. Continue?";
 	const noItemsMsg = "No items found for this purchase order.";
 	const unitPriceRemainingLabel = {{ _("Unit price") | tojson }};
 
@@ -957,7 +959,7 @@
 	}
 
 	async function fetchAndShowPoSuggestions(searchText) {
-		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_purchase_orders?txt=${encodeURIComponent(searchText || "")}`;
+		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_purchase_orders?txt=${encodeURIComponent(searchText || "")}&start=0&page_len=200`;
 		const response = await fetch(url, { credentials: "same-origin" });
 		const payload = await response.json();
 		const rows = payload.message || [];
@@ -1369,8 +1371,9 @@
 
 		function chooseSubcontractingOrder(name) {
 			if (selectedPo && selectedItemKeys.size > 0) {
-				if (!window.confirm(rowResetConfirmMsg)) {
+				if (!window.confirm(scoRowResetConfirmMsg)) {
 					closeScoSuggestions();
+					scoInput.value = "";
 					return;
 				}
 			}
