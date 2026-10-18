@@ -1368,7 +1368,12 @@
 		}
 
 		function chooseSubcontractingOrder(name) {
-			scoInput.value = name;
+			if (selectedPo && selectedItemKeys.size > 0) {
+				if (!window.confirm(rowResetConfirmMsg)) {
+					closeScoSuggestions();
+					return;
+				}
+			}
 			closeScoSuggestions();
 			clearPoBtn.click();
 			scoInput.value = name;
@@ -1409,7 +1414,7 @@
 
 		async function fetchAndShowScoSuggestions(searchText) {
 			const requestId = ++scoRequest;
-			const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_subcontracting_orders?txt=${encodeURIComponent(searchText || "")}`;
+			const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_subcontracting_orders?txt=${encodeURIComponent(searchText || "")}&start=0&page_len=200`;
 			try {
 				const response = await fetch(url, { credentials: "same-origin" });
 				const payload = await response.json();
@@ -1454,8 +1459,10 @@
 			} else if (event.key === "Escape") {
 				closeScoSuggestions();
 				return;
-			} else if (event.key === "Enter" && open) {
+			} else if (event.key === "Enter") {
+				// Always stop form submit; only apply a suggestion when the list is open.
 				event.preventDefault();
+				if (!open) return;
 				const row = scoSuggestionRows[scoActiveSuggestion];
 				if (row && row.value) chooseSubcontractingOrder(row.value);
 				return;
