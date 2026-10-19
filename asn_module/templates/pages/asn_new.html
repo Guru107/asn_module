@@ -591,7 +591,7 @@
 
 						<div class="row">
 							<div class="col-md-4 mb-3">
-								<label class="form-label">{{ _("Vehicle number") }} <span class="text-muted small">({{ _("optional") }})</span></label>
+								<label class="form-label">{{ _("Vehicle number") }}</label>
 								<input class="form-control" name="vehicle_number" maxlength="140" autocomplete="off">
 							</div>
 							<div class="col-md-4 mb-3">
@@ -605,14 +605,27 @@
 						<h3 class="asn-form-section-title">{{ _("Job ASN") }}</h3>
 						<div class="mb-3">
 							<label class="form-label" for="single-sco-input">{{ _("Subcontracting Order") }}</label>
-							<input
-								class="form-control"
-								id="single-sco-input"
-								name="subcontracting_order"
-								maxlength="140"
-								placeholder="{{ _('Leave empty for a Purchase Order notice') }}"
-								autocomplete="off"
+							<div
+								class="asn-po-typeahead"
+								id="asn-sco-typeahead-root"
+								data-msg-no-match="{{ _('No matching subcontracting orders.') | e }}"
+								data-msg-failed="{{ _('Operation failed. Please retry or contact support.') | e }}"
 							>
+								<input
+									class="form-control"
+									id="single-sco-input"
+									name="subcontracting_order"
+									maxlength="140"
+									placeholder="{{ _('Type to search…') }}"
+									autocomplete="off"
+									spellcheck="false"
+									role="combobox"
+									aria-autocomplete="list"
+									aria-expanded="false"
+									aria-controls="asn-sco-suggestions"
+								>
+								<div id="asn-sco-suggestions" class="asn-po-suggestions" role="listbox" hidden></div>
+							</div>
 							<div class="form-text">{{ _("Leave this empty for a Purchase Order notice. Do not also select a Purchase Order.") }}</div>
 						</div>
 						</div>
@@ -861,6 +874,8 @@
 
 	const poNoMatchMsg = poTypeaheadRoot.dataset.msgNoMatch || "No matching purchase orders.";
 	const rowResetConfirmMsg = "Changing purchase order will clear selected items and rows. Continue?";
+	const scoRowResetConfirmMsg =
+		"Selecting a Subcontracting Order will clear the Purchase Order and its rows. Continue?";
 	const noItemsMsg = "No items found for this purchase order.";
 	const unitPriceRemainingLabel = {{ _("Unit price") | tojson }};
 
@@ -944,7 +959,7 @@
 	}
 
 	async function fetchAndShowPoSuggestions(searchText) {
-		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_purchase_orders?txt=${encodeURIComponent(searchText || "")}`;
+		const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_purchase_orders?txt=${encodeURIComponent(searchText || "")}&start=0&page_len=200`;
 		const response = await fetch(url, { credentials: "same-origin" });
 		const payload = await response.json();
 		const rows = payload.message || [];
@@ -1155,6 +1170,8 @@
 		}
 
 		selectedPo = po;
+		const scoInput = document.getElementById("single-sco-input");
+		if (scoInput) scoInput.value = "";
 		resetItemSelectionState();
 		syncHiddenPoInputs();
 		renderSelectedPoChip();
@@ -1320,6 +1337,152 @@
 		deselectItemByKey(row.getAttribute("data-item-key") || "");
 		renderItemPicker();
 	});
+
+	const scoInput = document.getElementById("single-sco-input");
+	const scoSuggestionsBox = document.getElementById("asn-sco-suggestions");
+	const scoTypeaheadRoot = document.getElementById("asn-sco-typeahead-root");
+	if (scoInput && scoSuggestionsBox && scoTypeaheadRoot) {
+		const scoNoMatchMsg = scoTypeaheadRoot.dataset.msgNoMatch || "No matching subcontracting orders.";
+		const scoFailedMsg = scoTypeaheadRoot.dataset.msgFailed || "Operation failed. Please retry or contact support.";
+		let scoSuggestionRows = [];
+		let scoActiveSuggestion = -1;
+		let scoSearchTimer = null;
+		let scoRequest = 0;
+
+		function closeScoSuggestions() {
+			scoSuggestionRows = [];
+			scoActiveSuggestion = -1;
+			scoSuggestionsBox.innerHTML = "";
+			scoSuggestionsBox.hidden = true;
+			scoInput.setAttribute("aria-expanded", "false");
+		}
+
+		function renderScoMessage(message) {
+			scoSuggestionsBox.innerHTML = "";
+			scoSuggestionRows = [];
+			scoActiveSuggestion = -1;
+			const empty = document.createElement("div");
+			empty.className = "asn-po-suggestions-empty";
+			empty.textContent = message;
+			scoSuggestionsBox.appendChild(empty);
+			scoSuggestionsBox.hidden = false;
+			scoInput.setAttribute("aria-expanded", "true");
+		}
+
+		function chooseSubcontractingOrder(name) {
+			if (selectedPo && selectedItemKeys.size > 0) {
+				if (!window.confirm(scoRowResetConfirmMsg)) {
+					closeScoSuggestions();
+					scoInput.value = "";
+					return;
+				}
+			}
+			closeScoSuggestions();
+			clearPoBtn.click();
+			scoInput.value = name;
+		}
+
+		function renderScoSuggestionList(rows) {
+			scoSuggestionsBox.innerHTML = "";
+			scoSuggestionRows = rows;
+			if (!rows.length) {
+				renderScoMessage(scoNoMatchMsg);
+				return;
+			}
+			rows.forEach((entry, index) => {
+				const btn = document.createElement("button");
+				btn.type = "button";
+				btn.className = "asn-po-suggestion";
+				btn.setAttribute("role", "option");
+				btn.setAttribute("aria-selected", index === 0 ? "true" : "false");
+				if (index === 0) btn.classList.add("is-active");
+				const primary = document.createElement("span");
+				primary.className = "asn-po-suggestion-primary";
+				primary.textContent = entry.value || "";
+				const meta = document.createElement("span");
+				meta.className = "asn-po-suggestion-meta";
+				meta.textContent = entry.description || "";
+				btn.appendChild(primary);
+				btn.appendChild(meta);
+				btn.addEventListener("mousedown", (event) => {
+					event.preventDefault();
+					chooseSubcontractingOrder(entry.value || "");
+				});
+				scoSuggestionsBox.appendChild(btn);
+			});
+			scoSuggestionsBox.hidden = false;
+			scoInput.setAttribute("aria-expanded", "true");
+			scoActiveSuggestion = 0;
+		}
+
+		async function fetchAndShowScoSuggestions(searchText) {
+			const requestId = ++scoRequest;
+			const url = `/api/method/asn_module.templates.pages.asn_new_search.search_open_subcontracting_orders?txt=${encodeURIComponent(searchText || "")}&start=0&page_len=200`;
+			try {
+				const response = await fetch(url, { credentials: "same-origin" });
+				const payload = await response.json();
+				if (requestId !== scoRequest) return;
+				if (!response.ok || payload.exc) {
+					console.error(payload.exc || response.status);
+					renderScoMessage(scoFailedMsg);
+					return;
+				}
+				renderScoSuggestionList(payload.message || []);
+			} catch (err) {
+				if (requestId !== scoRequest) return;
+				console.error(err);
+				renderScoMessage(scoFailedMsg);
+			}
+		}
+
+		scoInput.addEventListener("input", () => {
+			window.clearTimeout(scoSearchTimer);
+			scoSearchTimer = window.setTimeout(() => {
+				void fetchAndShowScoSuggestions(scoInput.value);
+			}, 300);
+		});
+		scoInput.addEventListener("focus", () => {
+			void fetchAndShowScoSuggestions(scoInput.value);
+		});
+		scoInput.addEventListener("blur", () => {
+			window.setTimeout(() => {
+				const active = document.activeElement;
+				if (active instanceof Node && scoSuggestionsBox.contains(active)) return;
+				closeScoSuggestions();
+			}, 200);
+		});
+		scoInput.addEventListener("keydown", (event) => {
+			const open = !scoSuggestionsBox.hidden && scoSuggestionRows.length > 0;
+			if (open && event.key === "ArrowDown") {
+				event.preventDefault();
+				scoActiveSuggestion = (scoActiveSuggestion + 1) % scoSuggestionRows.length;
+			} else if (open && event.key === "ArrowUp") {
+				event.preventDefault();
+				scoActiveSuggestion = (scoActiveSuggestion - 1 + scoSuggestionRows.length) % scoSuggestionRows.length;
+			} else if (event.key === "Escape") {
+				closeScoSuggestions();
+				return;
+			} else if (event.key === "Enter") {
+				// Always stop form submit; only apply a suggestion when the list is open.
+				event.preventDefault();
+				if (!open) return;
+				const row = scoSuggestionRows[scoActiveSuggestion];
+				if (row && row.value) chooseSubcontractingOrder(row.value);
+				return;
+			} else {
+				return;
+			}
+			scoSuggestionsBox.querySelectorAll(".asn-po-suggestion").forEach((el, index) => {
+				const on = index === scoActiveSuggestion;
+				el.classList.toggle("is-active", on);
+				el.setAttribute("aria-selected", on ? "true" : "false");
+			});
+		});
+		document.addEventListener("click", (event) => {
+			if (!(event.target instanceof Node)) return;
+			if (!scoTypeaheadRoot.contains(event.target)) closeScoSuggestions();
+		});
+	}
 
 	syncHiddenPoInputs();
 	renderSelectedPoChip();
