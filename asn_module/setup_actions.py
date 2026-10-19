@@ -6,6 +6,11 @@ ACTIONS = {
 		"source_doctype": "ASN",
 		"roles": ["Stock User", "Stock Manager"],
 	},
+	"create_gate_pass_from_asn": {
+		"handler": "asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
+		"source_doctype": "ASN",
+		"roles": ["Stock User", "Stock Manager"],
+	},
 	"create_receipt_from_gate_pass": {
 		"handler": "asn_module.handlers.purchase_receipt.create_receipt_from_gate_pass_scan",
 		"source_doctype": "Gate Pass",

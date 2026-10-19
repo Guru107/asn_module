@@ -22,6 +22,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	real_asn_attachment_context,
 )
 from asn_module.handlers.purchase_receipt import (
+	ASN_GATE_PASS_SCAN_ACTION,
 	GATE_PASS_RECEIPT_ACTION,
 	on_gate_pass_cancel,
 	on_gate_pass_submit,
@@ -91,7 +92,7 @@ def _submitted_job_asn(shipped_qty=1):
 
 
 def _gate_pass_opened_by_scan(asn):
-	code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+	code = get_or_create_scan_code(ASN_GATE_PASS_SCAN_ACTION, "ASN", asn.name)
 	result = dispatch(code=code, device_info="scan-chain")
 	if not result.get("success"):
 		raise AssertionError(f"dispatch failed: {result}")

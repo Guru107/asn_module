@@ -13,11 +13,18 @@ from asn_module.stock_cap.messages import throw_stock_cap_exceeded
 from asn_module.stock_cap.precision import flt_qty
 from asn_module.traceability import emit_asn_item_transition
 
+ASN_PURCHASE_RECEIPT_SCAN_ACTION = "create_purchase_receipt"
+ASN_GATE_PASS_SCAN_ACTION = "create_gate_pass_from_asn"
 
-def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
-	"""Create a draft Purchase Receipt from a submitted ASN."""
-	del source_doctype, payload
 
+def asn_dispatch_action_key() -> str:
+	"""Scan action encoded on a submitted ASN's QR when Gate Pass Mode is on."""
+	if _gate_pass_mode_on():
+		return ASN_GATE_PASS_SCAN_ACTION
+	return ASN_PURCHASE_RECEIPT_SCAN_ACTION
+
+
+def _load_submitted_asn_for_scan(source_name: str):
 	asn = frappe.get_doc("ASN", source_name)
 	if asn.docstatus != 1:
 		frappe.throw(_("Purchase Receipt can only be created from a submitted ASN"))
@@ -25,11 +32,19 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 		frappe.throw(
 			_("Cannot create Purchase Receipt from ASN {0} with status {1}").format(source_name, asn.status)
 		)
+	return asn
 
+
+def create_gate_pass_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Open or create a draft Gate Pass from a submitted ASN (Gate Pass Mode)."""
+	del source_doctype, payload
+
+	if not _gate_pass_mode_on():
+		frappe.throw(_("Gate Pass Mode is off."))
+
+	asn = _load_submitted_asn_for_scan(source_name)
 	if _is_job_asn(asn):
-		if _gate_pass_mode_on():
-			return _open_or_create_job_gate_pass(asn)
-		return _open_or_create_subcontracting_receipt(asn)
+		return _open_or_create_job_gate_pass(asn)
 
 	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": source_name, "docstatus": 0}, "name")
 	if existing_pr:
@@ -40,8 +55,26 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 			"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
 		}
 
-	if _gate_pass_mode_on():
-		return _open_or_create_material_gate_pass(asn)
+	return _open_or_create_material_gate_pass(asn)
+
+
+def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Create a draft Purchase Receipt from a submitted ASN."""
+	del source_doctype, payload
+
+	asn = _load_submitted_asn_for_scan(source_name)
+
+	if _is_job_asn(asn):
+		return _open_or_create_subcontracting_receipt(asn)
+
+	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": source_name, "docstatus": 0}, "name")
+	if existing_pr:
+		return {
+			"doctype": "Purchase Receipt",
+			"name": existing_pr,
+			"url": f"/app/purchase-receipt/{existing_pr}",
+			"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
+		}
 
 	purchase_order, purchase_order_items = _get_single_purchase_order(asn)
 	pr = make_purchase_receipt(purchase_order, args={"filtered_children": purchase_order_items})

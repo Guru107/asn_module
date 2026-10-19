@@ -12,7 +12,9 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn_with_two_items,
 )
 from asn_module.handlers.purchase_receipt import (
+	asn_dispatch_action_key,
 	create_from_asn,
+	create_gate_pass_from_asn,
 	on_purchase_receipt_before_submit,
 	on_purchase_receipt_submit,
 	on_purchase_receipt_trash,
@@ -26,6 +28,18 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 	def setUpClass(cls):
 		before_tests()
 		super().setUpClass()
+
+	def test_asn_dispatch_action_key_follows_gate_pass_mode(self):
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		self.assertEqual(asn_dispatch_action_key(), "create_purchase_receipt")
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		self.assertEqual(asn_dispatch_action_key(), "create_gate_pass_from_asn")
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+
+	def test_create_gate_pass_from_asn_refuses_when_gate_pass_mode_is_off(self):
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		with self.assertRaises(frappe.ValidationError):
+			create_gate_pass_from_asn("ASN", "ASN-DUMMY", {})
 
 	def _make_submitted_asn(self):
 		dates = get_fiscal_year_test_dates()
