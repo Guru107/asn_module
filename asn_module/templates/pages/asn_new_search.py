@@ -70,6 +70,96 @@ def search_open_subcontracting_orders(txt: str = "", start: int = 0, page_len: i
 	return filtered[start : start + page_len]
 
 
+def _unreceived_qty_by_subcontracting_order_item(
+	line_names: list[str], exclude_asn_name: str | None = None
+) -> dict[str, float]:
+	"""Shipped Qty not yet received on ASNs that are not Cancelled or Closed."""
+	if not line_names:
+		return {}
+	asn_rows = frappe.get_all(
+		"ASN Item",
+		filters={"subcontracting_order_item": ["in", line_names]},
+		fields=["subcontracting_order_item", "qty", "received_qty", "parent"],
+		limit_page_length=0,
+	)
+	parents = {row.parent for row in asn_rows if row.parent}
+	asn_by_name = {}
+	if parents:
+		for asn in frappe.get_all(
+			"ASN",
+			filters={"name": ["in", list(parents)]},
+			fields=["name", "docstatus", "status"],
+			limit_page_length=0,
+		):
+			asn_by_name[asn.name] = asn
+	totals: dict[str, float] = {}
+	for row in asn_rows:
+		asn = asn_by_name.get(row.parent)
+		if not asn or cint(asn.docstatus) == 2 or asn.status == "Closed":
+			continue
+		if exclude_asn_name and row.parent == exclude_asn_name:
+			continue
+		pending = max(flt(row.qty) - flt(row.received_qty), 0)
+		totals[row.subcontracting_order_item] = totals.get(row.subcontracting_order_item, 0) + pending
+	return totals
+
+
+@frappe.whitelist()
+def search_subcontracting_order_items(
+	subcontracting_order: str,
+	txt: str = "",
+	start: int = 0,
+	page_len: int = 20,
+	asn_name: str | None = None,
+) -> list[dict]:
+	"""Finished goods still open on one of this supplier's Subcontracting Orders."""
+	supplier = _get_supplier()
+	start, page_len = _normalize_paging(start, page_len)
+	order_name = (subcontracting_order or "").strip()
+	open_names = {row.name for row in get_open_subcontracting_orders_for_supplier(supplier)}
+	if order_name not in open_names:
+		frappe.throw(_("Subcontracting Order is not available for this supplier."), frappe.PermissionError)
+
+	txt = (txt or "").strip().lower()
+	rows = frappe.get_all(
+		"Subcontracting Order Item",
+		filters={"parent": order_name},
+		fields=["name", "idx", "item_code", "item_name", "stock_uom", "rate", "qty", "received_qty"],
+		order_by="idx asc",
+		limit_page_length=0,
+	)
+	shipped = _unreceived_qty_by_subcontracting_order_item(
+		[row.name for row in rows],
+		exclude_asn_name=supplier_draft_asn_name(supplier, asn_name),
+	)
+	filtered = []
+	for row in rows:
+		if txt:
+			haystack = [
+				(row.item_code or "").lower(),
+				(row.item_name or "").lower(),
+				str(row.idx or "").lower(),
+			]
+			if not any(txt in value for value in haystack):
+				continue
+		remaining_qty = flt(row.qty) - flt(row.received_qty) - flt(shipped.get(row.name))
+		if remaining_qty < 0:
+			remaining_qty = 0
+		filtered.append(
+			{
+				"value": row.item_code,
+				"item_name": row.item_name,
+				"sr_no": str(row.idx),
+				"uom": row.stock_uom,
+				"rate": row.rate,
+				"remaining_qty": remaining_qty,
+				"subcontracting_order": order_name,
+				"subcontracting_order_item": row.name,
+			}
+		)
+	return filtered[start : start + page_len]
+
+
 @frappe.whitelist()
 def search_purchase_order_items(
 	purchase_order: str,

@@ -339,3 +339,52 @@ class TestASNNewSearch(FrappeTestCase):
 		):
 			after_close = asn_new_search.search_open_subcontracting_orders(txt=sco.name)
 		self.assertEqual(after_close, [])
+
+	def test_search_subcontracting_order_items_returns_the_open_finished_good(self):
+		from asn_module.handlers.tests.test_subcontracting import TestSubcontractingHandlers
+
+		sco = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = sco.items[0]
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user",
+				return_value=sco.supplier,
+			),
+		):
+			rows = asn_new_search.search_subcontracting_order_items(subcontracting_order=sco.name)
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["value"], finished_good.item_code)
+		self.assertEqual(rows[0]["subcontracting_order_item"], finished_good.name)
+		self.assertEqual(rows[0]["remaining_qty"], finished_good.qty)
+		frappe.db.set_value(
+			"Subcontracting Order Item", finished_good.name, "received_qty", finished_good.qty
+		)
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user",
+				return_value=sco.supplier,
+			),
+		):
+			received = asn_new_search.search_subcontracting_order_items(subcontracting_order=sco.name)
+		self.assertEqual(len(received), 1)
+		self.assertEqual(received[0]["remaining_qty"], 0)
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_search.frappe.session",
+				SimpleNamespace(user="s@example.com"),
+			),
+			patch(
+				"asn_module.templates.pages.asn_new_search._get_supplier_for_user",
+				return_value="someone-else",
+			),
+		):
+			with self.assertRaises(frappe.PermissionError):
+				asn_new_search.search_subcontracting_order_items(subcontracting_order=sco.name)
