@@ -282,6 +282,14 @@ def _set_if_present(doc, fieldname: str, value) -> None:
 	doc.set(fieldname, value)
 
 
+def _set_asn_invoice_on_gate_pass(gate_pass, asn) -> None:
+	"""Map ASN supplier invoice onto Gate Pass invoice and challan fields when present."""
+	_set_if_present(gate_pass, "invoice_number", asn.supplier_invoice_no)
+	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
+	_set_if_present(gate_pass, "challan_number", asn.supplier_invoice_no)
+	_set_if_present(gate_pass, "challan_date", asn.supplier_invoice_date)
+
+
 def _ensure_gate_pass_asn_link() -> None:
 	if frappe.db.has_column("Gate Pass", "asn"):
 		return
@@ -324,8 +332,7 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 	_set_if_present(gate_pass, "company", purchase_order.company)
 	_set_if_present(gate_pass, "supplier", asn.supplier)
 	_set_if_present(gate_pass, "vehicle_number", asn.vehicle_number)
-	_set_if_present(gate_pass, "invoice_number", asn.supplier_invoice_no)
-	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
+	_set_asn_invoice_on_gate_pass(gate_pass, asn)
 	_set_if_present(gate_pass, "asn", asn.name)
 
 	invoice_no = (asn.supplier_invoice_no or "").strip()
@@ -400,8 +407,7 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 	_set_if_present(gate_pass, "company", order.company)
 	_set_if_present(gate_pass, "supplier", asn.supplier)
 	_set_if_present(gate_pass, "vehicle_number", asn.vehicle_number)
-	_set_if_present(gate_pass, "invoice_number", asn.supplier_invoice_no)
-	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
+	_set_asn_invoice_on_gate_pass(gate_pass, asn)
 	_set_if_present(gate_pass, "asn", asn.name)
 
 	table_field, child_fields = _job_line_table(gate_pass)

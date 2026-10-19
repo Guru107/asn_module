@@ -507,6 +507,8 @@ def ensure_gate_pass_for_tests() -> None:
 					{"fieldname": "vehicle_number", "fieldtype": "Data", "label": "Vehicle Number"},
 					{"fieldname": "invoice_number", "fieldtype": "Data", "label": "Invoice Number"},
 					{"fieldname": "invoice_date", "fieldtype": "Date", "label": "Invoice Date"},
+					{"fieldname": "challan_number", "fieldtype": "Data", "label": "Challan Number"},
+					{"fieldname": "challan_date", "fieldtype": "Date", "label": "Challan Date"},
 					{"fieldname": "asn", "fieldtype": "Link", "options": "ASN", "label": "ASN"},
 					{
 						"fieldname": "items",
@@ -558,6 +560,24 @@ def ensure_gate_pass_for_tests() -> None:
 				"fieldtype": "Date",
 				"label": "Invoice Date",
 				"insert_after": "invoice_number",
+			}
+		)
+	if not meta.has_field("challan_number"):
+		custom_fields.append(
+			{
+				"fieldname": "challan_number",
+				"fieldtype": "Data",
+				"label": "Challan Number",
+				"insert_after": "invoice_date",
+			}
+		)
+	if not meta.has_field("challan_date"):
+		custom_fields.append(
+			{
+				"fieldname": "challan_date",
+				"fieldtype": "Date",
+				"label": "Challan Date",
+				"insert_after": "challan_number",
 			}
 		)
 	if not meta.has_field("asn"):
@@ -636,6 +656,8 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(gate_pass.vehicle_number, asn.vehicle_number)
 		self.assertEqual(gate_pass.invoice_number, asn.supplier_invoice_no)
 		self.assertEqual(str(gate_pass.invoice_date), str(asn.supplier_invoice_date))
+		self.assertEqual(gate_pass.challan_number, asn.supplier_invoice_no)
+		self.assertEqual(str(gate_pass.challan_date), str(asn.supplier_invoice_date))
 		self.assertEqual(len(gate_pass.items), 1)
 		line = gate_pass.items[0]
 		order_line = purchase_order.items[0]
@@ -751,6 +773,9 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(gate_pass.company, subcontracting_order.company)
 		self.assertEqual(gate_pass.vehicle_number, asn.vehicle_number)
 		self.assertEqual(gate_pass.invoice_number, asn.supplier_invoice_no)
+		self.assertEqual(str(gate_pass.invoice_date), str(asn.supplier_invoice_date))
+		self.assertEqual(gate_pass.challan_number, asn.supplier_invoice_no)
+		self.assertEqual(str(gate_pass.challan_date), str(asn.supplier_invoice_date))
 		self.assertEqual(gate_pass.asn, asn.name)
 		self.assertEqual(len(gate_pass.item), 1)
 		self.assertEqual(gate_pass.item[0].subcontracting_order_item, finished_good.name)
