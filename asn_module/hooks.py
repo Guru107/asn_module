@@ -159,7 +159,7 @@ after_install = "asn_module.setup.after_install"
 # }
 doc_events = {
 	"*": {
-		"on_trash": "asn_module.qr_engine.scan_codes.purge_scan_codes_on_draft_trash",
+		"on_trash": "asn_module.qr_engine.scan_codes.purge_scan_registry_on_trash",
 	},
 	"Purchase Receipt": {
 		"before_insert": "asn_module.handlers.purchase_receipt.stamp_receipt_built_by_gate_pass",

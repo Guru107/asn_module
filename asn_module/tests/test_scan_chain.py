@@ -193,6 +193,23 @@ class TestGatePassScanChain(FrappeTestCase):
 		self.assertFalse(frappe.db.exists("Gate Pass", gate_pass.name))
 		self.assertFalse(frappe.db.exists("Scan Code", code))
 
+	def test_a_cancelled_gate_pass_with_voided_scan_codes_can_be_deleted(self):
+		with gate_pass_mode(), integration_user_context():
+			_purchase_order, asn = _submitted_material_asn()
+			gate_pass = _gate_pass_opened_by_scan(asn)
+			on_gate_pass_submit(gate_pass)
+			code = _scan_code_for(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name)
+			self.assertTrue(code)
+
+			frappe.db.set_value("Gate Pass", gate_pass.name, "docstatus", 2, update_modified=False)
+			on_gate_pass_cancel(gate_pass)
+			self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Voided")
+
+			frappe.delete_doc("Gate Pass", gate_pass.name, ignore_permissions=True)
+
+		self.assertFalse(frappe.db.exists("Gate Pass", gate_pass.name))
+		self.assertFalse(frappe.db.exists("Scan Code", code))
+
 	def test_the_material_chain_creates_a_purchase_receipt_by_scan(self):
 		with gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()

@@ -161,15 +161,23 @@ def purge_scan_logs_for_document(doctype: str, name: str) -> None:
 	frappe.db.delete("Scan Log", {"result_doctype": doctype, "result_name": name})
 
 
-def purge_scan_codes_on_draft_trash(doc, method=None) -> None:
-	"""Remove scan registry rows for a draft document before Frappe enforces link checks."""
+def purge_scan_registry_on_trash(doc, method=None) -> None:
+	"""Remove scan registry rows before trash so Dynamic Link checks do not block delete.
+
+	Runs for draft and cancelled documents (not submitted).
+	"""
 	del method
 	if doc.doctype in ("Scan Code", "Scan Log"):
 		return
-	if cint(getattr(doc, "docstatus", 0)) != 0:
+	docstatus = cint(getattr(doc, "docstatus", 0))
+	if docstatus == 1:
 		return
 	purge_scan_logs_for_document(doc.doctype, doc.name)
 	purge_scan_codes_for_source(doc.doctype, doc.name)
+
+
+# Hook path kept for backwards compatibility with bench caches during deploy.
+purge_scan_codes_on_draft_trash = purge_scan_registry_on_trash
 
 
 def void_scan_codes(action_key: str, source_doctype: str, source_name: str) -> None:

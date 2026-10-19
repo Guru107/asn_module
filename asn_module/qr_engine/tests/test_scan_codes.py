@@ -15,7 +15,7 @@ from asn_module.qr_engine.scan_codes import (
 	get_scan_code_length,
 	normalize_scan_code,
 	purge_scan_codes_for_source,
-	purge_scan_codes_on_draft_trash,
+	purge_scan_registry_on_trash,
 	record_successful_scan,
 	validate_scan_code_row,
 	verify_registry_row_points_to_existing_source,
@@ -251,7 +251,7 @@ class TestVerifyRegistryRowPointsToExistingSource(FrappeTestCase, _ScanCodeTestM
 			self.assertFalse(verify_registry_row_points_to_existing_source(doc))
 
 
-class TestPurgeScanCodesOnDraftTrash(FrappeTestCase, _ScanCodeTestMixin):
+class TestPurgeScanRegistryOnTrash(FrappeTestCase, _ScanCodeTestMixin):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -263,14 +263,22 @@ class TestPurgeScanCodesOnDraftTrash(FrappeTestCase, _ScanCodeTestMixin):
 		purge_scan_codes_for_source("ASN", self._asn_name)
 		self.assertFalse(frappe.db.exists("Scan Code", name))
 
-	def test_purge_scan_codes_on_draft_trash_skips_submitted_documents(self):
-		with patch("asn_module.qr_engine.scan_codes.purge_scan_codes_for_source") as purge:
-			purge_scan_codes_on_draft_trash(SimpleNamespace(doctype="Gate Pass", name="GP-1", docstatus=1))
-		purge.assert_not_called()
+	def test_purge_scan_registry_on_trash_skips_submitted_documents(self):
+		with patch("asn_module.qr_engine.scan_codes.purge_scan_codes_for_source") as purge_codes:
+			with patch("asn_module.qr_engine.scan_codes.purge_scan_logs_for_document") as purge_logs:
+				purge_scan_registry_on_trash(SimpleNamespace(doctype="Gate Pass", name="GP-1", docstatus=1))
+		purge_codes.assert_not_called()
+		purge_logs.assert_not_called()
 
-	def test_purge_scan_codes_on_draft_trash_removes_codes_for_draft_documents(self):
+	def test_purge_scan_registry_on_trash_removes_codes_for_draft_documents(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
-		purge_scan_codes_on_draft_trash(SimpleNamespace(doctype="ASN", name=self._asn_name, docstatus=0))
+		purge_scan_registry_on_trash(SimpleNamespace(doctype="ASN", name=self._asn_name, docstatus=0))
+		self.assertFalse(frappe.db.exists("Scan Code", name))
+
+	def test_purge_scan_registry_on_trash_removes_codes_for_cancelled_documents(self):
+		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", name, "status", "Voided", update_modified=False)
+		purge_scan_registry_on_trash(SimpleNamespace(doctype="ASN", name=self._asn_name, docstatus=2))
 		self.assertFalse(frappe.db.exists("Scan Code", name))
 
 
