@@ -135,6 +135,43 @@ def record_successful_scan(doc_name: str, action_key: str) -> None:
 		frappe.db.set_value("Scan Code", doc_name, "status", "Used", update_modified=True)
 
 
+def purge_scan_codes_for_source(source_doctype: str, source_name: str) -> None:
+	"""Delete Scan Code rows for a source document so trash is not blocked by Dynamic Link checks."""
+	if not frappe.db.exists("DocType", "Scan Code"):
+		return
+	source_doctype = (source_doctype or "").strip()
+	source_name = (source_name or "").strip()
+	if not source_doctype or not source_name:
+		return
+	frappe.db.delete(
+		"Scan Code",
+		{"source_doctype": source_doctype, "source_name": source_name},
+	)
+
+
+def purge_scan_logs_for_document(doctype: str, name: str) -> None:
+	"""Delete Scan Log rows that reference a document as scan source or handler result."""
+	if not frappe.db.exists("DocType", "Scan Log"):
+		return
+	doctype = (doctype or "").strip()
+	name = (name or "").strip()
+	if not doctype or not name:
+		return
+	frappe.db.delete("Scan Log", {"source_doctype": doctype, "source_name": name})
+	frappe.db.delete("Scan Log", {"result_doctype": doctype, "result_name": name})
+
+
+def purge_scan_codes_on_draft_trash(doc, method=None) -> None:
+	"""Remove scan registry rows for a draft document before Frappe enforces link checks."""
+	del method
+	if doc.doctype in ("Scan Code", "Scan Log"):
+		return
+	if cint(getattr(doc, "docstatus", 0)) != 0:
+		return
+	purge_scan_logs_for_document(doc.doctype, doc.name)
+	purge_scan_codes_for_source(doc.doctype, doc.name)
+
+
 def void_scan_codes(action_key: str, source_doctype: str, source_name: str) -> None:
 	"""Mark every code for one (action, source) Voided so it cannot be scanned.
 

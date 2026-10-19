@@ -106,12 +106,9 @@ class ASN(WebsiteGenerator):
 
 	def _purge_scan_codes_for_asn(self):
 		"""Remove QR/barcode registry rows so cancel/delete is not blocked by Dynamic Link checks."""
-		if not frappe.db.exists("DocType", "Scan Code"):
-			return
-		frappe.db.delete(
-			"Scan Code",
-			{"source_doctype": self.doctype, "source_name": self.name},
-		)
+		from asn_module.qr_engine.scan_codes import purge_scan_codes_for_source
+
+		purge_scan_codes_for_source(self.doctype, self.name)
 
 	def _delete_asn_transition_logs(self):
 		"""Remove traceability rows so ASN delete is not blocked by Link checks (logs are ASN-specific)."""

@@ -89,6 +89,14 @@ class TestHooks(FrappeTestCase):
 		self.assertEqual(fields[0]["fieldname"], "asn")
 		self.assertEqual(fields[0]["options"], "ASN")
 
+	def test_global_on_trash_purges_scan_codes_for_draft_documents(self):
+		wildcard = hooks.doc_events.get("*")
+		self.assertIsNotNone(wildcard)
+		self.assertEqual(
+			wildcard["on_trash"],
+			"asn_module.qr_engine.scan_codes.purge_scan_codes_on_draft_trash",
+		)
+
 	def test_purchase_receipt_doc_events_registers_all_handlers(self):
 		pr_events = hooks.doc_events.get("Purchase Receipt")
 		self.assertIsNotNone(pr_events, "Purchase Receipt entry missing from doc_events")
