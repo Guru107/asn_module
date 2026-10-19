@@ -212,7 +212,9 @@ def reactivate_upstream_scan_codes_for_trashed_document(doc) -> None:
 			reactivate_scan_code("create_receipt_from_gate_pass", "Gate Pass", gate_pass)
 		scr = _field("subcontracting_receipt")
 		if scr:
-			reactivate_scan_code("create_purchase_receipt_from_subcontracting_receipt", "Subcontracting Receipt", scr)
+			reactivate_scan_code(
+				"create_purchase_receipt_from_subcontracting_receipt", "Subcontracting Receipt", scr
+			)
 	elif doc.doctype == "Subcontracting Receipt":
 		asn = _field("asn")
 		if asn:

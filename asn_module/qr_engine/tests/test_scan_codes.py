@@ -291,7 +291,9 @@ class TestPurgeScanRegistryOnTrash(FrappeTestCase, _ScanCodeTestMixin):
 	def test_purge_scan_registry_reactivates_asn_code_before_logs_are_removed(self):
 		code = get_or_create_scan_code("create_gate_pass_from_asn", "ASN", self._asn_name)
 		frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
-		pr = SimpleNamespace(doctype="Purchase Receipt", name="PR-REACTIVATE-1", docstatus=0, asn=self._asn_name)
+		pr = SimpleNamespace(
+			doctype="Purchase Receipt", name="PR-REACTIVATE-1", docstatus=0, asn=self._asn_name
+		)
 		with patch(
 			"asn_module.qr_engine.scan_codes.purge_scan_logs_for_document",
 		) as purge_logs:
