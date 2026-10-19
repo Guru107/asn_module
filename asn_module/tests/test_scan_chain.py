@@ -37,6 +37,7 @@ from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
 	patch_subcontracting_incoming_rate,
 )
+from asn_module.handlers.utils import fill_custom_fiscal_year
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import get_action
@@ -314,6 +315,10 @@ class TestSubcontractingReceiptScanChain(FrappeTestCase):
 		)
 
 		scr = make_subcontracting_receipt(subcontracting_order.name)
+		# This bench mirrors production's mandatory Fiscal Year customisation on
+		# Subcontracting Receipt; the scan handlers fill it, so this hand-rolled
+		# draft must too or it dies on the missing mandatory field.
+		fill_custom_fiscal_year(scr)
 		scr.insert(ignore_permissions=True)
 		return scr
 

@@ -396,6 +396,93 @@ class TestJobAsnScan(FrappeTestCase):
 		)
 
 
+def ensure_mandatory_fiscal_year_custom_field() -> None:
+	"""Give the scan a mandatory Fiscal Year to satisfy.
+
+	Production marks a ``custom_fiscal_year`` Link mandatory on Subcontracting Receipt.
+	This bench mirrors production customisations, but that field is newer than the
+	bench's last production sync, so the scan path has never met it here. The scan
+	builds receipts server-side, where no desk form ever fills the field, so the bench
+	must carry the same customisation to keep that path honest. Guarded: a site that
+	already requires the field is left exactly as it is.
+	"""
+	meta = frappe.get_meta("Subcontracting Receipt")
+	field = meta.get_field("custom_fiscal_year")
+	if field and field.reqd:
+		return
+
+	create_custom_fields(
+		{
+			"Subcontracting Receipt": [
+				{
+					"fieldname": "custom_fiscal_year",
+					"label": "Fiscal Year",
+					"fieldtype": "Link",
+					"options": "Fiscal Year",
+					"reqd": 1,
+					"insert_after": "posting_date",
+				},
+			],
+		}
+	)
+	frappe.clear_cache(doctype="Subcontracting Receipt")
+
+
+class TestJobAsnScanWithMandatoryFiscalYear(FrappeTestCase):
+	"""The scan must satisfy a site's mandatory Fiscal Year on the receipts it builds.
+
+	Deleting the draft receipt used to be enough to expose this: while a draft exists
+	the scan reopens it, and only the create path ever meets the mandatory field.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		ensure_integration_user()
+		ensure_mandatory_fiscal_year_custom_field()
+
+	def test_scanning_a_job_asn_fills_the_sites_mandatory_fiscal_year(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		try:
+			subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+			finished_good = subcontracting_order.items[0]
+			asn = create_job_asn_for_supplier(
+				supplier=subcontracting_order.supplier,
+				subcontracting_order=subcontracting_order.name,
+				header={
+					"supplier_invoice_no": f"JOB-FY-{frappe.generate_hash(length=8)}",
+					"supplier_invoice_date": today(),
+					"vehicle_number": "MH12AB1234",
+					"supplier_invoice_amount": finished_good.rate,
+				},
+				lines=[{"subcontracting_order_item": finished_good.name, "qty": 1}],
+			)
+			with real_asn_attachment_context():
+				asn.submit()
+
+			code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+			with integration_user_context(), patch_subcontracting_incoming_rate(5):
+				result = dispatch(code=code, device_info="job-asn-fy")
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		receipt = frappe.get_doc("Subcontracting Receipt", result["name"])
+		expected = frappe.db.get_value(
+			"Fiscal Year",
+			{
+				"disabled": 0,
+				"year_start_date": ("<=", receipt.posting_date),
+				"year_end_date": (">=", receipt.posting_date),
+			},
+			"name",
+		)
+		self.assertEqual(receipt.docstatus, 0)
+		self.assertEqual(receipt.asn, asn.name)
+		self.assertEqual(receipt.custom_fiscal_year, expected)
+
+
 def ensure_gate_pass_for_tests() -> None:
 	"""Give the scan a Gate Pass to save.
 

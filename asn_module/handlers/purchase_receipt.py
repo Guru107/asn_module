@@ -5,7 +5,11 @@ from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_r
 from frappe import _
 from frappe.utils import cint, flt
 
-from asn_module.handlers.utils import attach_qr_to_doc, attach_scan_codes_to_doc
+from asn_module.handlers.utils import (
+	attach_qr_to_doc,
+	attach_scan_codes_to_doc,
+	fill_custom_fiscal_year,
+)
 from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
 from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
@@ -79,6 +83,7 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	purchase_order, purchase_order_items = _get_single_purchase_order(asn)
 	pr = make_purchase_receipt(purchase_order, args={"filtered_children": purchase_order_items})
 	_apply_asn_fields(pr, asn)
+	fill_custom_fiscal_year(pr)
 
 	pr.insert(ignore_permissions=True)
 
@@ -584,6 +589,7 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 	)
 	_apply_asn_fields(pr, asn)
 	_set_if_present(pr, "custom_gate_pass_reference", gate_pass.name)
+	fill_custom_fiscal_year(pr)
 	pr.insert(ignore_permissions=True)
 	return {
 		"doctype": "Purchase Receipt",
@@ -745,6 +751,7 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 
 	_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
 	receipt.asn = asn.name
+	fill_custom_fiscal_year(receipt)
 	receipt.insert(ignore_permissions=True)
 
 	return {

@@ -2,6 +2,41 @@ import base64
 
 import frappe
 from frappe import _
+from frappe.utils import today
+
+
+def fiscal_year_for_date(date: str) -> str | None:
+	"""The enabled Fiscal Year that covers ``date``, if the site defines one."""
+	return frappe.db.get_value(
+		"Fiscal Year",
+		{"disabled": 0, "year_start_date": ("<=", date), "year_end_date": (">=", date)},
+		"name",
+	)
+
+
+def fill_custom_fiscal_year(doc) -> None:
+	"""Satisfy a site's mandatory Fiscal Year on a document the scan chain builds.
+
+	Sites mark a ``custom_fiscal_year`` Link mandatory on receipts and invoices.
+	A desk form fills it for a desk user, but the scan chain builds these documents
+	server-side, where no form ever runs, and the insert then dies on the missing
+	mandatory field. Fill it from the document's own posting date. No-op where the
+	doctype does not carry the field or does not require it. A value that names a
+	Fiscal Year this site actually has is kept; one that does not (a field default
+	left behind by a fiscal-year rollover) is replaced, so a stale default cannot
+	break the scan chain.
+	"""
+	meta = getattr(doc, "meta", None)
+	field = meta.get_field("custom_fiscal_year") if meta else None
+	if not field or not field.reqd:
+		return
+	existing = (doc.get("custom_fiscal_year") or "").strip()
+	if existing and frappe.db.exists("Fiscal Year", existing):
+		return
+	date = doc.get("posting_date") or doc.get("transaction_date") or today()
+	fiscal_year = fiscal_year_for_date(date)
+	if fiscal_year:
+		doc.custom_fiscal_year = fiscal_year
 
 
 def attach_qr_to_doc(doc, qr_result, prefix):
