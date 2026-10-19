@@ -24,14 +24,15 @@ def fiscal_year_for_date(date: str, company: str | None = None) -> str | None:
 	if not candidates:
 		return None
 	if not (company or "").strip():
-		return candidates[0].name
+		return candidates[0]["name"]
 	if not frappe.db.table_exists("Fiscal Year Company"):
-		return candidates[0].name
+		return candidates[0]["name"]
 	company = company.strip()
 	for row in candidates:
-		linked = frappe.get_all("Fiscal Year Company", filters={"parent": row.name}, pluck="company")
+		fy_name = row["name"]
+		linked = frappe.get_all("Fiscal Year Company", filters={"parent": fy_name}, pluck="company")
 		if not linked or company in linked:
-			return row.name
+			return fy_name
 	return None
 
 
