@@ -36,10 +36,12 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(asn_dispatch_action_key(), "create_gate_pass_from_asn")
 		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
 
-	def test_create_gate_pass_from_asn_refuses_when_gate_pass_mode_is_off(self):
+	def test_create_gate_pass_from_asn_follows_receipt_path_when_gate_pass_mode_is_off(self):
 		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
-		with self.assertRaises(frappe.ValidationError):
-			create_gate_pass_from_asn("ASN", "ASN-DUMMY", {})
+		asn = self._make_submitted_asn()
+		result = create_gate_pass_from_asn("ASN", asn.name, {})
+		self.assertEqual(result["doctype"], "Purchase Receipt")
+		self.assertTrue(frappe.db.exists("Purchase Receipt", result["name"]))
 
 	def _make_submitted_asn(self):
 		dates = get_fiscal_year_test_dates()
@@ -246,12 +248,13 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete,
-			patch("asn_module.handlers.purchase_receipt.frappe.db.set_value") as set_value,
+			patch(
+				"asn_module.qr_engine.scan_codes.reactivate_upstream_scan_codes_for_trashed_document"
+			) as reactivate,
 		):
 			on_purchase_receipt_trash(doc, "on_trash")
 
-		self.assertEqual(delete.call_count, 2)
-		delete.assert_any_call(
+		delete.assert_called_once_with(
 			"ASN Transition Log",
 			{
 				"ref_doctype": "Purchase Receipt",
@@ -259,39 +262,21 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				"state": "PR_CREATED_DRAFT",
 			},
 		)
-		delete.assert_any_call(
-			"Scan Log",
-			{
-				"action": "create_purchase_receipt",
-				"result_doctype": "Purchase Receipt",
-				"result_name": "PR-UNIT-004",
-				"result": "Success",
-			},
-		)
-		set_value.assert_called_once_with(
-			"Scan Code",
-			{
-				"action_key": "create_purchase_receipt",
-				"source_doctype": "ASN",
-				"source_name": "ASN-UNIT-004",
-				"status": "Used",
-			},
-			"status",
-			"Active",
-			update_modified=True,
-		)
+		reactivate.assert_called_once_with(doc)
 
 	def test_on_purchase_receipt_trash_keeps_submitted_transition_logs(self):
 		doc = SimpleNamespace(name="PR-UNIT-005", docstatus=1, asn="ASN-UNIT-005")
 
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete,
-			patch("asn_module.handlers.purchase_receipt.frappe.db.set_value") as set_value,
+			patch(
+				"asn_module.qr_engine.scan_codes.reactivate_upstream_scan_codes_for_trashed_document"
+			) as reactivate,
 		):
 			on_purchase_receipt_trash(doc, "on_trash")
 
 		delete.assert_not_called()
-		set_value.assert_not_called()
+		reactivate.assert_not_called()
 
 	def test_on_purchase_receipt_submit_skips_unmapped_pr_rows(self):
 		asn = SimpleNamespace(name="ASN-UNIT-003", reload=lambda: None, update_receipt_status=lambda: None)

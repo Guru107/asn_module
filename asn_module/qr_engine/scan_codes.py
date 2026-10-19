@@ -149,6 +149,82 @@ def purge_scan_codes_for_source(source_doctype: str, source_name: str) -> None:
 	)
 
 
+def reactivate_scan_code(action_key: str, source_doctype: str, source_name: str) -> None:
+	"""Mark a predecessor scan code Active again after a draft chain document is deleted."""
+	if not frappe.db.exists("DocType", "Scan Code"):
+		return
+	action_key = (action_key or "").strip()
+	source_doctype = (source_doctype or "").strip()
+	source_name = (source_name or "").strip()
+	if not action_key or not source_doctype or not source_name:
+		return
+	for code_name in frappe.get_all(
+		"Scan Code",
+		filters={
+			"action_key": action_key,
+			"source_doctype": source_doctype,
+			"source_name": source_name,
+			"status": "Used",
+		},
+		pluck="name",
+	):
+		frappe.db.set_value("Scan Code", code_name, "status", "Active", update_modified=True)
+
+
+def _asn_scan_actions() -> tuple[str, ...]:
+	return ("create_purchase_receipt", "create_gate_pass_from_asn")
+
+
+def reactivate_upstream_scan_codes_for_trashed_document(doc) -> None:
+	"""Reactivate scan codes that fed this draft before purge deletes their Scan Log rows."""
+	if cint(getattr(doc, "docstatus", 0)) == 1:
+		return
+	if not frappe.db.exists("DocType", "Scan Log"):
+		return
+
+	seen: set[tuple[str, str, str]] = set()
+	for row in frappe.get_all(
+		"Scan Log",
+		filters={
+			"result_doctype": doc.doctype,
+			"result_name": doc.name,
+			"result": "Success",
+		},
+		fields=["action", "source_doctype", "source_name"],
+	):
+		key = (row.action or "", row.source_doctype or "", row.source_name or "")
+		if not all(key) or key in seen:
+			continue
+		seen.add(key)
+		reactivate_scan_code(*key)
+
+	def _field(fieldname: str) -> str:
+		value = doc.get(fieldname) if hasattr(doc, "get") else getattr(doc, fieldname, None)
+		return (value or "").strip()
+
+	if doc.doctype == "Purchase Receipt":
+		asn = _field("asn")
+		if asn:
+			for action_key in _asn_scan_actions():
+				reactivate_scan_code(action_key, "ASN", asn)
+		gate_pass = _field("custom_gate_pass_reference")
+		if gate_pass:
+			reactivate_scan_code("create_receipt_from_gate_pass", "Gate Pass", gate_pass)
+		scr = _field("subcontracting_receipt")
+		if scr:
+			reactivate_scan_code("create_purchase_receipt_from_subcontracting_receipt", "Subcontracting Receipt", scr)
+	elif doc.doctype == "Subcontracting Receipt":
+		asn = _field("asn")
+		if asn:
+			for action_key in _asn_scan_actions():
+				reactivate_scan_code(action_key, "ASN", asn)
+	elif doc.doctype == "Gate Pass":
+		asn = _field("asn")
+		if asn:
+			for action_key in _asn_scan_actions():
+				reactivate_scan_code(action_key, "ASN", asn)
+
+
 def purge_scan_logs_for_document(doctype: str, name: str) -> None:
 	"""Delete Scan Log rows that reference a document as scan source or handler result."""
 	if not frappe.db.exists("DocType", "Scan Log"):
@@ -172,12 +248,9 @@ def purge_scan_registry_on_trash(doc, method=None) -> None:
 	docstatus = cint(getattr(doc, "docstatus", 0))
 	if docstatus == 1:
 		return
+	reactivate_upstream_scan_codes_for_trashed_document(doc)
 	purge_scan_logs_for_document(doc.doctype, doc.name)
 	purge_scan_codes_for_source(doc.doctype, doc.name)
-
-
-# Hook path kept for backwards compatibility with bench caches during deploy.
-purge_scan_codes_on_draft_trash = purge_scan_registry_on_trash
 
 
 def void_scan_codes(action_key: str, source_doctype: str, source_name: str) -> None:

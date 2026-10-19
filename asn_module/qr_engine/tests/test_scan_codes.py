@@ -16,6 +16,7 @@ from asn_module.qr_engine.scan_codes import (
 	normalize_scan_code,
 	purge_scan_codes_for_source,
 	purge_scan_registry_on_trash,
+	reactivate_scan_code,
 	record_successful_scan,
 	validate_scan_code_row,
 	verify_registry_row_points_to_existing_source,
@@ -280,6 +281,23 @@ class TestPurgeScanRegistryOnTrash(FrappeTestCase, _ScanCodeTestMixin):
 		frappe.db.set_value("Scan Code", name, "status", "Voided", update_modified=False)
 		purge_scan_registry_on_trash(SimpleNamespace(doctype="ASN", name=self._asn_name, docstatus=2))
 		self.assertFalse(frappe.db.exists("Scan Code", name))
+
+	def test_reactivate_scan_code_sets_used_rows_active(self):
+		name = get_or_create_scan_code("create_gate_pass_from_asn", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", name, "status", "Used", update_modified=False)
+		reactivate_scan_code("create_gate_pass_from_asn", "ASN", self._asn_name)
+		self.assertEqual(frappe.db.get_value("Scan Code", name, "status"), "Active")
+
+	def test_purge_scan_registry_reactivates_asn_code_before_logs_are_removed(self):
+		code = get_or_create_scan_code("create_gate_pass_from_asn", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
+		pr = SimpleNamespace(doctype="Purchase Receipt", name="PR-REACTIVATE-1", docstatus=0, asn=self._asn_name)
+		with patch(
+			"asn_module.qr_engine.scan_codes.purge_scan_logs_for_document",
+		) as purge_logs:
+			purge_scan_registry_on_trash(pr)
+		purge_logs.assert_called_once()
+		self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Active")
 
 
 class TestGetOrCreateScanCodeCanonicalReuse(TestCase):

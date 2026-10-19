@@ -22,7 +22,7 @@ ASN_GATE_PASS_SCAN_ACTION = "create_gate_pass_from_asn"
 
 
 def asn_dispatch_action_key() -> str:
-	"""Scan action encoded on a submitted ASN's QR when Gate Pass Mode is on."""
+	"""Label stamped on a submitted ASN's QR; handlers still read Gate Pass Mode at scan time."""
 	if _gate_pass_mode_on():
 		return ASN_GATE_PASS_SCAN_ACTION
 	return ASN_PURCHASE_RECEIPT_SCAN_ACTION
@@ -40,13 +40,30 @@ def _load_submitted_asn_for_scan(source_name: str):
 
 
 def create_gate_pass_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
-	"""Open or create a draft Gate Pass from a submitted ASN (Gate Pass Mode)."""
+	"""Open or create a draft Gate Pass from a submitted ASN when Gate Pass Mode is on.
+
+	When the mode is off, the same printed code follows the direct receipt path so a
+	toggle after the ASN was submitted does not strand barcodes.
+	"""
 	del source_doctype, payload
 
+	asn = _load_submitted_asn_for_scan(source_name)
 	if not _gate_pass_mode_on():
-		frappe.throw(_("Gate Pass Mode is off."))
+		return _create_receipt_from_asn(asn, source_name)
+	return _open_gate_pass_from_asn(asn, source_name)
+
+
+def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Create a draft receipt from a submitted ASN (PR, SCR, or Gate Pass per site mode)."""
+	del source_doctype, payload
 
 	asn = _load_submitted_asn_for_scan(source_name)
+	if _gate_pass_mode_on():
+		return _open_gate_pass_from_asn(asn, source_name)
+	return _create_receipt_from_asn(asn, source_name)
+
+
+def _open_gate_pass_from_asn(asn, source_name: str) -> dict:
 	if _is_job_asn(asn):
 		return _open_or_create_job_gate_pass(asn)
 
@@ -62,12 +79,7 @@ def create_gate_pass_from_asn(source_doctype: str, source_name: str, payload: di
 	return _open_or_create_material_gate_pass(asn)
 
 
-def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
-	"""Create a draft Purchase Receipt from a submitted ASN."""
-	del source_doctype, payload
-
-	asn = _load_submitted_asn_for_scan(source_name)
-
+def _create_receipt_from_asn(asn, source_name: str) -> dict:
 	if _is_job_asn(asn):
 		return _open_or_create_subcontracting_receipt(asn)
 
@@ -914,28 +926,9 @@ def on_purchase_receipt_trash(doc, method):
 			"state": "PR_CREATED_DRAFT",
 		},
 	)
-	frappe.db.delete(
-		"Scan Log",
-		{
-			"action": "create_purchase_receipt",
-			"result_doctype": "Purchase Receipt",
-			"result_name": doc.name,
-			"result": "Success",
-		},
-	)
-	if doc.asn:
-		frappe.db.set_value(
-			"Scan Code",
-			{
-				"action_key": "create_purchase_receipt",
-				"source_doctype": "ASN",
-				"source_name": doc.asn,
-				"status": "Used",
-			},
-			"status",
-			"Active",
-			update_modified=True,
-		)
+	from asn_module.qr_engine.scan_codes import reactivate_upstream_scan_codes_for_trashed_document
+
+	reactivate_upstream_scan_codes_for_trashed_document(doc)
 
 
 def on_purchase_receipt_submit(doc, method):

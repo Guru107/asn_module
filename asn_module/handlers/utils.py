@@ -5,13 +5,34 @@ from frappe import _
 from frappe.utils import today
 
 
-def fiscal_year_for_date(date: str) -> str | None:
-	"""The enabled Fiscal Year that covers ``date``, if the site defines one."""
-	return frappe.db.get_value(
+def fiscal_year_for_date(date: str, company: str | None = None) -> str | None:
+	"""The enabled Fiscal Year that covers ``date``, scoped to ``company`` when given.
+
+	When several fiscal years overlap, the one with the latest ``year_start_date`` wins.
+	"""
+	candidates = frappe.get_all(
 		"Fiscal Year",
-		{"disabled": 0, "year_start_date": ("<=", date), "year_end_date": (">=", date)},
-		"name",
+		filters={
+			"disabled": 0,
+			"year_start_date": ("<=", date),
+			"year_end_date": (">=", date),
+		},
+		fields=["name"],
+		order_by="year_start_date desc",
+		limit_page_length=0,
 	)
+	if not candidates:
+		return None
+	if not (company or "").strip():
+		return candidates[0].name
+	if not frappe.db.table_exists("Fiscal Year Company"):
+		return candidates[0].name
+	company = company.strip()
+	for row in candidates:
+		linked = frappe.get_all("Fiscal Year Company", filters={"parent": row.name}, pluck="company")
+		if not linked or company in linked:
+			return row.name
+	return None
 
 
 def fill_custom_fiscal_year(doc) -> None:
@@ -34,7 +55,7 @@ def fill_custom_fiscal_year(doc) -> None:
 	if existing and frappe.db.exists("Fiscal Year", existing):
 		return
 	date = doc.get("posting_date") or doc.get("transaction_date") or today()
-	fiscal_year = fiscal_year_for_date(date)
+	fiscal_year = fiscal_year_for_date(date, company=doc.get("company"))
 	if fiscal_year:
 		doc.custom_fiscal_year = fiscal_year
 
