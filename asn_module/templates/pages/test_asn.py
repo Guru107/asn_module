@@ -506,3 +506,14 @@ class TestASNPortalPage(FrappeTestCase):
 
 		result = get_open_purchase_orders_for_supplier("")
 		self.assertEqual(result, [])
+
+	def test_open_purchase_orders_omit_subcontracted_purchase_orders(self):
+		from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
+		from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
+
+		material = create_purchase_order(qty=1)
+		subcontracted = create_purchase_order(supplier=material.supplier, qty=1)
+		frappe.db.set_value("Purchase Order", subcontracted.name, "is_subcontracted", 1)
+		names = [row.name for row in get_open_purchase_orders_for_supplier(material.supplier)]
+		self.assertIn(material.name, names)
+		self.assertNotIn(subcontracted.name, names)

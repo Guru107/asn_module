@@ -5,7 +5,11 @@ from frappe import _
 from frappe.utils import cint, flt
 
 from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
-from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
+from asn_module.templates.pages.asn import (
+	_get_supplier_for_user,
+	get_open_purchase_orders_for_supplier,
+	get_open_subcontracting_orders_for_supplier,
+)
 
 
 def _normalize_paging(start: int | str, page_len: int | str) -> tuple[int, int]:
@@ -48,6 +52,20 @@ def search_open_purchase_orders(txt: str = "", start: int = 0, page_len: int = 2
 		{"value": po.name, "description": f"{po.status} | {po.transaction_date}"}
 		for po in entries
 		if not txt or txt in po.name.lower()
+	]
+	return filtered[start : start + page_len]
+
+
+@frappe.whitelist()
+def search_open_subcontracting_orders(txt: str = "", start: int = 0, page_len: int = 20) -> list[dict]:
+	supplier = _get_supplier()
+	start, page_len = _normalize_paging(start, page_len)
+	txt = (txt or "").strip().lower()
+	entries = get_open_subcontracting_orders_for_supplier(supplier)
+	filtered = [
+		{"value": row.name, "description": f"{row.status} | {row.transaction_date}"}
+		for row in entries
+		if not txt or txt in row.name.lower()
 	]
 	return filtered[start : start + page_len]
 
