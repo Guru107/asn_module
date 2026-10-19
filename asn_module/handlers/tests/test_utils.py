@@ -142,6 +142,24 @@ class TestFiscalYearForDate(FrappeTestCase):
 		get_all.assert_called_once()
 		self.assertIn("year_start_date desc", get_all.call_args.kwargs.get("order_by", ""))
 
+	def test_returns_none_when_no_fiscal_year_covers_the_date(self):
+		with patch.object(frappe, "get_all", return_value=[]):
+			self.assertIsNone(fiscal_year_for_date("2031-01-01"))
+
+	def test_returns_candidate_when_company_table_missing(self):
+		with (
+			patch.object(frappe, "get_all", return_value=[{"name": "FY-Only"}]),
+			patch.object(frappe.db, "table_exists", return_value=False),
+		):
+			self.assertEqual(fiscal_year_for_date("2026-06-01", company="Any Co"), "FY-Only")
+
+	def test_returns_none_when_company_not_linked_to_any_candidate(self):
+		with (
+			patch.object(frappe, "get_all", side_effect=[[{"name": "FY-A"}], ["Other Co"]]),
+			patch.object(frappe.db, "table_exists", return_value=True),
+		):
+			self.assertIsNone(fiscal_year_for_date("2026-06-01", company="Test Company"))
+
 	def test_scopes_to_company_when_fiscal_year_company_exists(self):
 		with (
 			patch.object(frappe.db, "table_exists", return_value=True),

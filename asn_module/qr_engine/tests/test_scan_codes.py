@@ -17,6 +17,7 @@ from asn_module.qr_engine.scan_codes import (
 	purge_scan_codes_for_source,
 	purge_scan_registry_on_trash,
 	reactivate_scan_code,
+	reactivate_upstream_scan_codes_for_trashed_document,
 	record_successful_scan,
 	validate_scan_code_row,
 	verify_registry_row_points_to_existing_source,
@@ -300,6 +301,90 @@ class TestPurgeScanRegistryOnTrash(FrappeTestCase, _ScanCodeTestMixin):
 			purge_scan_registry_on_trash(pr)
 		purge_logs.assert_called_once()
 		self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Active")
+
+	def test_reactivate_scan_code_noops_on_blank_inputs(self):
+		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", name, "status", "Used", update_modified=False)
+		reactivate_scan_code("", "ASN", self._asn_name)
+		self.assertEqual(frappe.db.get_value("Scan Code", name, "status"), "Used")
+
+	def test_reactivate_upstream_from_success_scan_log(self):
+		code = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
+		pr_name = "PR-SCAN-LOG-" + frappe.generate_hash(length=6)
+		frappe.get_doc(
+			{
+				"doctype": "Scan Log",
+				"action": "create_purchase_receipt",
+				"source_doctype": "ASN",
+				"source_name": self._asn_name,
+				"result_doctype": "Purchase Receipt",
+				"result_name": pr_name,
+				"result": "Success",
+			}
+		).insert(ignore_permissions=True, ignore_links=True)
+		reactivate_upstream_scan_codes_for_trashed_document(
+			frappe._dict(doctype="Purchase Receipt", name=pr_name, docstatus=0)
+		)
+		self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Active")
+
+	def test_reactivate_upstream_reactivates_asn_gate_pass_and_scr_codes_on_pr(self):
+		asn_codes = {
+			"create_purchase_receipt": get_or_create_scan_code(
+				"create_purchase_receipt", "ASN", self._asn_name
+			),
+			"create_gate_pass_from_asn": get_or_create_scan_code(
+				"create_gate_pass_from_asn", "ASN", self._asn_name
+			),
+		}
+		gp_name = "GP-REACT-" + frappe.generate_hash(length=4)
+		scr_name = "SCR-REACT-" + frappe.generate_hash(length=4)
+		gp_code = self._make_scan_code_direct(
+			action_key="create_receipt_from_gate_pass",
+			source_doctype="Gate Pass",
+			source_name=gp_name,
+		)
+		scr_code = self._make_scan_code_direct(
+			action_key="create_purchase_receipt_from_subcontracting_receipt",
+			source_doctype="Subcontracting Receipt",
+			source_name=scr_name,
+		)
+		for code_name in (*asn_codes.values(), gp_code, scr_code):
+			frappe.db.set_value("Scan Code", code_name, "status", "Used", update_modified=False)
+
+		reactivate_upstream_scan_codes_for_trashed_document(
+			frappe._dict(
+				doctype="Purchase Receipt",
+				name="PR-LINKS",
+				docstatus=0,
+				asn=self._asn_name,
+				custom_gate_pass_reference=gp_name,
+				subcontracting_receipt=scr_name,
+			)
+		)
+		for code_name in (*asn_codes.values(), gp_code, scr_code):
+			self.assertEqual(frappe.db.get_value("Scan Code", code_name, "status"), "Active")
+
+	def test_reactivate_upstream_on_subcontracting_receipt_and_gate_pass(self):
+		for action_key in ("create_purchase_receipt", "create_gate_pass_from_asn"):
+			code = get_or_create_scan_code(action_key, "ASN", self._asn_name)
+			frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
+
+		for doctype in ("Subcontracting Receipt", "Gate Pass"):
+			reactivate_upstream_scan_codes_for_trashed_document(
+				frappe._dict(doctype=doctype, name="DOC-1", docstatus=0, asn=self._asn_name)
+			)
+
+		for action_key in ("create_purchase_receipt", "create_gate_pass_from_asn"):
+			code = get_or_create_scan_code(action_key, "ASN", self._asn_name)
+			self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Active")
+
+	def test_reactivate_upstream_skips_submitted_documents(self):
+		with patch("asn_module.qr_engine.scan_codes.reactivate_scan_code") as reactivate:
+			reactivate_upstream_scan_codes_for_trashed_document(
+				frappe._dict(doctype="Purchase Receipt", name="PR-SUB", docstatus=1, asn=self._asn_name)
+			)
+		reactivate.assert_not_called()
 
 
 class TestGetOrCreateScanCodeCanonicalReuse(TestCase):
