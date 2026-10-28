@@ -6,7 +6,13 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order, make_test_asn
-from asn_module.handlers.utils import attach_qr_to_doc, fill_custom_fiscal_year, fiscal_year_for_date
+from asn_module.handlers.utils import (
+	attach_qr_to_doc,
+	attach_scan_codes_to_doc,
+	backfill_scan_code_attachments,
+	fill_custom_fiscal_year,
+	fiscal_year_for_date,
+)
 from asn_module.utils.test_setup import before_tests
 
 
@@ -57,6 +63,83 @@ class TestAttachQrToDoc(FrappeTestCase):
 	def test_missing_image_base64_raises_key_error(self):
 		with self.assertRaises(KeyError):
 			attach_qr_to_doc(self._asn, {"scan_code": "ABCDEFGHJKLMNPQR"}, "qr")
+
+	def test_invalid_kind_raises_validation_error(self):
+		with self.assertRaises(frappe.ValidationError):
+			attach_qr_to_doc(
+				self._asn,
+				{
+					"image_base64": "ZmFrZQ==",
+					"scan_code": "ABCDEFGHJKLMNPQR",
+				},
+				"pdf",
+			)
+
+
+class TestAttachScanCodesToDoc(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		before_tests()
+		super().setUpClass()
+		po = create_purchase_order(qty=10)
+		cls._asn = make_test_asn(purchase_order=po, qty=10)
+		cls._asn.insert(ignore_permissions=True)
+
+	def _scan_image_result(self):
+		return {
+			"image_base64": base64.b64encode(b"\x89PNG\r\n\x1a\n").decode(),
+			"scan_code": "ABCDEFGHJKLMNPQR",
+			"human_readable": "ABCDEFGHJKLMNPQR",
+		}
+
+	def test_attaches_qr_and_barcode_named_by_scan_code(self):
+		payload = self._scan_image_result()
+		with (
+			patch("asn_module.qr_engine.generate.generate_qr", return_value=payload),
+			patch("asn_module.qr_engine.generate.generate_barcode", return_value=payload),
+		):
+			attach_scan_codes_to_doc(self._asn, "create_purchase_receipt")
+
+		file_names = frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "ASN", "attached_to_name": self._asn.name},
+			pluck="file_name",
+		)
+		self.assertIn("ABCDEFGHJKLMNPQR-qr.png", file_names)
+		self.assertIn("ABCDEFGHJKLMNPQR-barcode.png", file_names)
+
+	def test_skips_existing_attachments_on_second_call(self):
+		payload = self._scan_image_result()
+		with (
+			patch("asn_module.qr_engine.generate.generate_qr", return_value=payload) as generate_qr,
+			patch("asn_module.qr_engine.generate.generate_barcode", return_value=payload) as generate_barcode,
+		):
+			attach_scan_codes_to_doc(self._asn, "create_purchase_invoice")
+			attach_scan_codes_to_doc(self._asn, "create_purchase_invoice")
+
+		self.assertEqual(generate_qr.call_count, 2)
+		self.assertEqual(generate_barcode.call_count, 2)
+		file_names = frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "ASN", "attached_to_name": self._asn.name},
+			pluck="file_name",
+		)
+		self.assertEqual(file_names.count("ABCDEFGHJKLMNPQR-qr.png"), 1)
+		self.assertEqual(file_names.count("ABCDEFGHJKLMNPQR-barcode.png"), 1)
+
+	def test_backfill_whitelist_attaches_and_lists_files(self):
+		payload = self._scan_image_result()
+		frappe.set_user("Administrator")
+		with (
+			patch("asn_module.qr_engine.generate.generate_qr", return_value=payload),
+			patch("asn_module.qr_engine.generate.generate_barcode", return_value=payload),
+		):
+			result = backfill_scan_code_attachments("ASN", self._asn.name, "confirm_putaway")
+
+		self.assertEqual(result["doctype"], "ASN")
+		self.assertEqual(result["name"], self._asn.name)
+		self.assertEqual(result["action"], "confirm_putaway")
+		self.assertIn("ABCDEFGHJKLMNPQR-qr.png", result["files"])
 
 
 def _doc_with_fiscal_year_field(reqd: int = 1, **values) -> frappe._dict:

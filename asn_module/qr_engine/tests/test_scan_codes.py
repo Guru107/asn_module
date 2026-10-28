@@ -132,6 +132,14 @@ class TestGetOrCreateScanCode(FrappeTestCase, _ScanCodeTestMixin):
 			name,
 		)
 
+	def test_resolve_creates_when_no_registry_row(self):
+		code = resolve_scan_code_for_attachment("create_purchase_invoice", "ASN", self._asn_name)
+		self.assertEqual(len(code), SCAN_CODE_LENGTH)
+		self.assertTrue(frappe.db.exists("Scan Code", code))
+
+	def test_resolve_rejects_missing_registration_fields(self):
+		with self.assertRaises(frappe.ValidationError):
+			resolve_scan_code_for_attachment("", "ASN", self._asn_name)
 
 class TestGetScanCodeDoc(FrappeTestCase, _ScanCodeTestMixin):
 	@classmethod
