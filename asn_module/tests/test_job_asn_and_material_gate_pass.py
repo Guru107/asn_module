@@ -951,6 +951,27 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertFalse(frappe.db.get_value("Subcontracting Receipt", result["name"], "asn"))
 		self.assertEqual(frappe.db.count("Gate Pass", {"reference_number": subcontracting_order.name}), 0)
 
+	def test_create_from_gate_pass_uses_receive_qty_at_the_gate(self):
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		try:
+			with integration_user_context():
+				_purchase_order, asn = self._submitted_material_asn()
+				code = get_or_create_scan_code(ASN_GATE_PASS_SCAN_ACTION, "ASN", asn.name)
+				opened = dispatch(code=code, device_info="gate-pass-receive-qty")
+				gp_item = (frappe.get_doc("Gate Pass", opened["name"]).items or [None])[0]
+				self.assertIsNotNone(gp_item)
+				self.assertEqual(flt(gp_item.receive_qty), 2)
+				frappe.db.set_value("Gate Pass Item", gp_item.name, "receive_qty", 1, update_modified=False)
+				frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
+				created = create_receipt_from_gate_pass(opened["name"])
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		receipt = frappe.get_doc("Purchase Receipt", created["name"])
+		self.assertEqual(flt(receipt.items[0].qty), 1)
+		self.assertEqual(flt(receipt.items[0].received_qty), 1)
+
 	def test_create_on_a_submitted_material_gate_pass_opens_a_purchase_receipt_carrying_the_asn(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
 		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
@@ -993,6 +1014,15 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(receipt.items[0].batch_no, batch_id)
 		self.assertEqual(receipt.items[0].serial_no, "SER-44")
 		self.assertEqual(flt(receipt.items[0].qty), 1)
+		self.assertEqual(flt(receipt.items[0].received_qty), 1)
+		gate_pass = frappe.get_doc("Gate Pass", opened["name"])
+		if frappe.get_meta("Purchase Receipt").has_field("custom_invoice_no"):
+			self.assertEqual(receipt.custom_invoice_no, gate_pass.invoice_number)
+		if frappe.get_meta("Purchase Receipt").has_field("custom_purchase_receipt_type"):
+			self.assertEqual(receipt.custom_purchase_receipt_type, gate_pass.gate_pass_type)
+		if frappe.get_meta("Purchase Receipt Item").has_field("custom_gate_pass"):
+			self.assertEqual(receipt.items[0].custom_gate_pass, gate_pass.name)
+			self.assertTrue(receipt.items[0].custom_gate_pass_item)
 
 		with (
 			real_asn_attachment_context(),

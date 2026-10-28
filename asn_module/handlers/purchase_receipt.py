@@ -593,16 +593,25 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 	if existing:
 		return existing
 
+	from asn_module.handlers.gate_pass_create import map_purchase_receipt_draft_from_gate_pass
+
 	asn = frappe.get_doc("ASN", gate_pass.asn)
-	purchase_order_items = [row.purchase_order_item for row in asn.items if row.purchase_order_item]
-	pr = make_purchase_receipt(
-		gate_pass.reference_number or asn.items[0].purchase_order,
-		args={"filtered_children": purchase_order_items},
-	)
-	_apply_asn_fields(pr, asn)
-	_set_if_present(pr, "custom_gate_pass_reference", gate_pass.name)
+	pr = map_purchase_receipt_draft_from_gate_pass(gate_pass)
+	_apply_asn_fields(pr, asn, preserve_qty=True)
 	fill_custom_fiscal_year(pr)
 	pr.insert(ignore_permissions=True)
+
+	for asn_item in asn.items:
+		emit_asn_item_transition(
+			asn=asn.name,
+			asn_item=asn_item.name,
+			item_code=asn_item.item_code,
+			state="PR_CREATED_DRAFT",
+			transition_status="OK",
+			ref_doctype="Purchase Receipt",
+			ref_name=pr.name,
+		)
+
 	return {
 		"doctype": "Purchase Receipt",
 		"name": pr.name,
