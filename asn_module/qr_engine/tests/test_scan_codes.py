@@ -141,6 +141,7 @@ class TestGetOrCreateScanCode(FrappeTestCase, _ScanCodeTestMixin):
 		with self.assertRaises(frappe.ValidationError):
 			resolve_scan_code_for_attachment("", "ASN", self._asn_name)
 
+
 class TestGetScanCodeDoc(FrappeTestCase, _ScanCodeTestMixin):
 	@classmethod
 	def setUpClass(cls):

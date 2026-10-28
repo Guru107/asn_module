@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest import TestCase
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -7,7 +8,12 @@ from frappe.utils import flt
 
 from asn_module.handlers.gate_pass_create import (
 	collect_receive_qty_by_po_item,
+	create_from_gate_pass,
+	ensure_load_after_mapping,
+	map_purchase_receipt_draft_from_gate_pass,
 	overlay_gate_pass_onto_mapped_pr,
+	throw_if_open_purchase_receipt_for_gate_pass,
+	validate_gate_pass_for_purchase_receipt,
 )
 
 
@@ -51,8 +57,76 @@ class TestCollectReceiveQty(TestCase):
 		self.assertEqual(qty_map, {"poi-a": 20.0, "poi-c": 5.0})
 		self.assertEqual(row_map["poi-a"].name, "r1")
 
+	def test_reads_recieve_qty_typo_and_dict_rows(self):
+		gp = {
+			"items": [
+				{"purchase_order_item": "poi-a", "recieve_qty": 7},
+				{"purchase_order_item": "", "receive_qty": 5},
+			]
+		}
+		qty_map, row_map = collect_receive_qty_by_po_item(gp)
+		self.assertEqual(qty_map, {"poi-a": 7.0})
+		self.assertEqual(row_map["poi-a"]["purchase_order_item"], "poi-a")
 
-class TestOverlayPurchaseReceipt(TestCase):
+
+class TestEnsureLoadAfterMapping(TestCase):
+	def test_sets_onload_dict_when_set_onload_missing(self):
+		doc = SimpleNamespace()
+		ensure_load_after_mapping(doc)
+		self.assertTrue(doc._onload["load_after_mapping"])
+
+	def test_merges_into_existing_onload_dict(self):
+		doc = SimpleNamespace(_onload={"other": 1})
+		ensure_load_after_mapping(doc)
+		self.assertTrue(doc._onload["load_after_mapping"])
+		self.assertEqual(doc._onload["other"], 1)
+
+
+class TestValidateGatePassForPurchaseReceipt(TestCase):
+	def test_requires_submitted_gate_in_po_reference(self):
+		with self.assertRaises(frappe.ValidationError):
+			validate_gate_pass_for_purchase_receipt(_gp(docstatus=0))
+		with self.assertRaises(frappe.ValidationError):
+			validate_gate_pass_for_purchase_receipt(_gp(entry_type="Gate Out"))
+		with self.assertRaises(frappe.ValidationError):
+			validate_gate_pass_for_purchase_receipt(_gp(document_reference="Sales Order"))
+
+
+class TestThrowIfOpenPurchaseReceipt(FrappeTestCase):
+	def test_no_op_when_custom_field_missing(self):
+		meta = SimpleNamespace(has_field=lambda _field: False)
+		with patch("asn_module.handlers.gate_pass_create.frappe.get_meta", return_value=meta):
+			throw_if_open_purchase_receipt_for_gate_pass("GP-1")
+
+	def test_raises_when_draft_pr_exists(self):
+		meta = SimpleNamespace(has_field=lambda field: field == "custom_gate_pass_reference")
+		with (
+			patch("asn_module.handlers.gate_pass_create.frappe.get_meta", return_value=meta),
+			patch(
+				"asn_module.handlers.gate_pass_create.frappe.get_all",
+				return_value=[{"name": "PR-OPEN-1"}],
+			),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				throw_if_open_purchase_receipt_for_gate_pass("GP-1")
+
+
+class TestMapPurchaseReceiptDraftHelpers(FrappeTestCase):
+	def test_raises_when_no_receive_qty_lines(self):
+		gp = _gp(items=[_row(purchase_order_item="poi-a", receive_qty=0)])
+		with self.assertRaises(frappe.ValidationError):
+			map_purchase_receipt_draft_from_gate_pass(gp)
+
+	def test_create_from_gate_pass_requires_name(self):
+		with self.assertRaises(frappe.ValidationError):
+			create_from_gate_pass("")
+
+	def test_create_from_gate_pass_rejects_unmapped_entry_type(self):
+		gp = _gp(entry_type="Gate Out", document_reference="Sales Order")
+		with patch("asn_module.handlers.gate_pass_create.frappe.get_doc", return_value=gp):
+			with self.assertRaises(frappe.ValidationError):
+				create_from_gate_pass("GP-1")
+
 	def test_sets_header_back_link_invoice_and_receive_qty(self):
 		gp = _gp(
 			items=[_row(name="gp-item-1", purchase_order_item="poi-a", receive_qty=20)],
