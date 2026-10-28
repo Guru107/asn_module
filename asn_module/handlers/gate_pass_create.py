@@ -130,7 +130,9 @@ def throw_if_open_purchase_receipt_for_gate_pass(gate_pass_name: str) -> None:
 		limit=1,
 	)
 	if existing:
-		frappe.throw(_("Purchase Receipt {0} already exists for this Gate Pass").format(existing[0].name))
+		frappe.throw(
+			_("Purchase Receipt {0} already exists for this Gate Pass").format(existing[0]["name"])
+		)
 
 
 def map_purchase_receipt_draft_from_gate_pass(gate_pass: Any, *, recalculate_taxes: bool = False):
