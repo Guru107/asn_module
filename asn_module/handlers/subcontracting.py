@@ -1,12 +1,7 @@
 import frappe
 from frappe import _
 
-from asn_module.handlers.utils import (
-	attach_qr_to_doc,
-	attach_scan_codes_to_doc,
-	fill_custom_fiscal_year,
-)
-from asn_module.qr_engine.generate import generate_qr
+from asn_module.handlers.utils import attach_scan_codes_to_doc, fill_custom_fiscal_year
 from asn_module.qr_engine.scan_codes import void_scan_codes
 
 SUBCONTRACTING_RECEIPT_PR_ACTION = "create_purchase_receipt_from_subcontracting_receipt"
@@ -113,7 +108,7 @@ def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name:
 def on_subcontracting_receipt_submit(doc, method=None):
 	"""Attach the Purchase Receipt scan code when a Subcontracting Receipt is submitted."""
 	del method
-	attach_scan_codes_to_doc(doc, SUBCONTRACTING_RECEIPT_PR_ACTION, "subcontracting-receipt-pr")
+	attach_scan_codes_to_doc(doc, SUBCONTRACTING_RECEIPT_PR_ACTION)
 
 
 def on_subcontracting_receipt_cancel(doc, method=None):
@@ -126,12 +121,7 @@ def on_subcontracting_order_submit(doc, method):
 	"""Generate dispatch QR when a Subcontracting Order is submitted."""
 	del method
 
-	qr_result = generate_qr(
-		action="create_subcontracting_dispatch",
-		source_doctype="Subcontracting Order",
-		source_name=doc.name,
-	)
-	attach_qr_to_doc(doc, qr_result, "subcontracting-dispatch-qr")
+	attach_scan_codes_to_doc(doc, "create_subcontracting_dispatch")
 
 
 def on_subcontracting_dispatch_submit(doc, method):
@@ -141,9 +131,4 @@ def on_subcontracting_dispatch_submit(doc, method):
 	if doc.stock_entry_type != "Send to Subcontractor" or not doc.subcontracting_order:
 		return
 
-	qr_result = generate_qr(
-		action="create_subcontracting_receipt",
-		source_doctype="Subcontracting Order",
-		source_name=doc.subcontracting_order,
-	)
-	attach_qr_to_doc(doc, qr_result, "subcontracting-receipt-qr")
+	attach_scan_codes_to_doc(doc, "create_subcontracting_receipt")

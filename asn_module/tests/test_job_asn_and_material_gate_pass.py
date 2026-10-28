@@ -1027,7 +1027,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		with (
 			real_asn_attachment_context(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 		):
 			receipt.submit()
 		invoice = create_from_purchase_receipt("Purchase Receipt", receipt.name, {})

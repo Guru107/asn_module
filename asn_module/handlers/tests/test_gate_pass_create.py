@@ -109,8 +109,10 @@ class TestMapPurchaseReceiptDraft(FrappeTestCase):
 				asn.submit()
 			opened = _open_or_create_material_gate_pass(asn)
 			gate_pass = frappe.get_doc("Gate Pass", opened["name"])
-			gate_pass.db_set("branch", "Overlay Branch", update_modified=False)
-			gate_pass.reload()
+			overlay_branch = "Overlay Branch"
+			if frappe.get_meta("Gate Pass").has_field("branch"):
+				gate_pass.db_set("branch", overlay_branch, update_modified=False)
+				gate_pass.reload()
 			frappe.db.set_value("Gate Pass", gate_pass.name, "docstatus", 1, update_modified=False)
 			gate_pass.reload()
 
@@ -121,5 +123,7 @@ class TestMapPurchaseReceiptDraft(FrappeTestCase):
 			self.assertEqual(flt(doc.items[0].qty), 3)
 			if frappe.get_meta("Purchase Receipt").has_field("custom_gate_pass_reference"):
 				self.assertEqual(doc.custom_gate_pass_reference, gate_pass.name)
-			if frappe.get_meta("Purchase Receipt").has_field("branch"):
-				self.assertEqual(doc.branch, "Overlay Branch")
+			if frappe.get_meta("Purchase Receipt").has_field("branch") and frappe.get_meta(
+				"Gate Pass"
+			).has_field("branch"):
+				self.assertEqual(doc.branch, overlay_branch)

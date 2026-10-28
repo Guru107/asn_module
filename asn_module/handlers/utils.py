@@ -61,33 +61,80 @@ def fill_custom_fiscal_year(doc) -> None:
 		doc.custom_fiscal_year = fiscal_year
 
 
-def attach_qr_to_doc(doc, qr_result, prefix):
-	"""Attach a generated QR image to the target document."""
+def _scan_code_file_name(scan_result: dict, kind: str) -> str:
+	"""Build ``{scan_code}-{kind}.png`` for a QR or barcode image."""
+	from asn_module.qr_engine.scan_codes import format_scan_code_for_display
+
+	if kind not in ("qr", "barcode"):
+		frappe.throw(_("Scan image kind must be qr or barcode"))
+	raw = (scan_result.get("human_readable") or scan_result.get("scan_code") or "").strip()
+	label = format_scan_code_for_display(raw) if raw else ""
+	if not label:
+		frappe.throw(_("Scan image attachment requires a scan code"))
+	return f"{label}-{kind}.png"
+
+
+def attach_qr_to_doc(doc, scan_result, kind: str) -> None:
+	"""Attach a generated QR or barcode PNG; ``file_name`` is the scan code."""
 	frappe.get_doc(
 		{
 			"doctype": "File",
-			"file_name": f"{prefix}-{doc.name}.png",
+			"file_name": _scan_code_file_name(scan_result, kind),
 			"attached_to_doctype": doc.doctype,
 			"attached_to_name": doc.name,
-			"content": base64.b64decode(qr_result["image_base64"]),
+			"content": base64.b64decode(scan_result["image_base64"]),
 			"is_private": 0,
 		}
 	).save(ignore_permissions=True)
 
 
-def attach_scan_codes_to_doc(doc, action: str, prefix: str) -> None:
+def _scan_attachment_exists(doc, file_name: str) -> bool:
+	return bool(
+		frappe.db.exists(
+			"File",
+			{
+				"attached_to_doctype": doc.doctype,
+				"attached_to_name": doc.name,
+				"file_name": file_name,
+			},
+		)
+	)
+
+
+def attach_scan_codes_to_doc(doc, action: str) -> None:
 	"""Attach the QR and barcode that create this document's successor.
 
-	Both images carry one scan code: ``get_or_create_scan_code`` shares a
+	Both images carry one scan code: ``resolve_scan_code_for_attachment`` shares a
 	registry row per (action, source) pair, so a QR scan and a barcode scan
-	of the same printed document dispatch the same action.
+	of the same printed document dispatch the same action. File names use the
+	scan code (``{code}-qr.png`` and ``{code}-barcode.png``). Skips files that
+	already exist so backfill is safe after submit or partial attachment.
 	"""
 	from asn_module.qr_engine.generate import generate_barcode, generate_qr
 
 	qr_result = generate_qr(action=action, source_doctype=doc.doctype, source_name=doc.name)
-	attach_qr_to_doc(doc, qr_result, f"{prefix}-qr")
+	qr_file_name = _scan_code_file_name(qr_result, "qr")
+	if not _scan_attachment_exists(doc, qr_file_name):
+		attach_qr_to_doc(doc, qr_result, "qr")
 	barcode_result = generate_barcode(action=action, source_doctype=doc.doctype, source_name=doc.name)
-	attach_qr_to_doc(doc, barcode_result, f"{prefix}-barcode")
+	barcode_file_name = _scan_code_file_name(barcode_result, "barcode")
+	if not _scan_attachment_exists(doc, barcode_file_name):
+		attach_qr_to_doc(doc, barcode_result, "barcode")
+
+
+@frappe.whitelist()
+def backfill_scan_code_attachments(doctype: str, name: str, action: str) -> dict:
+	"""Attach missing QR/barcode files for an existing registry row (Administrator)."""
+	frappe.only_for("System Manager")
+	doc = frappe.get_doc(doctype, name)
+	attach_scan_codes_to_doc(doc, action)
+	files = frappe.get_all(
+		"File",
+		filters={"attached_to_doctype": doctype, "attached_to_name": name},
+		pluck="file_name",
+		order_by="creation desc",
+	)
+	return {"doctype": doctype, "name": name, "action": action, "files": files}
 
 
 def find_pr_row_for_qi(qi, purchase_receipt):

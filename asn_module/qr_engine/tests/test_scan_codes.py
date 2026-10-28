@@ -19,6 +19,7 @@ from asn_module.qr_engine.scan_codes import (
 	reactivate_scan_code,
 	reactivate_upstream_scan_codes_for_trashed_document,
 	record_successful_scan,
+	resolve_scan_code_for_attachment,
 	validate_scan_code_row,
 	verify_registry_row_points_to_existing_source,
 )
@@ -122,6 +123,14 @@ class TestGetOrCreateScanCode(FrappeTestCase, _ScanCodeTestMixin):
 		first = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
 		second = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
 		self.assertEqual(first, second)
+
+	def test_resolve_reuses_used_row_for_attachment(self):
+		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", name, "status", "Used", update_modified=False)
+		self.assertEqual(
+			resolve_scan_code_for_attachment("create_purchase_receipt", "ASN", self._asn_name),
+			name,
+		)
 
 
 class TestGetScanCodeDoc(FrappeTestCase, _ScanCodeTestMixin):

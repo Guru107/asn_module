@@ -20,10 +20,12 @@ class TestAttachQrToDoc(FrappeTestCase):
 		cls._asn.insert(ignore_permissions=True)
 
 	def test_creates_file_attached_to_target(self):
-		# PNG magic header only — attach_qr_to_doc saves the base64 bytes without
-		# validating image content, so a minimal header is sufficient for testing.
 		minimal_png = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
-		qr_result = {"image_base64": minimal_png}
+		qr_result = {
+			"image_base64": minimal_png,
+			"scan_code": "ABCDEFGHJKLMNPQR",
+			"human_readable": "ABCDEFGHJKLMNPQR",
+		}
 		attach_qr_to_doc(self._asn, qr_result, "qr")
 
 		files = frappe.get_all(
@@ -35,15 +37,26 @@ class TestAttachQrToDoc(FrappeTestCase):
 			fields=["name", "file_name"],
 		)
 		self.assertEqual(len(files), 1)
-		self.assertTrue(files[0]["file_name"].startswith("qr-"))
+		self.assertEqual(files[0]["file_name"], "ABCDEFGHJKLMNPQR-qr.png")
 
 	def test_invalid_base64_raises_error(self):
 		with self.assertRaises(Exception):
-			attach_qr_to_doc(self._asn, {"image_base64": "not-valid-base64!!!"}, "qr")
+			attach_qr_to_doc(
+				self._asn,
+				{
+					"image_base64": "not-valid-base64!!!",
+					"scan_code": "ABCDEFGHJKLMNPQR",
+				},
+				"qr",
+			)
+
+	def test_missing_scan_code_raises_validation_error(self):
+		with self.assertRaises(frappe.ValidationError):
+			attach_qr_to_doc(self._asn, {"image_base64": "ZmFrZQ=="}, "qr")
 
 	def test_missing_image_base64_raises_key_error(self):
 		with self.assertRaises(KeyError):
-			attach_qr_to_doc(self._asn, {}, "qr")
+			attach_qr_to_doc(self._asn, {"scan_code": "ABCDEFGHJKLMNPQR"}, "qr")
 
 
 def _doc_with_fiscal_year_field(reqd: int = 1, **values) -> frappe._dict:

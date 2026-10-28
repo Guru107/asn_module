@@ -104,6 +104,14 @@ def _submit_by_flag(doctype, name):
 	frappe.db.set_value(doctype, name, "docstatus", 1, update_modified=False)
 
 
+from asn_module.qr_engine.scan_codes import format_scan_code_for_display
+
+
+def _scan_code_attachment_names(code: str) -> tuple[str, str]:
+	label = format_scan_code_for_display(code)
+	return f"{label}-qr.png", f"{label}-barcode.png"
+
+
 def _attached_file_names(doctype, name):
 	return frappe.get_all(
 		"File",
@@ -171,11 +179,10 @@ class TestGatePassScanChain(FrappeTestCase):
 
 		code = _scan_code_for(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name)
 		self.assertTrue(code)
-		# Gate Pass names can carry a fiscal-year slash; Frappe sanitises file
-		# names, so assert on the prefix rather than the exact name.
+		qr_name, barcode_name = _scan_code_attachment_names(code)
 		files = _attached_file_names("Gate Pass", gate_pass.name)
-		self.assertTrue(any(f.startswith("gate-pass-receipt-qr-") for f in files))
-		self.assertTrue(any(f.startswith("gate-pass-receipt-barcode-") for f in files))
+		self.assertIn(qr_name, files)
+		self.assertIn(barcode_name, files)
 
 	def test_a_gate_pass_without_an_asn_gets_no_code(self):
 		on_gate_pass_submit(SimpleNamespace(asn="", name="GP-NO-ASN"))
@@ -329,9 +336,10 @@ class TestSubcontractingReceiptScanChain(FrappeTestCase):
 
 		code = _scan_code_for(SUBCONTRACTING_RECEIPT_PR_ACTION, "Subcontracting Receipt", scr.name)
 		self.assertTrue(code)
+		qr_name, barcode_name = _scan_code_attachment_names(code)
 		files = _attached_file_names("Subcontracting Receipt", scr.name)
-		self.assertIn(f"subcontracting-receipt-pr-qr-{scr.name}.png", files)
-		self.assertIn(f"subcontracting-receipt-pr-barcode-{scr.name}.png", files)
+		self.assertIn(qr_name, files)
+		self.assertIn(barcode_name, files)
 
 	def test_scanning_a_subcontracting_receipt_opens_a_draft_purchase_receipt(self):
 		with integration_user_context(), patch_subcontracting_incoming_rate(5):
@@ -412,4 +420,7 @@ class TestUnlinkedReceiptGetsInvoiceCode(FrappeTestCase):
 
 		code = _scan_code_for("create_purchase_invoice", "Purchase Receipt", pr.name)
 		self.assertTrue(code, "an unlinked receipt carries the invoice code")
-		self.assertIn(f"purchase-invoice-qr-{pr.name}.png", _attached_file_names("Purchase Receipt", pr.name))
+		qr_name, barcode_name = _scan_code_attachment_names(code)
+		files = _attached_file_names("Purchase Receipt", pr.name)
+		self.assertIn(qr_name, files)
+		self.assertIn(barcode_name, files)

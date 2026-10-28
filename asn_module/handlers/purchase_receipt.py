@@ -6,7 +6,6 @@ from frappe import _
 from frappe.utils import cint, flt
 
 from asn_module.handlers.utils import (
-	attach_qr_to_doc,
 	attach_scan_codes_to_doc,
 	fill_custom_fiscal_year,
 )
@@ -573,7 +572,7 @@ def on_gate_pass_submit(doc, method=None):
 	del method
 	if not (getattr(doc, "asn", None) or "").strip():
 		return
-	attach_scan_codes_to_doc(doc, GATE_PASS_RECEIPT_ACTION, "gate-pass-receipt")
+	attach_scan_codes_to_doc(doc, GATE_PASS_RECEIPT_ACTION)
 
 
 def on_gate_pass_cancel(doc, method=None):
@@ -996,14 +995,7 @@ def _attach_followup_codes(doc) -> None:
 	Subcontracting Receipt) is not skipped. The putaway code is attached only
 	when an item does not call for inspection first.
 	"""
-	from asn_module.qr_engine.generate import generate_qr
-
-	purchase_invoice_qr = generate_qr(
-		action="create_purchase_invoice",
-		source_doctype="Purchase Receipt",
-		source_name=doc.name,
-	)
-	attach_qr_to_doc(doc, purchase_invoice_qr, "purchase-invoice-qr")
+	attach_scan_codes_to_doc(doc, "create_purchase_invoice")
 
 	putaway_required = any(
 		not frappe.get_cached_value("Item", pr_item.item_code, "inspection_required_before_purchase")
@@ -1011,9 +1003,4 @@ def _attach_followup_codes(doc) -> None:
 	)
 
 	if putaway_required:
-		putaway_qr = generate_qr(
-			action="confirm_putaway",
-			source_doctype="Purchase Receipt",
-			source_name=doc.name,
-		)
-		attach_qr_to_doc(doc, putaway_qr, f"putaway-{doc.name}")
+		attach_scan_codes_to_doc(doc, "confirm_putaway")

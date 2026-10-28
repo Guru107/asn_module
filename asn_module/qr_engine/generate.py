@@ -7,7 +7,10 @@ import frappe
 import pyqrcode
 from barcode.writer import ImageWriter
 
-from asn_module.qr_engine.scan_codes import format_scan_code_for_display, get_or_create_scan_code
+from asn_module.qr_engine.scan_codes import (
+	format_scan_code_for_display,
+	resolve_scan_code_for_attachment,
+)
 
 # Printability: compact QR modules, barcode tuned for narrow invoice columns.
 # ImageWriter paints text with anchor="md" (vertical center on ypos), so roughly half the
@@ -30,7 +33,7 @@ def _build_dispatch_url(code: str) -> str:
 
 
 def generate_qr(action: str, source_doctype: str, source_name: str) -> dict:
-	code = get_or_create_scan_code(action, source_doctype, source_name)
+	code = resolve_scan_code_for_attachment(action, source_doctype, source_name)
 	url = _build_dispatch_url(code)
 
 	buffer = io.BytesIO()
@@ -45,7 +48,7 @@ def generate_qr(action: str, source_doctype: str, source_name: str) -> dict:
 
 
 def generate_barcode(action: str, source_doctype: str, source_name: str) -> dict:
-	code = get_or_create_scan_code(action, source_doctype, source_name)
+	code = resolve_scan_code_for_attachment(action, source_doctype, source_name)
 
 	buffer = io.BytesIO()
 	code128 = barcode.get("code128", code, writer=ImageWriter())

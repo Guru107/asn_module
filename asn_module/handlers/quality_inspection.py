@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 
-from asn_module.handlers.utils import attach_qr_to_doc
+from asn_module.handlers.utils import attach_scan_codes_to_doc
 
 
 def on_quality_inspection_submit(doc, method):
@@ -20,12 +20,5 @@ def on_quality_inspection_submit(doc, method):
 	else:
 		return
 
-	from asn_module.qr_engine.generate import generate_qr
-
-	qr_result = generate_qr(
-		action=action,
-		source_doctype="Quality Inspection",
-		source_name=doc.name,
-	)
-	attach_qr_to_doc(doc, qr_result, action)
+	attach_scan_codes_to_doc(doc, action)
 	frappe.msgprint(message, alert=True)

@@ -87,6 +87,36 @@ def get_or_create_scan_code(action_key: str, source_doctype: str, source_name: s
 	frappe.throw(_("Could not allocate a unique scan code; try again."))
 
 
+def resolve_scan_code_for_attachment(action_key: str, source_doctype: str, source_name: str) -> str:
+	"""Return the registry code for labels on a source document.
+
+	Reuses Active or Used rows so QR/barcode backfill matches the code already
+	scanned. Only creates a new row when none exists yet.
+	"""
+	action_key = (action_key or "").strip()
+	source_doctype = (source_doctype or "").strip()
+	source_name = (source_name or "").strip()
+	if not action_key or not source_doctype or not source_name:
+		raise frappe.ValidationError(
+			_("Scan code registration requires action, source doctype, and source name")
+		)
+
+	existing = frappe.db.get_value(
+		"Scan Code",
+		{
+			"action_key": action_key,
+			"source_doctype": source_doctype,
+			"source_name": source_name,
+			"status": ("in", ["Active", "Used"]),
+		},
+		"name",
+		order_by="creation desc",
+	)
+	if existing and normalize_scan_code(existing) == existing:
+		return existing
+	return get_or_create_scan_code(action_key, source_doctype, source_name)
+
+
 def get_scan_code_doc(code: str) -> frappe.model.document.Document | None:
 	normalized = normalize_scan_code(code)
 	if not normalized or not frappe.db.exists("Scan Code", normalized):

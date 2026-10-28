@@ -235,7 +235,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			patch(
 				"asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}
 			) as generate_qr,
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 		):
 			on_purchase_receipt_submit(doc, "on_submit")
 
@@ -299,7 +299,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			),
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(doc, "on_submit")
@@ -308,19 +308,13 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		emit.assert_called_once()
 		self.assertEqual(emit.call_args.kwargs["asn_item"], "ASN-ITEM-002")
 
-	@patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc")
-	@patch("asn_module.qr_engine.generate.generate_qr")
-	def test_submit_updates_asn_and_attaches_one_putaway_qr(self, generate_qr, attach_qr_to_doc):
+	@patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc")
+	def test_submit_updates_asn_and_attaches_follow_up_scan_codes(self, attach_scan_codes):
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10)
 		asn = make_test_asn_with_two_items(purchase_order=purchase_order, qty=5)
 		asn.insert(ignore_permissions=True)
 		with _mock_asn_attachments():
 			asn.submit()
-
-		generate_qr.side_effect = [
-			{"image_base64": "ZmFrZS1wdXJjaGFzZS1pbnZvaWNl"},
-			{"image_base64": "ZmFrZS1wdXRhd2F5"},
-		]
 
 		result = create_from_asn(
 			source_doctype="ASN",
@@ -335,15 +329,10 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(asn.status, "Received")
 		self.assertEqual([row.received_qty for row in asn.items], [5, 5])
 		self.assertEqual([row.discrepancy_qty for row in asn.items], [0, 0])
-		self.assertEqual(generate_qr.call_count, 2)
+		self.assertEqual(attach_scan_codes.call_count, 2)
 		self.assertEqual(
-			[action.kwargs["action"] for action in generate_qr.call_args_list],
+			[call.args[1] for call in attach_scan_codes.call_args_list],
 			["create_purchase_invoice", "confirm_putaway"],
-		)
-		self.assertEqual(attach_qr_to_doc.call_count, 2)
-		self.assertEqual(
-			[call.args[2] for call in attach_qr_to_doc.call_args_list],
-			["purchase-invoice-qr", f"putaway-{pr.name}"],
 		)
 
 
