@@ -123,8 +123,11 @@ class TestCreateStockTransfer(FrappeTestCase):
 		return pr, qi
 
 	def _make_rejected_purchase_receipt_with_qi(self):
-		"""Submitted PR with one Rejected incoming QI (one QI per PR line on ERPNext v16)."""
-		return self._make_purchase_receipt_with_qi("Rejected")
+		"""Submitted PR whose incoming QI reads Rejected (one QI per PR line on ERPNext v16)."""
+		pr, qi = self._make_purchase_receipt_with_qi("Accepted")
+		frappe.db.set_value("Quality Inspection", qi.name, "status", "Rejected", update_modified=False)
+		qi.reload()
+		return pr, qi
 
 	def _make_quality_inspection(self, purchase_receipt_name, item_code, status):
 		qi = frappe.get_doc(
@@ -162,7 +165,7 @@ class TestCreateStockTransfer(FrappeTestCase):
 		self.assertNotEqual(se.items[0].t_warehouse, "")
 
 	def test_rejects_non_accepted_qi(self):
-		_pr, qi = self._make_purchase_receipt_with_qi("Rejected")
+		_pr, qi = self._make_rejected_purchase_receipt_with_qi()
 
 		with self.assertRaises(frappe.ValidationError):
 			create_from_quality_inspection(

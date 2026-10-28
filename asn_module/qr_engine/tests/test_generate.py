@@ -11,7 +11,9 @@ class TestGenerate(UnitTestCase):
 			buffer.write(b"fake-qr-image")
 
 		with (
-			patch("asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"),
+			patch(
+				"asn_module.qr_engine.generate.resolve_scan_code_for_attachment", return_value="FIXEDCODE123"
+			),
 			patch("asn_module.qr_engine.generate.frappe.utils.get_url", return_value=site_url),
 			patch("asn_module.qr_engine.generate.pyqrcode.create") as create_qr,
 		):
@@ -44,7 +46,9 @@ class TestGenerate(UnitTestCase):
 		)
 
 	def test_generate_barcode_returns_expected_contract(self):
-		with patch("asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"):
+		with patch(
+			"asn_module.qr_engine.generate.resolve_scan_code_for_attachment", return_value="FIXEDCODE123"
+		):
 			result = generate_barcode(
 				action="create_purchase_receipt",
 				source_doctype="ASN",
@@ -60,7 +64,9 @@ class TestGenerate(UnitTestCase):
 		"""If barcode writer raises TypeError on options, try without options."""
 		import io
 
-		with patch("asn_module.qr_engine.generate.get_or_create_scan_code", return_value="FIXEDCODE123"):
+		with patch(
+			"asn_module.qr_engine.generate.resolve_scan_code_for_attachment", return_value="FIXEDCODE123"
+		):
 			with patch("asn_module.qr_engine.generate.barcode") as mock_barcode:
 				mock_code = mock_barcode.get.return_value
 				mock_code.writer.return_value = mock_barcode.get.return_value.writer.return_value

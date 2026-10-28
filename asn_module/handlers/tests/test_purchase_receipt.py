@@ -232,16 +232,12 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.get_doc") as get_doc,
-			patch(
-				"asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}
-			) as generate_qr,
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc") as attach_scan_codes,
 		):
 			on_purchase_receipt_submit(doc, "on_submit")
 
 		get_doc.assert_not_called()
-		self.assertEqual(generate_qr.call_count, 1, "an unlinked receipt still gets its invoice code")
-		self.assertEqual(generate_qr.call_args.kwargs.get("action"), "create_purchase_invoice")
+		attach_scan_codes.assert_called_once_with(doc, "create_purchase_invoice")
 
 	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
 		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0, asn="ASN-UNIT-004")
