@@ -81,6 +81,7 @@ def _unreceived_qty_by_subcontracting_order_item(
 		filters={"subcontracting_order_item": ["in", line_names]},
 		fields=["subcontracting_order_item", "qty", "received_qty", "parent"],
 		limit_page_length=0,
+		ignore_permissions=True,
 	)
 	parents = {row["parent"] for row in asn_rows if row.get("parent")}
 	asn_by_name = {}
@@ -90,6 +91,7 @@ def _unreceived_qty_by_subcontracting_order_item(
 			filters={"name": ["in", list(parents)]},
 			fields=["name", "docstatus", "status"],
 			limit_page_length=0,
+			ignore_permissions=True,
 		):
 			asn_by_name[asn["name"]] = asn
 	totals: dict[str, float] = {}
@@ -127,6 +129,7 @@ def search_subcontracting_order_items(
 		fields=["name", "idx", "item_code", "item_name", "stock_uom", "rate", "qty", "received_qty"],
 		order_by="idx asc",
 		limit_page_length=0,
+		ignore_permissions=True,
 	)
 	shipped = _unreceived_qty_by_subcontracting_order_item(
 		[row["name"] for row in rows],
@@ -182,6 +185,7 @@ def search_purchase_order_items(
 		filters={"parent": purchase_order},
 		fields=["name", "idx", "item_code", "item_name", "uom", "rate", "qty"],
 		limit_page_length=0,
+		ignore_permissions=True,
 	)
 	remaining_by_item = remaining_qty_by_purchase_order_item(
 		{row["name"]: flt(row["qty"]) for row in rows},
