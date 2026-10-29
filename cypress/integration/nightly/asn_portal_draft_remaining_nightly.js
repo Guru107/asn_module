@@ -1,11 +1,19 @@
 function openPurchaseOrder(poName) {
-	cy.intercept("GET", /search_purchase_order_items/).as("poItems");
-	cy.get("#single-po-input", { timeout: 20000 }).clear().type(poName);
-	cy.get("#add-po-btn").click();
-	cy.wait("@poItems")
-		.its("request.url")
-		.should("include", `purchase_order=${encodeURIComponent(poName)}`);
-	cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
+	cy.get("#single-po-input", { timeout: 20000 }).then(($input) => {
+		const typed = poName.trim();
+		const current = ($input.val() || "").trim();
+		if (current.toLowerCase() === typed.toLowerCase()) {
+			cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
+			return;
+		}
+		cy.intercept("GET", /search_purchase_order_items/).as("poItems");
+		cy.wrap($input).clear().type(typed);
+		cy.get("#add-po-btn").click();
+		cy.wait("@poItems")
+			.its("request.url")
+			.should("include", `purchase_order=${encodeURIComponent(typed)}`);
+		cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
+	});
 }
 
 function expectRemaining(qty) {
@@ -19,6 +27,9 @@ function visitCreatePage(asnName) {
 	const query = asnName ? `?asn_name=${encodeURIComponent(asnName)}` : "";
 	cy.visit(`/asn_new${query}`, { failOnStatusCode: false });
 	cy.get("form#single-asn-form", { timeout: 20000 }).should("exist");
+	if (asnName) {
+		cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
+	}
 }
 
 context("Portal Remaining Qty while editing a draft", () => {
@@ -79,6 +90,7 @@ context("Portal Remaining Qty while editing a draft", () => {
 		cy.get("form#single-asn-form input[name='supplier_invoice_no']")
 			.clear()
 			.type(`OVER-E2E-${Date.now()}`);
+		cy.fill_portal_asn_vehicle();
 		cy.get("input[name='single_manual_qty']").first().clear().type("10");
 		cy.get("input[name='single_manual_rate']").first().clear().type("100");
 		cy.get("button[form='single-asn-form']").click();
@@ -118,6 +130,7 @@ context("Portal submit updates the draft being edited", () => {
 		openPurchaseOrder(seeded.purchase_order);
 		cy.get("#single-item-picker-list input[type='checkbox']").first().check({ force: true });
 		cy.get("form#single-asn-form input[name='supplier_invoice_no']").clear().type(invoiceNo);
+		cy.fill_portal_asn_vehicle();
 		cy.get("input[name='single_manual_qty']").first().clear().type("10");
 		cy.get("input[name='single_manual_rate']").first().clear().type("100");
 		cy.get("button[form='single-asn-form']").click();

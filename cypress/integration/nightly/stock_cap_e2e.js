@@ -90,6 +90,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// each document its own value rather than reusing one across tests.
 		cy.fill_field("supplier_invoice_no", `SINV-E2E-${Date.now()}`, "Data");
 		cy.fill_field("supplier_invoice_amount", "100", "Currency");
+		cy.fill_field("vehicle_number", "MH12AB1234", "Data");
 	};
 
 	it("submits when projected stock stays within the cap", () => {

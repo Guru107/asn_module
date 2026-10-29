@@ -12,6 +12,7 @@ context("ASN New portal nightly — single mode errors", () => {
 
 	function fillCommonSingleFields(invoiceNo) {
 		cy.get("form#single-asn-form input[name='supplier_invoice_no']").clear().type(invoiceNo);
+		cy.fill_portal_asn_vehicle();
 	}
 
 	before(() => {

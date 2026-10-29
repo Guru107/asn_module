@@ -7,6 +7,7 @@ function fillAndSubmit(purchaseOrder, qty) {
 	cy.get("form#single-asn-form input[name='supplier_invoice_no']")
 		.clear()
 		.type(`CAP-E2E-${Date.now()}`);
+	cy.fill_portal_asn_vehicle();
 	cy.get("input[name='single_manual_qty']").first().clear().type(String(qty));
 	cy.get("input[name='single_manual_rate']").first().clear().type("100");
 	cy.get("button[form='single-asn-form']").click();
