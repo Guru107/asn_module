@@ -40,7 +40,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 	};
 
 	const newAsnWithQty = (qty) => {
-		cy.visit(route("asn/new"), { failOnStatusCode: false });
+		cy.visit(route("Form/ASN/new"), { failOnStatusCode: false });
 		cy.get(".form-layout", { timeout: 20000 }).should("exist");
 		cy.fill_field("supplier", seeded.supplier, "Link");
 		// The Link field's value lands on the DOM input synchronously, but the commit

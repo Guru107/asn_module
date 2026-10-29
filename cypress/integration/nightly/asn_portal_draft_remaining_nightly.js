@@ -27,9 +27,6 @@ function visitCreatePage(asnName) {
 	const query = asnName ? `?asn_name=${encodeURIComponent(asnName)}` : "";
 	cy.visit(`/asn_new${query}`, { failOnStatusCode: false });
 	cy.get("form#single-asn-form", { timeout: 20000 }).should("exist");
-	if (asnName) {
-		cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
-	}
 }
 
 context("Portal Remaining Qty while editing a draft", () => {

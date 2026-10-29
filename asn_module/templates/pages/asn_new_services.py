@@ -407,6 +407,22 @@ def validate_qty_within_remaining(
 	remaining = remaining_qty_by_name.get(purchase_order_item, 0)
 	if remaining is None or qty <= flt(remaining):
 		return
+	cap_message = _stock_cap_refusal_for_po_item(
+		purchase_order_item=purchase_order_item,
+		qty=qty,
+		row_number=row_number,
+	)
+	if cap_message:
+		raise PortalValidationError(
+			[
+				error_entry(
+					row_number=row_number,
+					field="qty",
+					invoice_no=invoice_no,
+					message=cap_message,
+				)
+			]
+		)
 	raise PortalValidationError(
 		[
 			error_entry(
@@ -419,6 +435,33 @@ def validate_qty_within_remaining(
 			)
 		]
 	)
+
+
+def _stock_cap_refusal_for_po_item(
+	*, purchase_order_item: str, qty: float, row_number: int
+) -> str | None:
+	"""Plain-language cap refusal for portal suppliers when a row exceeds branch headroom."""
+	po_item = frappe.db.get_value(
+		"Purchase Order Item",
+		purchase_order_item,
+		["parent", "item_code"],
+		as_dict=True,
+	)
+	if not po_item or not po_item.parent:
+		return None
+	rows = [
+		{
+			"idx": row_number,
+			"purchase_order": po_item.parent,
+			"purchase_order_item": purchase_order_item,
+			"item_code": po_item.item_code,
+			"qty": flt(qty),
+		}
+	]
+	breaches, _accepted = breaches_for_asn_rows(rows)
+	if not breaches:
+		return None
+	return format_breaches(breaches, detailed=may_see_stock_figures())
 
 
 def consume_remaining_qty(
