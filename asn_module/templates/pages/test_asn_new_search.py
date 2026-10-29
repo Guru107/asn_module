@@ -95,7 +95,7 @@ class TestASNNewSearch(FrappeTestCase):
 				],
 			),
 			patch(
-				"asn_module.templates.pages.asn_new_search.frappe.get_list",
+				"asn_module.templates.pages.asn_new_search.frappe.get_all",
 				return_value=[
 					{
 						"name": "POI-1",
@@ -188,7 +188,7 @@ class TestASNNewSearch(FrappeTestCase):
 				],
 			),
 			patch(
-				"asn_module.templates.pages.asn_new_search.frappe.get_list",
+				"asn_module.templates.pages.asn_new_search.frappe.get_all",
 				return_value=[
 					{
 						"name": "POI-1",
@@ -239,7 +239,7 @@ class TestASNNewSearch(FrappeTestCase):
 				],
 			),
 			patch(
-				"asn_module.templates.pages.asn_new_search.frappe.get_list",
+				"asn_module.templates.pages.asn_new_search.frappe.get_all",
 				return_value=[
 					{
 						"name": "POI-1",
@@ -290,7 +290,7 @@ class TestASNNewSearch(FrappeTestCase):
 				],
 			),
 			patch(
-				"asn_module.templates.pages.asn_new_search.frappe.get_list",
+				"asn_module.templates.pages.asn_new_search.frappe.get_all",
 				return_value=[
 					{
 						"name": "POI-1",

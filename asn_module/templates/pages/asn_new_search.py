@@ -76,22 +76,21 @@ def _unreceived_qty_by_subcontracting_order_item(
 	"""Shipped Qty not yet received on ASNs that are not Cancelled or Closed."""
 	if not line_names:
 		return {}
-	asn_rows = frappe.get_list(
+	# Supplier portal roles cannot read ASN Item / ASN; callers are scoped to their orders first.
+	asn_rows = frappe.get_all(
 		"ASN Item",
 		filters={"subcontracting_order_item": ["in", line_names]},
 		fields=["subcontracting_order_item", "qty", "received_qty", "parent"],
 		limit_page_length=0,
-		ignore_permissions=True,
 	)
 	parents = {row["parent"] for row in asn_rows if row.get("parent")}
 	asn_by_name = {}
 	if parents:
-		for asn in frappe.get_list(
+		for asn in frappe.get_all(
 			"ASN",
 			filters={"name": ["in", list(parents)]},
 			fields=["name", "docstatus", "status"],
 			limit_page_length=0,
-			ignore_permissions=True,
 		):
 			asn_by_name[asn["name"]] = asn
 	totals: dict[str, float] = {}
@@ -123,13 +122,12 @@ def search_subcontracting_order_items(
 		frappe.throw(_("Subcontracting Order is not available for this supplier."), frappe.PermissionError)
 
 	txt = (txt or "").strip().lower()
-	rows = frappe.get_list(
+	rows = frappe.get_all(
 		"Subcontracting Order Item",
 		filters={"parent": order_name},
 		fields=["name", "idx", "item_code", "item_name", "stock_uom", "rate", "qty", "received_qty"],
 		order_by="idx asc",
 		limit_page_length=0,
-		ignore_permissions=True,
 	)
 	shipped = _unreceived_qty_by_subcontracting_order_item(
 		[row["name"] for row in rows],
@@ -180,12 +178,11 @@ def search_purchase_order_items(
 		frappe.throw(_("Purchase Order is not available for this supplier."), frappe.PermissionError)
 
 	txt = (txt or "").strip().lower()
-	rows = frappe.get_list(
+	rows = frappe.get_all(
 		"Purchase Order Item",
 		filters={"parent": purchase_order},
 		fields=["name", "idx", "item_code", "item_name", "uom", "rate", "qty"],
 		limit_page_length=0,
-		ignore_permissions=True,
 	)
 	remaining_by_item = remaining_qty_by_purchase_order_item(
 		{row["name"]: flt(row["qty"]) for row in rows},
