@@ -676,6 +676,13 @@ def seed_portal_branch_capacity_context(already_full: int = 0):
 		branch=branch,
 	)
 	po_item = po.items[0]
+	if frappe.db.has_column("Purchase Order", "has_unit_price_items"):
+		frappe.db.set_value(
+			"Purchase Order",
+			po.name,
+			{"has_unit_price_items": 1, "branch": branch},
+		)
+		frappe.db.set_value("Purchase Order Item", po_item.name, "qty", 0)
 	frappe.db.delete("ASN Stock Cap Warehouse", {"warehouse": po_item.warehouse})
 	if frappe.db.exists("ASN Stock Cap Settings", branch):
 		frappe.delete_doc("ASN Stock Cap Settings", branch, force=True)

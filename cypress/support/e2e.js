@@ -20,6 +20,13 @@ Cypress.Commands.add("call_api", (method, args = {}) => {
 		});
 });
 
+/** Vehicle Number is mandatory on ASN validate(); portal nightly specs must set it before Save. */
+Cypress.Commands.add("fill_portal_asn_vehicle", () => {
+	cy.get("form#single-asn-form input[name='vehicle_number']", { timeout: 20000 })
+		.clear()
+		.type("MH12AB1234");
+});
+
 Cypress.Commands.add("seed_context", (method, args = {}) => {
 	const routePrefix = (Cypress.env("routePrefix") || "app").replace(/^\/+/, "") || "app";
 	return cy

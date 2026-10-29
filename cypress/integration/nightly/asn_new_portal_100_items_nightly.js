@@ -56,6 +56,7 @@ context("ASN New portal nightly — 100 item PO flows", () => {
 		cy.get("input[name='single_manual_rate']").each(($input) => {
 			cy.wrap($input).clear().type("10");
 		});
+		cy.fill_portal_asn_vehicle();
 		cy.get("button[form='single-asn-form']").click();
 		cy.location("pathname", { timeout: 20000 }).should("match", /\/asn\/asn-[^/]+$/i);
 	});
