@@ -1,3 +1,10 @@
+"""Supplier portal search whitelists for ASN create.
+
+Line-level reads use ``frappe.get_all`` (same as ``asn.py`` / ``asn_new.py``): portal roles
+have no read permission on PO Item, SCO Item, ASN Item, or ASN. Each endpoint scopes by
+supplier and open order checks before reading; ``get_list`` without bypass would return
+nothing, and ``get_list(ignore_permissions=True)`` is equivalent to ``get_all``.
+"""
 from __future__ import annotations
 
 import frappe
@@ -76,7 +83,6 @@ def _unreceived_qty_by_subcontracting_order_item(
 	"""Shipped Qty not yet received on ASNs that are not Cancelled or Closed."""
 	if not line_names:
 		return {}
-	# Supplier portal roles cannot read ASN Item / ASN; callers are scoped to their orders first.
 	asn_rows = frappe.get_all(
 		"ASN Item",
 		filters={"subcontracting_order_item": ["in", line_names]},
@@ -113,7 +119,10 @@ def search_subcontracting_order_items(
 	page_len: int = 20,
 	asn_name: str | None = None,
 ) -> list[dict]:
-	"""Finished goods still open on one of this supplier's Subcontracting Orders."""
+	"""Finished goods still open on one of this supplier's Subcontracting Orders.
+
+	Uses ``get_all`` for SCO lines; see module docstring for the supplier-portal read rule.
+	"""
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
 	order_name = (subcontracting_order or "").strip()
@@ -170,6 +179,7 @@ def search_purchase_order_items(
 	page_len: int = 20,
 	asn_name: str | None = None,
 ) -> list[dict]:
+	"""PO lines still open for ASN create; uses ``get_all`` — see module docstring."""
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
 	open_po_names = {po.name for po in get_open_purchase_orders_for_supplier(supplier)}
