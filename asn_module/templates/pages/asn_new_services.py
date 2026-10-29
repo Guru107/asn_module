@@ -437,9 +437,7 @@ def validate_qty_within_remaining(
 	)
 
 
-def _stock_cap_refusal_for_po_item(
-	*, purchase_order_item: str, qty: float, row_number: int
-) -> str | None:
+def _stock_cap_refusal_for_po_item(*, purchase_order_item: str, qty: float, row_number: int) -> str | None:
 	"""Plain-language cap refusal for portal suppliers when a row exceeds branch headroom."""
 	po_item = frappe.db.get_value(
 		"Purchase Order Item",
