@@ -57,18 +57,25 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 	return create_gate_pass_from_asn(source_doctype, source_name, payload)
 
 
+def _open_existing_draft_purchase_receipt_for_asn(asn_name: str) -> dict | None:
+	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": asn_name, "docstatus": 0}, "name")
+	if not existing_pr:
+		return None
+	return {
+		"doctype": "Purchase Receipt",
+		"name": existing_pr,
+		"url": f"/app/purchase-receipt/{existing_pr}",
+		"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
+	}
+
+
 def _open_gate_pass_from_asn(asn, source_name: str) -> dict:
 	if _is_job_asn(asn):
 		return _open_or_create_job_gate_pass(asn)
 
-	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": source_name, "docstatus": 0}, "name")
-	if existing_pr:
-		return {
-			"doctype": "Purchase Receipt",
-			"name": existing_pr,
-			"url": f"/app/purchase-receipt/{existing_pr}",
-			"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
-		}
+	existing = _open_existing_draft_purchase_receipt_for_asn(source_name)
+	if existing:
+		return existing
 
 	return _open_or_create_material_gate_pass(asn)
 
@@ -77,14 +84,9 @@ def _create_receipt_from_asn(asn, source_name: str) -> dict:
 	if _is_job_asn(asn):
 		return _open_or_create_subcontracting_receipt(asn)
 
-	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": source_name, "docstatus": 0}, "name")
-	if existing_pr:
-		return {
-			"doctype": "Purchase Receipt",
-			"name": existing_pr,
-			"url": f"/app/purchase-receipt/{existing_pr}",
-			"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
-		}
+	existing = _open_existing_draft_purchase_receipt_for_asn(source_name)
+	if existing:
+		return existing
 
 	purchase_order, purchase_order_items = _get_single_purchase_order(asn)
 	pr = make_purchase_receipt(purchase_order, args={"filtered_children": purchase_order_items})

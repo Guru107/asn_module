@@ -147,7 +147,6 @@ def map_purchase_receipt_draft_from_gate_pass(gate_pass: Any, *, recalculate_tax
 	overlay_gate_pass_onto_mapped_pr(doc, gate_pass)
 	if recalculate_taxes:
 		doc.run_method("calculate_taxes_and_totals")
-	ensure_load_after_mapping(doc)
 	return doc
 
 

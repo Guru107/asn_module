@@ -257,6 +257,45 @@ def reactivate_upstream_scan_codes_for_trashed_document(doc) -> None:
 				reactivate_scan_code(action_key, "ASN", asn)
 
 
+def _document_has_scan_registry_rows(doctype: str, name: str) -> bool:
+	"""True when this document appears in Scan Code or Scan Log (source or result)."""
+	doctype = (doctype or "").strip()
+	name = (name or "").strip()
+	if not doctype or not name:
+		return False
+	if frappe.db.exists("DocType", "Scan Code") and frappe.db.exists(
+		"Scan Code", {"source_doctype": doctype, "source_name": name}
+	):
+		return True
+	if not frappe.db.exists("DocType", "Scan Log"):
+		return False
+	return bool(
+		frappe.db.exists("Scan Log", {"source_doctype": doctype, "source_name": name})
+		or frappe.db.exists("Scan Log", {"result_doctype": doctype, "result_name": name})
+	)
+
+
+# Documents the scan chain creates or reactivates upstream codes for when trashed.
+_SCAN_CHAIN_TRASH_DOCTYPES = frozenset(
+	{
+		"ASN",
+		"Gate Pass",
+		"Purchase Receipt",
+		"Purchase Invoice",
+		"Subcontracting Receipt",
+		"Subcontracting Order",
+		"Stock Entry",
+		"Quality Inspection",
+	}
+)
+
+
+def _needs_scan_registry_trash_handling(doc) -> bool:
+	if doc.doctype in _SCAN_CHAIN_TRASH_DOCTYPES:
+		return True
+	return _document_has_scan_registry_rows(doc.doctype, doc.name)
+
+
 def purge_scan_logs_for_document(doctype: str, name: str) -> None:
 	"""Delete Scan Log rows that reference a document as scan source or handler result."""
 	if not frappe.db.exists("DocType", "Scan Log"):
@@ -279,6 +318,8 @@ def purge_scan_registry_on_trash(doc, method=None) -> None:
 		return
 	docstatus = cint(getattr(doc, "docstatus", 0))
 	if docstatus == 1:
+		return
+	if not _needs_scan_registry_trash_handling(doc):
 		return
 	reactivate_upstream_scan_codes_for_trashed_document(doc)
 	purge_scan_logs_for_document(doc.doctype, doc.name)

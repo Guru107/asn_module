@@ -100,7 +100,7 @@ class ASN(WebsiteGenerator):
 		self.reload()
 
 	def on_trash(self):
-		self._purge_scan_codes_for_asn()
+		# Scan Code / Scan Log cleanup runs via the global on_trash hook on purge_scan_registry_on_trash.
 		self._delete_asn_transition_logs()
 		self._clear_cancelled_purchase_receipt_asn_links()
 		self._validate_deletable_against_purchase_receipts()

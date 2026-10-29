@@ -290,6 +290,17 @@ class TestPurgeScanRegistryOnTrash(FrappeTestCase, _ScanCodeTestMixin):
 		purge_codes.assert_not_called()
 		purge_logs.assert_not_called()
 
+	def test_purge_scan_registry_on_trash_skips_unrelated_doctypes_without_registry_rows(self):
+		with patch("asn_module.qr_engine.scan_codes.purge_scan_codes_for_source") as purge_codes:
+			with patch(
+				"asn_module.qr_engine.scan_codes.reactivate_upstream_scan_codes_for_trashed_document"
+			) as reactivate:
+				purge_scan_registry_on_trash(
+					SimpleNamespace(doctype="Customer", name="Cust-1", docstatus=0)
+				)
+		purge_codes.assert_not_called()
+		reactivate.assert_not_called()
+
 	def test_purge_scan_registry_on_trash_removes_codes_for_draft_documents(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
 		purge_scan_registry_on_trash(SimpleNamespace(doctype="ASN", name=self._asn_name, docstatus=0))
