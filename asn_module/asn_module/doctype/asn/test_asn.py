@@ -710,9 +710,8 @@ class TestASN(FrappeTestCase):
 		):
 			asn.on_trash()
 
-		self.assertEqual(mock_delete.call_count, 2)
-		mock_delete.assert_any_call("Scan Code", {"source_doctype": "ASN", "source_name": asn.name})
-		mock_delete.assert_any_call("ASN Transition Log", {"asn": asn.name})
+		self.assertEqual(mock_delete.call_count, 1)
+		mock_delete.assert_called_once_with("ASN Transition Log", {"asn": asn.name})
 
 	def test_before_cancel_deletes_linked_draft_purchase_receipts(self):
 		asn = make_test_asn()

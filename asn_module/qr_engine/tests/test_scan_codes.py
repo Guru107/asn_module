@@ -295,9 +295,7 @@ class TestPurgeScanRegistryOnTrash(FrappeTestCase, _ScanCodeTestMixin):
 			with patch(
 				"asn_module.qr_engine.scan_codes.reactivate_upstream_scan_codes_for_trashed_document"
 			) as reactivate:
-				purge_scan_registry_on_trash(
-					SimpleNamespace(doctype="Customer", name="Cust-1", docstatus=0)
-				)
+				purge_scan_registry_on_trash(SimpleNamespace(doctype="Customer", name="Cust-1", docstatus=0))
 		purge_codes.assert_not_called()
 		reactivate.assert_not_called()
 
