@@ -108,6 +108,8 @@ def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name:
 def on_subcontracting_receipt_submit(doc, method=None):
 	"""Attach the Purchase Receipt scan code when a Subcontracting Receipt is submitted."""
 	del method
+	if getattr(doc, "is_return", 0):
+		return
 	attach_scan_codes_to_doc(doc, SUBCONTRACTING_RECEIPT_PR_ACTION)
 
 

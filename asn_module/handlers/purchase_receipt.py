@@ -54,12 +54,7 @@ def create_gate_pass_from_asn(source_doctype: str, source_name: str, payload: di
 
 def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
 	"""Create a draft receipt from a submitted ASN (PR, SCR, or Gate Pass per site mode)."""
-	del source_doctype, payload
-
-	asn = _load_submitted_asn_for_scan(source_name)
-	if _gate_pass_mode_on():
-		return _open_gate_pass_from_asn(asn, source_name)
-	return _create_receipt_from_asn(asn, source_name)
+	return create_gate_pass_from_asn(source_doctype, source_name, payload)
 
 
 def _open_gate_pass_from_asn(asn, source_name: str) -> dict:
@@ -934,9 +929,6 @@ def on_purchase_receipt_trash(doc, method):
 			"state": "PR_CREATED_DRAFT",
 		},
 	)
-	from asn_module.qr_engine.scan_codes import reactivate_upstream_scan_codes_for_trashed_document
-
-	reactivate_upstream_scan_codes_for_trashed_document(doc)
 
 
 def on_purchase_receipt_submit(doc, method):

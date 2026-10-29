@@ -128,13 +128,19 @@ def backfill_scan_code_attachments(doctype: str, name: str, action: str) -> dict
 	frappe.only_for("System Manager")
 	doc = frappe.get_doc(doctype, name)
 	attach_scan_codes_to_doc(doc, action)
-	files = frappe.get_all(
+	files = frappe.get_list(
 		"File",
 		filters={"attached_to_doctype": doctype, "attached_to_name": name},
-		pluck="file_name",
+		fields=["file_name"],
 		order_by="creation desc",
+		limit_page_length=0,
 	)
-	return {"doctype": doctype, "name": name, "action": action, "files": files}
+	return {
+		"doctype": doctype,
+		"name": name,
+		"action": action,
+		"files": [row["file_name"] for row in files],
+	}
 
 
 def find_pr_row_for_qi(qi, purchase_receipt):

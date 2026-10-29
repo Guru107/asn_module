@@ -80,14 +80,16 @@
 			"fieldtype": "Link",
 			"label": "Result DocType",
 			"options": "DocType",
-			"read_only": 1
+			"read_only": 1,
+			"search_index": 1
 		},
 		{
 			"fieldname": "result_name",
 			"fieldtype": "Dynamic Link",
 			"label": "Result Name",
 			"options": "result_doctype",
-			"read_only": 1
+			"read_only": 1,
+			"search_index": 1
 		},
 		{
 			"fieldname": "error_message",

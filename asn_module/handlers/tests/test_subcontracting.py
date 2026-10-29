@@ -10,6 +10,7 @@ from asn_module.handlers.subcontracting import (
 	create_receipt_from_subcontracting_order,
 	on_subcontracting_dispatch_submit,
 	on_subcontracting_order_submit,
+	on_subcontracting_receipt_submit,
 )
 
 
@@ -257,6 +258,14 @@ class TestSubcontractingHandlers(FrappeTestCase):
 			on_subcontracting_order_submit(doc, "on_submit")
 
 		attach.assert_called_once_with(doc, "create_subcontracting_dispatch")
+
+	def test_on_subcontracting_receipt_submit_skips_returns(self):
+		doc = frappe._dict(doctype="Subcontracting Receipt", name="SCR-0001", is_return=1)
+
+		with patch("asn_module.handlers.subcontracting.attach_scan_codes_to_doc") as attach:
+			on_subcontracting_receipt_submit(doc, "on_submit")
+
+		attach.assert_not_called()
 
 	def test_on_subcontracting_dispatch_submit_attaches_receipt_qr(self):
 		doc = frappe._dict(

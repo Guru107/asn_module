@@ -154,6 +154,7 @@ def map_purchase_receipt_draft_from_gate_pass(gate_pass: Any, *, recalculate_tax
 @frappe.whitelist()
 def create_from_gate_pass(source_name: str):
 	"""Desk-aligned Create from Gate Pass. Returns an unsaved Purchase Receipt draft."""
+	frappe.only_for(("Stock User", "Stock Manager"))
 	if not source_name:
 		frappe.throw(_("Gate Pass name is required"))
 

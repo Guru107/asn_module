@@ -76,31 +76,31 @@ def _unreceived_qty_by_subcontracting_order_item(
 	"""Shipped Qty not yet received on ASNs that are not Cancelled or Closed."""
 	if not line_names:
 		return {}
-	asn_rows = frappe.get_all(
+	asn_rows = frappe.get_list(
 		"ASN Item",
 		filters={"subcontracting_order_item": ["in", line_names]},
 		fields=["subcontracting_order_item", "qty", "received_qty", "parent"],
 		limit_page_length=0,
 	)
-	parents = {row.parent for row in asn_rows if row.parent}
+	parents = {row["parent"] for row in asn_rows if row.get("parent")}
 	asn_by_name = {}
 	if parents:
-		for asn in frappe.get_all(
+		for asn in frappe.get_list(
 			"ASN",
 			filters={"name": ["in", list(parents)]},
 			fields=["name", "docstatus", "status"],
 			limit_page_length=0,
 		):
-			asn_by_name[asn.name] = asn
+			asn_by_name[asn["name"]] = asn
 	totals: dict[str, float] = {}
 	for row in asn_rows:
-		asn = asn_by_name.get(row.parent)
-		if not asn or cint(asn.docstatus) == 2 or asn.status == "Closed":
+		asn = asn_by_name.get(row["parent"])
+		if not asn or cint(asn["docstatus"]) == 2 or asn["status"] == "Closed":
 			continue
-		if exclude_asn_name and row.parent == exclude_asn_name:
+		if exclude_asn_name and row["parent"] == exclude_asn_name:
 			continue
-		pending = max(flt(row.qty) - flt(row.received_qty), 0)
-		totals[row.subcontracting_order_item] = totals.get(row.subcontracting_order_item, 0) + pending
+		pending = max(flt(row["qty"]) - flt(row["received_qty"]), 0)
+		totals[row["subcontracting_order_item"]] = totals.get(row["subcontracting_order_item"], 0) + pending
 	return totals
 
 
@@ -121,7 +121,7 @@ def search_subcontracting_order_items(
 		frappe.throw(_("Subcontracting Order is not available for this supplier."), frappe.PermissionError)
 
 	txt = (txt or "").strip().lower()
-	rows = frappe.get_all(
+	rows = frappe.get_list(
 		"Subcontracting Order Item",
 		filters={"parent": order_name},
 		fields=["name", "idx", "item_code", "item_name", "stock_uom", "rate", "qty", "received_qty"],
@@ -129,32 +129,33 @@ def search_subcontracting_order_items(
 		limit_page_length=0,
 	)
 	shipped = _unreceived_qty_by_subcontracting_order_item(
-		[row.name for row in rows],
+		[row["name"] for row in rows],
 		exclude_asn_name=supplier_draft_asn_name(supplier, asn_name),
 	)
 	filtered = []
 	for row in rows:
 		if txt:
 			haystack = [
-				(row.item_code or "").lower(),
-				(row.item_name or "").lower(),
-				str(row.idx or "").lower(),
+				(row.get("item_code") or "").lower(),
+				(row.get("item_name") or "").lower(),
+				str(row.get("idx") or "").lower(),
 			]
 			if not any(txt in value for value in haystack):
 				continue
-		remaining_qty = flt(row.qty) - flt(row.received_qty) - flt(shipped.get(row.name))
+		row_name = row["name"]
+		remaining_qty = flt(row["qty"]) - flt(row["received_qty"]) - flt(shipped.get(row_name))
 		if remaining_qty < 0:
 			remaining_qty = 0
 		filtered.append(
 			{
-				"value": row.item_code,
-				"item_name": row.item_name,
-				"sr_no": str(row.idx),
-				"uom": row.stock_uom,
-				"rate": row.rate,
+				"value": row["item_code"],
+				"item_name": row["item_name"],
+				"sr_no": str(row["idx"]),
+				"uom": row["stock_uom"],
+				"rate": row["rate"],
 				"remaining_qty": remaining_qty,
 				"subcontracting_order": order_name,
-				"subcontracting_order_item": row.name,
+				"subcontracting_order_item": row_name,
 			}
 		)
 	return filtered[start : start + page_len]
@@ -176,38 +177,39 @@ def search_purchase_order_items(
 		frappe.throw(_("Purchase Order is not available for this supplier."), frappe.PermissionError)
 
 	txt = (txt or "").strip().lower()
-	rows = frappe.get_all(
+	rows = frappe.get_list(
 		"Purchase Order Item",
 		filters={"parent": purchase_order},
 		fields=["name", "idx", "item_code", "item_name", "uom", "rate", "qty"],
 		limit_page_length=0,
 	)
 	remaining_by_item = remaining_qty_by_purchase_order_item(
-		{row.name: flt(row.qty) for row in rows},
+		{row["name"]: flt(row["qty"]) for row in rows},
 		exclude_asn_name=supplier_draft_asn_name(supplier, asn_name),
 	)
 	filtered = []
 	for row in rows:
 		if txt:
 			haystack = [
-				(row.item_code or "").lower(),
-				(row.item_name or "").lower(),
-				str(row.idx or "").lower(),
+				(row.get("item_code") or "").lower(),
+				(row.get("item_name") or "").lower(),
+				str(row.get("idx") or "").lower(),
 			]
 			if not any(txt in value for value in haystack):
 				continue
-		remaining_qty = remaining_by_item.get(row.name, 0)
+		row_name = row["name"]
+		remaining_qty = remaining_by_item.get(row_name, 0)
 		if remaining_qty is not None and remaining_qty <= 0:
 			continue
 		filtered.append(
 			{
-				"value": row.item_code,
-				"item_name": row.item_name,
-				"sr_no": str(row.idx),
-				"uom": row.uom,
-				"rate": row.rate,
+				"value": row["item_code"],
+				"item_name": row["item_name"],
+				"sr_no": str(row["idx"]),
+				"uom": row["uom"],
+				"rate": row["rate"],
 				"remaining_qty": remaining_qty,
-				"purchase_order_item": row.name,
+				"purchase_order_item": row_name,
 			}
 		)
 
