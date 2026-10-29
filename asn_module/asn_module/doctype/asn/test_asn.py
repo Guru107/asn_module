@@ -257,18 +257,24 @@ def _over_receipt_allowance(*, item_code: str, item_allowance, stock_allowance, 
 		frappe.clear_cache(doctype="Item")
 
 
+_MOCK_ASN_SCAN_CODE = "TESTSCANCODE1234"
+
+
 @contextmanager
 def _mock_asn_attachments():
 	def fake_save_file(filename, *_args, **_kwargs):
 		return SimpleNamespace(file_url=f"/files/{filename}")
 
+	qr_payload = {
+		"image_base64": "ZmFrZS1xcg==",
+		"scan_code": _MOCK_ASN_SCAN_CODE,
+		"human_readable": _MOCK_ASN_SCAN_CODE,
+	}
 	with (
-		patch(
-			"asn_module.asn_module.doctype.asn.asn.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}
-		),
+		patch("asn_module.asn_module.doctype.asn.asn.generate_qr", return_value=qr_payload),
 		patch(
 			"asn_module.asn_module.doctype.asn.asn.generate_barcode",
-			return_value={"image_base64": "ZmFrZS1iYXI="},
+			return_value={"image_base64": "ZmFrZS1iYXI=", "scan_code": _MOCK_ASN_SCAN_CODE},
 		),
 		patch("asn_module.asn_module.doctype.asn.asn.save_file", side_effect=fake_save_file),
 	):
@@ -600,8 +606,8 @@ class TestASN(FrappeTestCase):
 
 		self.assertEqual(asn.status, "Submitted")
 		self.assertEqual(str(asn.asn_date), today())
-		self.assertEqual(asn.qr_code, f"/files/{asn.name}-qr.png")
-		self.assertEqual(asn.barcode, f"/files/{asn.name}-barcode.png")
+		self.assertEqual(asn.qr_code, f"/files/{_MOCK_ASN_SCAN_CODE}-qr.png")
+		self.assertEqual(asn.barcode, f"/files/{_MOCK_ASN_SCAN_CODE}-barcode.png")
 
 	def test_submit_with_real_qr_and_barcode_attachments(self):
 		asn = make_test_asn()
@@ -704,9 +710,8 @@ class TestASN(FrappeTestCase):
 		):
 			asn.on_trash()
 
-		self.assertEqual(mock_delete.call_count, 2)
-		mock_delete.assert_any_call("Scan Code", {"source_doctype": "ASN", "source_name": asn.name})
-		mock_delete.assert_any_call("ASN Transition Log", {"asn": asn.name})
+		self.assertEqual(mock_delete.call_count, 1)
+		mock_delete.assert_called_once_with("ASN Transition Log", {"asn": asn.name})
 
 	def test_before_cancel_deletes_linked_draft_purchase_receipts(self):
 		asn = make_test_asn()
@@ -1478,7 +1483,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		with (
 			_mock_asn_attachments(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 		):
 			receipt.submit()
 

@@ -5,18 +5,29 @@ from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_r
 from frappe import _
 from frappe.utils import cint, flt
 
-from asn_module.handlers.utils import attach_qr_to_doc
+from asn_module.handlers.utils import (
+	attach_scan_codes_to_doc,
+	fill_custom_fiscal_year,
+)
+from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
 from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
 from asn_module.stock_cap.messages import throw_stock_cap_exceeded
 from asn_module.stock_cap.precision import flt_qty
 from asn_module.traceability import emit_asn_item_transition
 
+ASN_PURCHASE_RECEIPT_SCAN_ACTION = "create_purchase_receipt"
+ASN_GATE_PASS_SCAN_ACTION = "create_gate_pass_from_asn"
 
-def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
-	"""Create a draft Purchase Receipt from a submitted ASN."""
-	del source_doctype, payload
 
+def asn_dispatch_action_key() -> str:
+	"""Label stamped on a submitted ASN's QR; handlers still read Gate Pass Mode at scan time."""
+	if _gate_pass_mode_on():
+		return ASN_GATE_PASS_SCAN_ACTION
+	return ASN_PURCHASE_RECEIPT_SCAN_ACTION
+
+
+def _load_submitted_asn_for_scan(source_name: str):
 	asn = frappe.get_doc("ASN", source_name)
 	if asn.docstatus != 1:
 		frappe.throw(_("Purchase Receipt can only be created from a submitted ASN"))
@@ -24,27 +35,63 @@ def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dic
 		frappe.throw(
 			_("Cannot create Purchase Receipt from ASN {0} with status {1}").format(source_name, asn.status)
 		)
+	return asn
 
+
+def create_gate_pass_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Open or create a draft Gate Pass from a submitted ASN when Gate Pass Mode is on.
+
+	When the mode is off, the same printed code follows the direct receipt path so a
+	toggle after the ASN was submitted does not strand barcodes.
+	"""
+	del source_doctype, payload
+
+	asn = _load_submitted_asn_for_scan(source_name)
+	if not _gate_pass_mode_on():
+		return _create_receipt_from_asn(asn, source_name)
+	return _open_gate_pass_from_asn(asn, source_name)
+
+
+def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Create a draft receipt from a submitted ASN (PR, SCR, or Gate Pass per site mode)."""
+	return create_gate_pass_from_asn(source_doctype, source_name, payload)
+
+
+def _open_existing_draft_purchase_receipt_for_asn(asn_name: str) -> dict | None:
+	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": asn_name, "docstatus": 0}, "name")
+	if not existing_pr:
+		return None
+	return {
+		"doctype": "Purchase Receipt",
+		"name": existing_pr,
+		"url": f"/app/purchase-receipt/{existing_pr}",
+		"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
+	}
+
+
+def _open_gate_pass_from_asn(asn, source_name: str) -> dict:
 	if _is_job_asn(asn):
-		if _gate_pass_mode_on():
-			return _open_or_create_job_gate_pass(asn)
+		return _open_or_create_job_gate_pass(asn)
+
+	existing = _open_existing_draft_purchase_receipt_for_asn(source_name)
+	if existing:
+		return existing
+
+	return _open_or_create_material_gate_pass(asn)
+
+
+def _create_receipt_from_asn(asn, source_name: str) -> dict:
+	if _is_job_asn(asn):
 		return _open_or_create_subcontracting_receipt(asn)
 
-	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": source_name, "docstatus": 0}, "name")
-	if existing_pr:
-		return {
-			"doctype": "Purchase Receipt",
-			"name": existing_pr,
-			"url": f"/app/purchase-receipt/{existing_pr}",
-			"message": _("Existing draft Purchase Receipt {0} opened").format(existing_pr),
-		}
-
-	if _gate_pass_mode_on():
-		return _open_or_create_material_gate_pass(asn)
+	existing = _open_existing_draft_purchase_receipt_for_asn(source_name)
+	if existing:
+		return existing
 
 	purchase_order, purchase_order_items = _get_single_purchase_order(asn)
 	pr = make_purchase_receipt(purchase_order, args={"filtered_children": purchase_order_items})
 	_apply_asn_fields(pr, asn)
+	fill_custom_fiscal_year(pr)
 
 	pr.insert(ignore_permissions=True)
 
@@ -281,6 +328,14 @@ def _set_if_present(doc, fieldname: str, value) -> None:
 	doc.set(fieldname, value)
 
 
+def _set_asn_invoice_on_gate_pass(gate_pass, asn) -> None:
+	"""Map ASN supplier invoice onto Gate Pass invoice and challan fields when present."""
+	_set_if_present(gate_pass, "invoice_number", asn.supplier_invoice_no)
+	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
+	_set_if_present(gate_pass, "challan_number", asn.supplier_invoice_no)
+	_set_if_present(gate_pass, "challan_date", asn.supplier_invoice_date)
+
+
 def _ensure_gate_pass_asn_link() -> None:
 	if frappe.db.has_column("Gate Pass", "asn"):
 		return
@@ -323,8 +378,7 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 	_set_if_present(gate_pass, "company", purchase_order.company)
 	_set_if_present(gate_pass, "supplier", asn.supplier)
 	_set_if_present(gate_pass, "vehicle_number", asn.vehicle_number)
-	_set_if_present(gate_pass, "invoice_number", asn.supplier_invoice_no)
-	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
+	_set_asn_invoice_on_gate_pass(gate_pass, asn)
 	_set_if_present(gate_pass, "asn", asn.name)
 
 	invoice_no = (asn.supplier_invoice_no or "").strip()
@@ -399,8 +453,7 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 	_set_if_present(gate_pass, "company", order.company)
 	_set_if_present(gate_pass, "supplier", asn.supplier)
 	_set_if_present(gate_pass, "vehicle_number", asn.vehicle_number)
-	_set_if_present(gate_pass, "invoice_number", asn.supplier_invoice_no)
-	_set_if_present(gate_pass, "invoice_date", asn.supplier_invoice_date)
+	_set_asn_invoice_on_gate_pass(gate_pass, asn)
 	_set_if_present(gate_pass, "asn", asn.name)
 
 	table_field, child_fields = _job_line_table(gate_pass)
@@ -473,9 +526,12 @@ def _job_line_table(gate_pass) -> tuple[str | None, set[str]]:
 	return None, set()
 
 
+GATE_PASS_RECEIPT_ACTION = "create_receipt_from_gate_pass"
+
+
 @frappe.whitelist()
 def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
-	"""Open the draft receipt for a submitted Gate Pass. The scan does not call this.
+	"""Open the draft receipt for a submitted Gate Pass.
 
 	A Material Gate In becomes a Purchase Receipt that still carries the ASN.
 	A Job Gate In becomes a Subcontracting Receipt linked to the ASN.
@@ -493,6 +549,35 @@ def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 	return _create_purchase_receipt_from_gate_pass(gate_pass)
 
 
+def create_receipt_from_gate_pass_scan(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Dispatch adapter: scan the Gate Pass's own code to open its receipt.
+
+	The gate scans the ASN barcode to raise the draft Gate Pass; this action
+	is the next link, run from the code attached to the Gate Pass on submit.
+	"""
+	del source_doctype, payload
+	return create_receipt_from_gate_pass(source_name)
+
+
+def on_gate_pass_submit(doc, method=None):
+	"""Attach the receipt scan code when a Gate Pass is submitted.
+
+	Only a Gate Pass linked to an ASN gets a code: the receipt action refuses
+	the others, so their codes would never dispatch. Drafts carry no code; the
+	code is attached when the pass is submitted and printed at the gate.
+	"""
+	del method
+	if not (getattr(doc, "asn", None) or "").strip():
+		return
+	attach_scan_codes_to_doc(doc, GATE_PASS_RECEIPT_ACTION)
+
+
+def on_gate_pass_cancel(doc, method=None):
+	"""Void the Gate Pass's scan code so a cancelled pass cannot be scanned."""
+	del method
+	void_scan_codes(GATE_PASS_RECEIPT_ACTION, "Gate Pass", doc.name)
+
+
 def _is_job_gate_pass(gate_pass) -> bool:
 	if (getattr(gate_pass, "gate_pass_type", None) or "") == "Job":
 		return True
@@ -504,15 +589,25 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 	if existing:
 		return existing
 
+	from asn_module.handlers.gate_pass_create import map_purchase_receipt_draft_from_gate_pass
+
 	asn = frappe.get_doc("ASN", gate_pass.asn)
-	purchase_order_items = [row.purchase_order_item for row in asn.items if row.purchase_order_item]
-	pr = make_purchase_receipt(
-		gate_pass.reference_number or asn.items[0].purchase_order,
-		args={"filtered_children": purchase_order_items},
-	)
-	_apply_asn_fields(pr, asn)
-	_set_if_present(pr, "custom_gate_pass_reference", gate_pass.name)
+	pr = map_purchase_receipt_draft_from_gate_pass(gate_pass)
+	_apply_asn_fields(pr, asn, preserve_qty=True)
+	fill_custom_fiscal_year(pr)
 	pr.insert(ignore_permissions=True)
+
+	for asn_item in asn.items:
+		emit_asn_item_transition(
+			asn=asn.name,
+			asn_item=asn_item.name,
+			item_code=asn_item.item_code,
+			state="PR_CREATED_DRAFT",
+			transition_status="OK",
+			ref_doctype="Purchase Receipt",
+			ref_name=pr.name,
+		)
+
 	return {
 		"doctype": "Purchase Receipt",
 		"name": pr.name,
@@ -673,6 +768,7 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 
 	_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
 	receipt.asn = asn.name
+	fill_custom_fiscal_year(receipt)
 	receipt.insert(ignore_permissions=True)
 
 	return {
@@ -835,32 +931,13 @@ def on_purchase_receipt_trash(doc, method):
 			"state": "PR_CREATED_DRAFT",
 		},
 	)
-	frappe.db.delete(
-		"Scan Log",
-		{
-			"action": "create_purchase_receipt",
-			"result_doctype": "Purchase Receipt",
-			"result_name": doc.name,
-			"result": "Success",
-		},
-	)
-	if doc.asn:
-		frappe.db.set_value(
-			"Scan Code",
-			{
-				"action_key": "create_purchase_receipt",
-				"source_doctype": "ASN",
-				"source_name": doc.asn,
-				"status": "Used",
-			},
-			"status",
-			"Active",
-			update_modified=True,
-		)
 
 
 def on_purchase_receipt_submit(doc, method):
 	"""Update ASN receipt tracking and attach follow-up QR codes on submit.
+
+	Every non-return receipt carries its next step's code, including a
+	receipt raised from a Subcontracting Receipt, which has no ASN.
 
 	A return does not record against the ASN. The supplier's shipment already arrived;
 	sending some of it back is its own transaction and leaves ``received_qty`` as it is.
@@ -868,6 +945,8 @@ def on_purchase_receipt_submit(doc, method):
 	del method
 	if getattr(doc, "is_return", 0):
 		return
+
+	_attach_followup_codes(doc)
 
 	if doc.asn:
 		mapped_names, _updated = _record_linked_received_qty(doc, sign=1)
@@ -902,14 +981,15 @@ def on_purchase_receipt_submit(doc, method):
 			ref_name=doc.name,
 		)
 
-	from asn_module.qr_engine.generate import generate_qr
 
-	purchase_invoice_qr = generate_qr(
-		action="create_purchase_invoice",
-		source_doctype="Purchase Receipt",
-		source_name=doc.name,
-	)
-	attach_qr_to_doc(doc, purchase_invoice_qr, "purchase-invoice-qr")
+def _attach_followup_codes(doc) -> None:
+	"""Attach the codes that create this receipt's follow-up documents.
+
+	Runs before the ASN bookkeeping so an unlinked receipt (one born from a
+	Subcontracting Receipt) is not skipped. The putaway code is attached only
+	when an item does not call for inspection first.
+	"""
+	attach_scan_codes_to_doc(doc, "create_purchase_invoice")
 
 	putaway_required = any(
 		not frappe.get_cached_value("Item", pr_item.item_code, "inspection_required_before_purchase")
@@ -917,9 +997,4 @@ def on_purchase_receipt_submit(doc, method):
 	)
 
 	if putaway_required:
-		putaway_qr = generate_qr(
-			action="confirm_putaway",
-			source_doctype="Purchase Receipt",
-			source_name=doc.name,
-		)
-		attach_qr_to_doc(doc, putaway_qr, f"putaway-{doc.name}")
+		attach_scan_codes_to_doc(doc, "confirm_putaway")

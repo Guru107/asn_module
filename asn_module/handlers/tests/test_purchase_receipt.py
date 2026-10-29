@@ -12,7 +12,9 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn_with_two_items,
 )
 from asn_module.handlers.purchase_receipt import (
+	asn_dispatch_action_key,
 	create_from_asn,
+	create_gate_pass_from_asn,
 	on_purchase_receipt_before_submit,
 	on_purchase_receipt_submit,
 	on_purchase_receipt_trash,
@@ -26,6 +28,20 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 	def setUpClass(cls):
 		before_tests()
 		super().setUpClass()
+
+	def test_asn_dispatch_action_key_follows_gate_pass_mode(self):
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		self.assertEqual(asn_dispatch_action_key(), "create_purchase_receipt")
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
+		self.assertEqual(asn_dispatch_action_key(), "create_gate_pass_from_asn")
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+
+	def test_create_gate_pass_from_asn_follows_receipt_path_when_gate_pass_mode_is_off(self):
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		asn = self._make_submitted_asn()
+		result = create_gate_pass_from_asn("ASN", asn.name, {})
+		self.assertEqual(result["doctype"], "Purchase Receipt")
+		self.assertTrue(frappe.db.exists("Purchase Receipt", result["name"]))
 
 	def _make_submitted_asn(self):
 		dates = get_fiscal_year_test_dates()
@@ -211,23 +227,25 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		make_pr.assert_called_once_with("PO-001", args={"filtered_children": ["POI-001"]})
 		emit.assert_called_once()
 
-	def test_on_purchase_receipt_submit_returns_when_not_linked_to_asn(self):
-		with patch("asn_module.handlers.purchase_receipt.frappe.get_doc") as get_doc:
-			on_purchase_receipt_submit(SimpleNamespace(asn=None), "on_submit")
+	def test_on_purchase_receipt_submit_skips_asn_bookkeeping_when_not_linked_to_asn(self):
+		doc = SimpleNamespace(asn=None, is_return=0, name="PR-UNLINKED-UNIT", items=[])
+
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.get_doc") as get_doc,
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc") as attach_scan_codes,
+		):
+			on_purchase_receipt_submit(doc, "on_submit")
 
 		get_doc.assert_not_called()
+		attach_scan_codes.assert_called_once_with(doc, "create_purchase_invoice")
 
 	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
 		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0, asn="ASN-UNIT-004")
 
-		with (
-			patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete,
-			patch("asn_module.handlers.purchase_receipt.frappe.db.set_value") as set_value,
-		):
+		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
 			on_purchase_receipt_trash(doc, "on_trash")
 
-		self.assertEqual(delete.call_count, 2)
-		delete.assert_any_call(
+		delete.assert_called_once_with(
 			"ASN Transition Log",
 			{
 				"ref_doctype": "Purchase Receipt",
@@ -235,39 +253,14 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				"state": "PR_CREATED_DRAFT",
 			},
 		)
-		delete.assert_any_call(
-			"Scan Log",
-			{
-				"action": "create_purchase_receipt",
-				"result_doctype": "Purchase Receipt",
-				"result_name": "PR-UNIT-004",
-				"result": "Success",
-			},
-		)
-		set_value.assert_called_once_with(
-			"Scan Code",
-			{
-				"action_key": "create_purchase_receipt",
-				"source_doctype": "ASN",
-				"source_name": "ASN-UNIT-004",
-				"status": "Used",
-			},
-			"status",
-			"Active",
-			update_modified=True,
-		)
 
 	def test_on_purchase_receipt_trash_keeps_submitted_transition_logs(self):
 		doc = SimpleNamespace(name="PR-UNIT-005", docstatus=1, asn="ASN-UNIT-005")
 
-		with (
-			patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete,
-			patch("asn_module.handlers.purchase_receipt.frappe.db.set_value") as set_value,
-		):
+		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
 			on_purchase_receipt_trash(doc, "on_trash")
 
 		delete.assert_not_called()
-		set_value.assert_not_called()
 
 	def test_on_purchase_receipt_submit_skips_unmapped_pr_rows(self):
 		asn = SimpleNamespace(name="ASN-UNIT-003", reload=lambda: None, update_receipt_status=lambda: None)
@@ -290,7 +283,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			),
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(doc, "on_submit")
@@ -299,19 +292,13 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		emit.assert_called_once()
 		self.assertEqual(emit.call_args.kwargs["asn_item"], "ASN-ITEM-002")
 
-	@patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc")
-	@patch("asn_module.qr_engine.generate.generate_qr")
-	def test_submit_updates_asn_and_attaches_one_putaway_qr(self, generate_qr, attach_qr_to_doc):
+	@patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc")
+	def test_submit_updates_asn_and_attaches_follow_up_scan_codes(self, attach_scan_codes):
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10)
 		asn = make_test_asn_with_two_items(purchase_order=purchase_order, qty=5)
 		asn.insert(ignore_permissions=True)
 		with _mock_asn_attachments():
 			asn.submit()
-
-		generate_qr.side_effect = [
-			{"image_base64": "ZmFrZS1wdXJjaGFzZS1pbnZvaWNl"},
-			{"image_base64": "ZmFrZS1wdXRhd2F5"},
-		]
 
 		result = create_from_asn(
 			source_doctype="ASN",
@@ -326,15 +313,10 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(asn.status, "Received")
 		self.assertEqual([row.received_qty for row in asn.items], [5, 5])
 		self.assertEqual([row.discrepancy_qty for row in asn.items], [0, 0])
-		self.assertEqual(generate_qr.call_count, 2)
+		self.assertEqual(attach_scan_codes.call_count, 2)
 		self.assertEqual(
-			[action.kwargs["action"] for action in generate_qr.call_args_list],
+			[call.args[1] for call in attach_scan_codes.call_args_list],
 			["create_purchase_invoice", "confirm_putaway"],
-		)
-		self.assertEqual(attach_qr_to_doc.call_count, 2)
-		self.assertEqual(
-			[call.args[2] for call in attach_qr_to_doc.call_args_list],
-			["purchase-invoice-qr", f"putaway-{pr.name}"],
 		)
 
 

@@ -21,15 +21,7 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 
 	def _make_rejected_purchase_receipt_with_qi(self):
 		fixture = TestCreateStockTransfer()
-		pr, _accepted_qi = fixture._make_purchase_receipt_with_qi("Accepted")
-		rejected_qi = fixture._make_quality_inspection(pr.name, pr.items[0].item_code, "Rejected")
-		with (
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.quality_inspection.attach_qr_to_doc"),
-			patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
-		):
-			rejected_qi.submit()
-		return pr, rejected_qi
+		return fixture._make_rejected_purchase_receipt_with_qi()
 
 	def test_qi_item_found_in_pr_returns_that_item(self):
 		pr, qi = self._make_rejected_purchase_receipt_with_qi()
@@ -130,7 +122,7 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 				patch(
 					"asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}
 				),
-				patch("asn_module.handlers.quality_inspection.attach_qr_to_doc"),
+				patch("asn_module.handlers.quality_inspection.attach_scan_codes_to_doc"),
 				patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
 			):
 				qi.submit()

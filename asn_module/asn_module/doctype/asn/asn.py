@@ -11,7 +11,9 @@ from frappe.utils import cint, flt, today
 from frappe.utils.file_manager import save_file
 from frappe.website.website_generator import WebsiteGenerator
 
+from asn_module.handlers.purchase_receipt import asn_dispatch_action_key
 from asn_module.qr_engine.generate import generate_barcode, generate_qr
+from asn_module.qr_engine.scan_codes import format_scan_code_for_display
 from asn_module.stock_cap.api import breaches_for_asn_doc
 from asn_module.stock_cap.fetch import cap_branch_by_warehouse, fetch_cap_context
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures, throw_stock_cap_exceeded
@@ -98,19 +100,16 @@ class ASN(WebsiteGenerator):
 		self.reload()
 
 	def on_trash(self):
-		self._purge_scan_codes_for_asn()
+		# Scan Code / Scan Log cleanup runs via the global on_trash hook on purge_scan_registry_on_trash.
 		self._delete_asn_transition_logs()
 		self._clear_cancelled_purchase_receipt_asn_links()
 		self._validate_deletable_against_purchase_receipts()
 
 	def _purge_scan_codes_for_asn(self):
 		"""Remove QR/barcode registry rows so cancel/delete is not blocked by Dynamic Link checks."""
-		if not frappe.db.exists("DocType", "Scan Code"):
-			return
-		frappe.db.delete(
-			"Scan Code",
-			{"source_doctype": self.doctype, "source_name": self.name},
-		)
+		from asn_module.qr_engine.scan_codes import purge_scan_codes_for_source
+
+		purge_scan_codes_for_source(self.doctype, self.name)
 
 	def _delete_asn_transition_logs(self):
 		"""Remove traceability rows so ASN delete is not blocked by Link checks (logs are ASN-specific)."""
@@ -402,12 +401,14 @@ class ASN(WebsiteGenerator):
 		throw_stock_cap_exceeded(breaches)
 
 	def _generate_attachments(self) -> tuple[str, str, str]:
-		qr_result = generate_qr("create_purchase_receipt", "ASN", self.name)
-		barcode_result = generate_barcode("create_purchase_receipt", "ASN", self.name)
+		scan_action = asn_dispatch_action_key()
+		qr_result = generate_qr(scan_action, "ASN", self.name)
+		barcode_result = generate_barcode(scan_action, "ASN", self.name)
 		scan_label = qr_result.get("human_readable") or qr_result.get("scan_code", "")
+		code_label = format_scan_code_for_display(scan_label) or scan_label
 
 		qr_file = save_file(
-			f"{self.name}-qr.png",
+			f"{code_label}-qr.png",
 			qr_result["image_base64"],
 			self.doctype,
 			self.name,
@@ -415,7 +416,7 @@ class ASN(WebsiteGenerator):
 			decode=True,
 		)
 		barcode_file = save_file(
-			f"{self.name}-barcode.png",
+			f"{code_label}-barcode.png",
 			barcode_result["image_base64"],
 			self.doctype,
 			self.name,

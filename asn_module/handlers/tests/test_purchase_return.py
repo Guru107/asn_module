@@ -15,15 +15,7 @@ class TestCreatePurchaseReturn(FrappeTestCase):
 
 	def _make_rejected_purchase_receipt_with_qi(self):
 		fixture = TestCreateStockTransfer()
-		pr, _accepted_qi = fixture._make_purchase_receipt_with_qi("Accepted")
-		rejected_qi = fixture._make_quality_inspection(pr.name, pr.items[0].item_code, "Rejected")
-		with (
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.quality_inspection.attach_qr_to_doc"),
-			patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
-		):
-			rejected_qi.submit()
-		return pr, rejected_qi
+		return fixture._make_rejected_purchase_receipt_with_qi()
 
 	def test_creates_return_purchase_receipt(self):
 		pr, qi = self._make_rejected_purchase_receipt_with_qi()
@@ -55,17 +47,10 @@ class TestCreatePurchaseReturn(FrappeTestCase):
 
 	def test_rejects_before_pr_submit(self):
 		fixture = TestCreateStockTransfer()
-		pr, _accepted_qi = fixture._make_purchase_receipt_with_qi(
-			"Accepted",
+		_pr, qi = fixture._make_purchase_receipt_with_qi(
+			"Rejected",
 			submit_purchase_receipt=False,
 		)
-		qi = fixture._make_quality_inspection(pr.name, pr.items[0].item_code, "Rejected")
-		with (
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.quality_inspection.attach_qr_to_doc"),
-			patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
-		):
-			qi.submit()
 
 		with self.assertRaises(frappe.ValidationError):
 			create_from_quality_inspection(
@@ -76,7 +61,8 @@ class TestCreatePurchaseReturn(FrappeTestCase):
 
 	def test_rejects_cancelled_quality_inspection(self):
 		pr, qi = self._make_rejected_purchase_receipt_with_qi()
-		qi.cancel()
+		frappe.db.set_value("Quality Inspection", qi.name, "docstatus", 2, update_modified=False)
+		qi.reload()
 
 		with self.assertRaises(frappe.ValidationError):
 			create_from_quality_inspection(

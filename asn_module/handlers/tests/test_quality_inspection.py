@@ -58,87 +58,65 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 			}
 		)
 
-	@patch("asn_module.handlers.quality_inspection.attach_qr_to_doc")
+	@patch("asn_module.handlers.quality_inspection.attach_scan_codes_to_doc")
 	@patch("asn_module.handlers.quality_inspection.frappe.msgprint")
-	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_accepted_quality_inspection_generates_stock_transfer_qr(
 		self,
-		generate_qr,
 		msgprint,
-		attach_qr_to_doc,
+		attach_scan_codes,
 	):
 		pr = self._make_purchase_receipt(submit=False)
 		qi = self._make_quality_inspection("Purchase Receipt", pr.name, pr.items[0].item_code, "Accepted")
 
-		generate_qr.return_value = {"image_base64": "ZmFrZS1xcg=="}
-
 		qi.submit()
 
-		self.assertEqual(generate_qr.call_count, 1)
-		self.assertEqual(generate_qr.call_args.kwargs["action"], "create_stock_transfer")
-		self.assertEqual(generate_qr.call_args.kwargs["source_doctype"], "Quality Inspection")
-		self.assertEqual(generate_qr.call_args.kwargs["source_name"], qi.name)
-		attach_qr_to_doc.assert_called_once()
+		attach_scan_codes.assert_called_once_with(qi, "create_stock_transfer")
 		self.assertGreaterEqual(msgprint.call_count, 2)
 		self.assertEqual(msgprint.call_args_list[-1].kwargs["alert"], True)
 		self.assertIn("Stock Transfer QR attached", msgprint.call_args_list[-1].args[0])
 
-	@patch("asn_module.handlers.quality_inspection.attach_qr_to_doc")
+	@patch("asn_module.handlers.quality_inspection.attach_scan_codes_to_doc")
 	@patch("asn_module.handlers.quality_inspection.frappe.msgprint")
-	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_rejected_quality_inspection_generates_purchase_return_qr(
 		self,
-		generate_qr,
 		msgprint,
-		attach_qr_to_doc,
+		attach_scan_codes,
 	):
 		pr = self._make_purchase_receipt(submit=False)
 		qi = self._make_quality_inspection("Purchase Receipt", pr.name, pr.items[0].item_code, "Rejected")
 
-		generate_qr.return_value = {"image_base64": "ZmFrZS1xcg=="}
-
 		qi.submit()
 
-		self.assertEqual(generate_qr.call_count, 1)
-		self.assertEqual(generate_qr.call_args.kwargs["action"], "create_purchase_return")
-		self.assertEqual(generate_qr.call_args.kwargs["source_doctype"], "Quality Inspection")
-		self.assertEqual(generate_qr.call_args.kwargs["source_name"], qi.name)
-		attach_qr_to_doc.assert_called_once()
+		attach_scan_codes.assert_called_once_with(qi, "create_purchase_return")
 		self.assertGreaterEqual(msgprint.call_count, 2)
 		self.assertEqual(msgprint.call_args_list[-1].kwargs["alert"], True)
 		self.assertIn("Purchase Return QR attached", msgprint.call_args_list[-1].args[0])
 
-	@patch("asn_module.handlers.quality_inspection.attach_qr_to_doc")
+	@patch("asn_module.handlers.quality_inspection.attach_scan_codes_to_doc")
 	@patch("asn_module.handlers.quality_inspection.frappe.msgprint")
-	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_generates_qr_for_draft_purchase_receipt_reference(
 		self,
-		generate_qr,
 		msgprint,
-		attach_qr_to_doc,
+		attach_scan_codes,
 	):
 		pr = self._make_purchase_receipt(submit=False)
 		qi = self._make_quality_inspection("Purchase Receipt", pr.name, pr.items[0].item_code, "Accepted")
 
-		generate_qr.return_value = {"image_base64": "ZmFrZS1xcg=="}
-
 		qi.submit()
 
-		self.assertEqual(generate_qr.call_count, 1)
-		self.assertEqual(generate_qr.call_args.kwargs["action"], "create_stock_transfer")
-		attach_qr_to_doc.assert_called_once()
+		attach_scan_codes.assert_called_once_with(qi, "create_stock_transfer")
 		self.assertGreaterEqual(msgprint.call_count, 2)
 		self.assertEqual(msgprint.call_args_list[-1].kwargs["alert"], True)
 		self.assertIn("Stock Transfer QR attached", msgprint.call_args_list[-1].args[0])
 
-	@patch("asn_module.handlers.quality_inspection.attach_qr_to_doc")
+	@patch("asn_module.handlers.quality_inspection.attach_scan_codes_to_doc")
 	@patch("asn_module.handlers.quality_inspection.frappe.msgprint")
 	@patch("asn_module.qr_engine.generate.generate_qr")
 	def test_ignores_non_purchase_receipt_quality_inspection(
 		self,
 		generate_qr,
 		msgprint,
-		attach_qr_to_doc,
+		attach_scan_codes,
 	):
 		purchase_order = create_purchase_order_with_fiscal_dates()
 		stock_entry = frappe.get_doc(
@@ -166,5 +144,5 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 		qi.submit()
 
 		generate_qr.assert_not_called()
-		attach_qr_to_doc.assert_not_called()
+		attach_scan_codes.assert_not_called()
 		msgprint.assert_not_called()

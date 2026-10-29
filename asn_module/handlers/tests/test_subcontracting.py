@@ -10,6 +10,7 @@ from asn_module.handlers.subcontracting import (
 	create_receipt_from_subcontracting_order,
 	on_subcontracting_dispatch_submit,
 	on_subcontracting_order_submit,
+	on_subcontracting_receipt_submit,
 )
 
 
@@ -104,11 +105,15 @@ class TestSubcontractingHandlers(FrappeTestCase):
 		bom.submit()
 		return bom.name
 
-	def _make_integration_subcontracting_order(self):
+	def _make_integration_subcontracting_order(self, *, po_item_code=None):
 		company = frappe.db.get_value("Company", {}, "name")
 		source_warehouse = self._ensure_warehouse("_Test Subcontract Source Warehouse", company)
 		supplier_warehouse = self._ensure_warehouse("_Test Subcontract Supplier Warehouse", company)
-		po = create_purchase_order(company=company, warehouse=source_warehouse)
+		po = create_purchase_order(
+			company=company,
+			warehouse=source_warehouse,
+			item_code=po_item_code,
+		)
 		supplier = po.supplier
 		uom = po.items[0].uom
 
@@ -248,20 +253,19 @@ class TestSubcontractingHandlers(FrappeTestCase):
 
 	def test_on_subcontracting_order_submit_attaches_dispatch_qr(self):
 		doc = frappe._dict(doctype="Subcontracting Order", name="SCO-0001")
-		qr_result = {"image_base64": "ZmFrZS1xcg=="}
 
-		with (
-			patch("asn_module.handlers.subcontracting.generate_qr", return_value=qr_result) as generate,
-			patch("asn_module.handlers.subcontracting.attach_qr_to_doc") as attach,
-		):
+		with patch("asn_module.handlers.subcontracting.attach_scan_codes_to_doc") as attach:
 			on_subcontracting_order_submit(doc, "on_submit")
 
-		generate.assert_called_once_with(
-			action="create_subcontracting_dispatch",
-			source_doctype="Subcontracting Order",
-			source_name="SCO-0001",
-		)
-		attach.assert_called_once_with(doc, qr_result, "subcontracting-dispatch-qr")
+		attach.assert_called_once_with(doc, "create_subcontracting_dispatch")
+
+	def test_on_subcontracting_receipt_submit_skips_returns(self):
+		doc = frappe._dict(doctype="Subcontracting Receipt", name="SCR-0001", is_return=1)
+
+		with patch("asn_module.handlers.subcontracting.attach_scan_codes_to_doc") as attach:
+			on_subcontracting_receipt_submit(doc, "on_submit")
+
+		attach.assert_not_called()
 
 	def test_on_subcontracting_dispatch_submit_attaches_receipt_qr(self):
 		doc = frappe._dict(
@@ -270,20 +274,11 @@ class TestSubcontractingHandlers(FrappeTestCase):
 			stock_entry_type="Send to Subcontractor",
 			subcontracting_order="SCO-0001",
 		)
-		qr_result = {"image_base64": "ZmFrZS1xcg=="}
 
-		with (
-			patch("asn_module.handlers.subcontracting.generate_qr", return_value=qr_result) as generate,
-			patch("asn_module.handlers.subcontracting.attach_qr_to_doc") as attach,
-		):
+		with patch("asn_module.handlers.subcontracting.attach_scan_codes_to_doc") as attach:
 			on_subcontracting_dispatch_submit(doc, "on_submit")
 
-		generate.assert_called_once_with(
-			action="create_subcontracting_receipt",
-			source_doctype="Subcontracting Order",
-			source_name="SCO-0001",
-		)
-		attach.assert_called_once_with(doc, qr_result, "subcontracting-receipt-qr")
+		attach.assert_called_once_with(doc, "create_subcontracting_receipt")
 
 	def test_on_subcontracting_dispatch_submit_ignores_non_dispatch_stock_entry(self):
 		doc = frappe._dict(
@@ -293,13 +288,9 @@ class TestSubcontractingHandlers(FrappeTestCase):
 			subcontracting_order="SCO-0001",
 		)
 
-		with (
-			patch("asn_module.handlers.subcontracting.generate_qr") as generate,
-			patch("asn_module.handlers.subcontracting.attach_qr_to_doc") as attach,
-		):
+		with patch("asn_module.handlers.subcontracting.attach_scan_codes_to_doc") as attach:
 			on_subcontracting_dispatch_submit(doc, "on_submit")
 
-		generate.assert_not_called()
 		attach.assert_not_called()
 
 	def test_on_subcontracting_dispatch_submit_ignores_missing_subcontracting_order(self):
@@ -310,13 +301,9 @@ class TestSubcontractingHandlers(FrappeTestCase):
 			subcontracting_order="",
 		)
 
-		with (
-			patch("asn_module.handlers.subcontracting.generate_qr") as generate,
-			patch("asn_module.handlers.subcontracting.attach_qr_to_doc") as attach,
-		):
+		with patch("asn_module.handlers.subcontracting.attach_scan_codes_to_doc") as attach:
 			on_subcontracting_dispatch_submit(doc, "on_submit")
 
-		generate.assert_not_called()
 		attach.assert_not_called()
 
 	def test_incoming_rate_patch_follows_the_private_name_when_that_is_what_erpnext_calls(self):

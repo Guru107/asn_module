@@ -111,7 +111,7 @@ class TestCreateStockTransfer(FrappeTestCase):
 				patch(
 					"asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}
 				),
-				patch("asn_module.handlers.quality_inspection.attach_qr_to_doc"),
+				patch("asn_module.handlers.quality_inspection.attach_scan_codes_to_doc"),
 				patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
 			):
 				qi.submit()
@@ -120,6 +120,13 @@ class TestCreateStockTransfer(FrappeTestCase):
 		pr.save(ignore_permissions=True)
 		if submit_purchase_receipt:
 			pr.submit()
+		return pr, qi
+
+	def _make_rejected_purchase_receipt_with_qi(self):
+		"""Submitted PR whose incoming QI reads Rejected (one QI per PR line on ERPNext v16)."""
+		pr, qi = self._make_purchase_receipt_with_qi("Accepted")
+		frappe.db.set_value("Quality Inspection", qi.name, "status", "Rejected", update_modified=False)
+		qi.reload()
 		return pr, qi
 
 	def _make_quality_inspection(self, purchase_receipt_name, item_code, status):
@@ -158,8 +165,7 @@ class TestCreateStockTransfer(FrappeTestCase):
 		self.assertNotEqual(se.items[0].t_warehouse, "")
 
 	def test_rejects_non_accepted_qi(self):
-		pr, _accepted_qi = self._make_purchase_receipt_with_qi("Accepted")
-		qi = self._make_quality_inspection(pr.name, pr.items[0].item_code, "Rejected")
+		_pr, qi = self._make_rejected_purchase_receipt_with_qi()
 
 		with self.assertRaises(frappe.ValidationError):
 			create_from_quality_inspection(
@@ -194,7 +200,8 @@ class TestCreateStockTransfer(FrappeTestCase):
 
 	def test_rejects_cancelled_quality_inspection(self):
 		pr, qi = self._make_purchase_receipt_with_qi("Accepted")
-		qi.cancel()
+		frappe.db.set_value("Quality Inspection", qi.name, "docstatus", 2, update_modified=False)
+		qi.reload()
 
 		with self.assertRaises(frappe.ValidationError):
 			create_from_quality_inspection(
@@ -244,7 +251,7 @@ class TestCreateStockTransfer(FrappeTestCase):
 		qi = self._make_quality_inspection(pr.name, item_code, "Accepted")
 		with (
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.quality_inspection.attach_qr_to_doc"),
+			patch("asn_module.handlers.quality_inspection.attach_scan_codes_to_doc"),
 			patch("asn_module.handlers.quality_inspection.frappe.msgprint"),
 		):
 			qi.submit()

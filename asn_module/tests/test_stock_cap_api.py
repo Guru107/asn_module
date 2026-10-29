@@ -94,6 +94,20 @@ def _ensure_user(email: str, roles: tuple[str, ...]) -> str:
 
 
 @contextmanager
+def _no_followup_codes():
+	"""Keep scan-code attachment out of these bookkeeping tests.
+
+	Their receipts carry fake names, so a real Scan Code row would fail
+	dynamic-link validation. The attachment itself has its own tests.
+	"""
+	with (
+		patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
+		patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+	):
+		yield
+
+
+@contextmanager
 def _as_user(email: str):
 	"""Run code as ``email``, restoring the previous session user afterward."""
 	previous = frappe.session.user
@@ -573,7 +587,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(pr_doc, "on_submit")
@@ -669,25 +683,26 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with _mock_asn_attachments():
 			asn.submit()
 
-		on_purchase_receipt_submit(
-			SimpleNamespace(
-				asn=None,
-				is_return=0,
-				name="PR-UNLINKED-DRAIN",
-				items=[
-					SimpleNamespace(
-						idx=1,
-						qty=PR_MAX_STOCK,
-						stock_qty=PR_MAX_STOCK,
-						rejected_qty=0,
-						conversion_factor=1,
-						purchase_order_item=po_item.name,
-						item_code=PR_ITEM,
-					)
-				],
-			),
-			"on_submit",
-		)
+		with _no_followup_codes():
+			on_purchase_receipt_submit(
+				SimpleNamespace(
+					asn=None,
+					is_return=0,
+					name="PR-UNLINKED-DRAIN",
+					items=[
+						SimpleNamespace(
+							idx=1,
+							qty=PR_MAX_STOCK,
+							stock_qty=PR_MAX_STOCK,
+							rejected_qty=0,
+							conversion_factor=1,
+							purchase_order_item=po_item.name,
+							item_code=PR_ITEM,
+						)
+					],
+				),
+				"on_submit",
+			)
 
 		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), PR_MAX_STOCK)
 		later = SimpleNamespace(
@@ -722,25 +737,26 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		self._submit_with_room(open_asn)
 
 		self.assertLess(closed.name, open_asn.name)
-		on_purchase_receipt_submit(
-			SimpleNamespace(
-				asn=None,
-				is_return=0,
-				name="PR-UNLINKED-CLOSED",
-				items=[
-					SimpleNamespace(
-						idx=1,
-						qty=PR_MAX_STOCK,
-						stock_qty=PR_MAX_STOCK,
-						rejected_qty=0,
-						conversion_factor=1,
-						purchase_order_item=po_item.name,
-						item_code=PR_ITEM,
-					)
-				],
-			),
-			"on_submit",
-		)
+		with _no_followup_codes():
+			on_purchase_receipt_submit(
+				SimpleNamespace(
+					asn=None,
+					is_return=0,
+					name="PR-UNLINKED-CLOSED",
+					items=[
+						SimpleNamespace(
+							idx=1,
+							qty=PR_MAX_STOCK,
+							stock_qty=PR_MAX_STOCK,
+							rejected_qty=0,
+							conversion_factor=1,
+							purchase_order_item=po_item.name,
+							item_code=PR_ITEM,
+						)
+					],
+				),
+				"on_submit",
+			)
 
 		self.assertEqual(frappe.db.get_value("ASN Item", closed.items[0].name, "received_qty"), 0)
 		self.assertEqual(
@@ -796,7 +812,8 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 				)
 			],
 		)
-		on_purchase_receipt_submit(pr_doc, "on_submit")
+		with _no_followup_codes():
+			on_purchase_receipt_submit(pr_doc, "on_submit")
 		on_purchase_receipt_cancel(pr_doc, "on_cancel")
 
 		self.assertEqual(frappe.db.get_value("ASN Item", closed.items[0].name, "received_qty"), 4)
@@ -818,7 +835,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(
@@ -865,7 +882,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(pr_doc, "on_submit")
@@ -917,7 +934,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(receipt, "on_submit")
@@ -984,7 +1001,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_qr_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(receipt, "on_submit")
