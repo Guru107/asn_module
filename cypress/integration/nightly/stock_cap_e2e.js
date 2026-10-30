@@ -32,7 +32,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 				.find(".modal:visible .modal-header .btn-modal-close:visible")
 				.first();
 			if ($closeBtn.length) {
-				cy.wrap($closeBtn).click();
+				cy.wrap($closeBtn).click({ force: true });
 				cy.wait(300);
 				closeAllVisibleModals();
 			}
@@ -46,16 +46,13 @@ context("ASN stock cap", { testIsolation: false }, () => {
 	};
 
 	const clickPrimaryAction = (label) => {
-		const re = new RegExp(`^${label}$`);
 		cy.get("body").then(($body) => {
+			const toolbarButtonText = (el) =>
+				Cypress.$(el).clone().find(".es-button__loading-label").remove().end().text().trim();
 			const $match = $body
-				.find("button:visible")
-				.not(".modal button, .modal-dialog button, .form-in-grid button")
-				.filter((_, el) => {
-					const clone = Cypress.$(el).clone();
-					clone.find(".es-button__loading-label").remove();
-					return re.test(clone.text().trim().replace(/\s+/g, " "));
-				});
+				.find(".page-head button:visible, .standard-actions button:visible")
+				.not(".btn-modal-close")
+				.filter((_, el) => toolbarButtonText(el) === label);
 			expect($match.length, `toolbar action ${label}`).to.be.greaterThan(0);
 			cy.wrap($match.first()).click({ force: true });
 		});
@@ -146,7 +143,9 @@ context("ASN stock cap", { testIsolation: false }, () => {
 
 	it("submits when projected stock stays within the cap", () => {
 		newAsnWithQty(seeded.passing_qty);
+		cy.intercept("POST", "**/api/method/frappe.desk.form.save.savedocs").as("saveDoc");
 		clickPrimaryAction("Save");
+		cy.wait("@saveDoc");
 		cy.get(".page-head", { timeout: 20000 }).should("exist");
 		clickPrimaryAction("Submit");
 		clickVisibleModalYes();
@@ -155,7 +154,9 @@ context("ASN stock cap", { testIsolation: false }, () => {
 
 	it("warns on save but still saves when the cap is breached", () => {
 		newAsnWithQty(seeded.breaching_qty);
+		cy.intercept("POST", "**/api/method/frappe.desk.form.save.savedocs").as("saveDoc");
 		clickPrimaryAction("Save");
+		cy.wait("@saveDoc");
 		cy.get(".modal", { timeout: 20000 }).should("contain", seeded.item_code);
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
