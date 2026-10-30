@@ -59,14 +59,7 @@ fi
 bench new-site "$SITE_NAME" --db-root-username "$DB_ROOT_USERNAME" --db-root-password "$DB_ROOT_PASSWORD" --admin-password "$EPHEMERAL_ADMIN_PASSWORD"
 bench --site "$SITE_NAME" install-app erpnext
 bench --site "$SITE_NAME" install-app asn_module
-# CI workflow runs a full `bench build` first; skip only the duplicate app build there.
-# Always build frappe locally (v16 --skip-assets benches need desk bundles).
-if [ "${GITHUB_ACTIONS:-}" = "true" ] || [ "${CI:-}" = "true" ] || [ "${CI:-}" = "Yes" ]; then
-	:
-else
-	bench build --app asn_module
-	bench build --app frappe
-fi
+bench build --app asn_module
 
 bench --site "$SITE_NAME" set-config allow_tests true
 # Token-less API seeding: Cypress posts to whitelisted methods without loading Desk

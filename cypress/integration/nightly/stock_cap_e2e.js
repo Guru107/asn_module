@@ -47,15 +47,19 @@ context("ASN stock cap", { testIsolation: false }, () => {
 
 	const clickPrimaryAction = (label) => {
 		const re = new RegExp(`^${label}$`);
-		cy.get(".primary-action:visible", { timeout: 20000 })
-			.filter((_, el) => {
-				const $el = Cypress.$(el);
-				const clone = $el.clone();
-				clone.find(".es-button__loading-label").remove();
-				return re.test(clone.text().trim().replace(/\s+/g, " "));
-			})
-			.first()
-			.click({ force: true });
+		cy.get("body").then(($body) => {
+			const $match = $body
+				.find(
+					".page-head .primary-action:visible, .page-head button.primary-action:visible"
+				)
+				.filter((_, el) => {
+					const clone = Cypress.$(el).clone();
+					clone.find(".es-button__loading-label").remove();
+					return re.test(clone.text().trim().replace(/\s+/g, " "));
+				});
+			expect($match.length, `toolbar action ${label}`).to.be.greaterThan(0);
+			cy.wrap($match.first()).click({ force: true });
+		});
 	};
 
 	const waitForDeskUnfrozen = () => {
@@ -124,10 +128,9 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		cy.get('[data-fieldname="purchase_order"]:visible input', { timeout: 20000 })
 			.first()
 			.type(`${seeded.purchase_order}{enter}`, { delay: 50, force: true });
-		cy.get('[data-fieldname="items"] [data-fieldname="qty"] input:visible', { timeout: 20000 })
-			.first()
-			.clear({ force: true })
-			.type(String(qty), { force: true });
+		cy.get('[data-fieldname="qty"]:visible').first().clear({ force: true }).type(String(qty), {
+			force: true,
+		});
 		// Adding a row opens it directly in the full "Editing Row" grid-form overlay
 		// (grid_row_form.js), which covers the form's own Save/Submit buttons. Collapse
 		// it back to the compact grid view before interacting with the page toolbar.
