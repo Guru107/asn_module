@@ -62,34 +62,8 @@ context("ASN stock cap", { testIsolation: false }, () => {
 	};
 
 	const fillItemQty = (qty) => {
-		const qtyStr = String(qty);
-		cy.get("body").then(($body) => {
-			if (
-				$body.find(
-					".form-in-grid [data-fieldname='qty'] input:visible, [data-fieldname='items'] [data-fieldname='qty'] input:visible"
-				).length
-			) {
-				return true;
-			}
-			return false;
-		}).then((hasInput) => {
-			if (hasInput) {
-				cy.get(
-					".form-in-grid [data-fieldname='qty'] input:visible, [data-fieldname='items'] [data-fieldname='qty'] input:visible"
-				)
-					.first()
-					.clear({ force: true })
-					.type(qtyStr, { force: true });
-				return;
-			}
-			cy.get('[data-fieldname="items"] [data-fieldname="qty"]:visible', { timeout: 20000 })
-				.first()
-				.click({ force: true });
-			cy.get("[data-fieldname='qty'] input:visible", { timeout: 20000 })
-				.first()
-				.clear({ force: true })
-				.type(qtyStr, { force: true });
-		});
+		cy.fill_field("purchase_order", seeded.purchase_order, "Link");
+		cy.fill_field("qty", qty, "Float");
 	};
 
 	const waitForDeskUnfrozen = () => {
@@ -155,9 +129,6 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		dismissSupplierClearConfirm();
 		waitForDeskUnfrozen();
 		cy.get('[data-fieldname="items"] .grid-add-row', { timeout: 20000 }).click();
-		cy.get('[data-fieldname="purchase_order"]:visible input', { timeout: 20000 })
-			.first()
-			.type(`${seeded.purchase_order}{enter}`, { delay: 50, force: true });
 		fillItemQty(qty);
 		// Adding a row opens it directly in the full "Editing Row" grid-form overlay
 		// (grid_row_form.js), which covers the form's own Save/Submit buttons. Collapse
@@ -197,6 +168,11 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// that test's last assertion), which would otherwise cover the Submit button.
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
+		cy.window().then((win) => {
+			const name = win.cur_frm.doc.name;
+			cy.visit(route(`Form/ASN/${name}`));
+		});
+		cy.get(".form-layout", { timeout: 20000 }).should("exist");
 		clickPrimaryAction("Submit");
 		clickVisibleModalYes();
 		cy.get(".modal", { timeout: 20000 }).should("contain", "exceeds maximum");
