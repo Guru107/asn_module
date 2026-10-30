@@ -46,19 +46,40 @@ context("ASN stock cap", { testIsolation: false }, () => {
 	};
 
 	const clickPrimaryAction = (label) => {
-		cy.get(".page-head", { timeout: 20000 })
-			.contains("button", new RegExp(`^${label}$`))
-			.click({ force: true });
+		const re = new RegExp(`^${label}$`);
+		cy.get("body").then(($body) => {
+			const $match = $body
+				.find("button:visible")
+				.not(".modal button, .modal-dialog button, .form-in-grid button")
+				.filter((_, el) => {
+					const clone = Cypress.$(el).clone();
+					clone.find(".es-button__loading-label").remove();
+					return re.test(clone.text().trim().replace(/\s+/g, " "));
+				});
+			expect($match.length, `toolbar action ${label}`).to.be.greaterThan(0);
+			cy.wrap($match.first()).click({ force: true });
+		});
 	};
 
 	const fillItemQty = (qty) => {
 		const qtyStr = String(qty);
 		cy.get("body").then(($body) => {
-			const $input = $body.find(
-				".form-in-grid [data-fieldname='qty'] input:visible, [data-fieldname='items'] [data-fieldname='qty'] input:visible, [data-fieldname='qty'] input:visible"
-			);
-			if ($input.length) {
-				cy.wrap($input.first()).clear({ force: true }).type(qtyStr, { force: true });
+			if (
+				$body.find(
+					".form-in-grid [data-fieldname='qty'] input:visible, [data-fieldname='items'] [data-fieldname='qty'] input:visible"
+				).length
+			) {
+				return true;
+			}
+			return false;
+		}).then((hasInput) => {
+			if (hasInput) {
+				cy.get(
+					".form-in-grid [data-fieldname='qty'] input:visible, [data-fieldname='items'] [data-fieldname='qty'] input:visible"
+				)
+					.first()
+					.clear({ force: true })
+					.type(qtyStr, { force: true });
 				return;
 			}
 			cy.get('[data-fieldname="items"] [data-fieldname="qty"]:visible', { timeout: 20000 })
