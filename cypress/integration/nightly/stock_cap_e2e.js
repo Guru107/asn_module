@@ -77,10 +77,13 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// Give the deferred trigger a moment to actually run before checking for it.
 		cy.wait(800);
 		dismissSupplierClearConfirm();
-		cy.get('[data-fieldname="items"] .grid-add-row').click();
-		cy.get('[data-fieldname="purchase_order"]:visible')
+		cy.get("body", { timeout: 30000 }).should(($body) => {
+			expect($body.find(".freeze-message-container:visible").length).to.eq(0);
+		});
+		cy.get('[data-fieldname="items"] .grid-add-row', { timeout: 20000 }).click();
+		cy.get('[data-fieldname="purchase_order"]:visible input', { timeout: 20000 })
 			.first()
-			.type(`${seeded.purchase_order}{enter}`, { delay: 30 });
+			.type(`${seeded.purchase_order}{enter}`, { delay: 50, force: true });
 		cy.get('[data-fieldname="qty"]:visible').first().clear().type(String(qty));
 		// Adding a row opens it directly in the full "Editing Row" grid-form overlay
 		// (grid_row_form.js), which covers the form's own Save/Submit buttons. Collapse
@@ -101,10 +104,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		cy.get(".primary-action").contains("Save").click();
 		cy.get(".page-head", { timeout: 20000 }).should("exist");
 		cy.get(".primary-action").contains("Submit").click();
-		cy.get(".modal:visible", { timeout: 10000 })
-			.find(".modal-footer .btn-primary:visible, .modal-footer button.btn-primary")
-			.first()
-			.click({ force: true });
+		cy.get(".modal:visible", { timeout: 10000 }).contains("button", "Yes").click({ force: true });
 		cy.get(".indicator-pill", { timeout: 20000 }).should("not.contain", "Draft");
 	});
 

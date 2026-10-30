@@ -60,10 +60,11 @@ def _unit_price_po_item_names(purchase_order: str) -> set[str]:
 		row["name"]
 		for row in frappe.get_all(
 			"Purchase Order Item",
-			filters={"parent": purchase_order, "qty": 0},
-			fields=["name"],
+			filters={"parent": purchase_order},
+			fields=["name", "qty"],
 			limit_page_length=0,
 		)
+		if flt(row.get("qty")) == 0
 	}
 
 
