@@ -27,14 +27,8 @@ Cypress.Commands.add("fill_portal_asn_vehicle", () => {
 		.type("MH12AB1234");
 });
 
+// Ephemeral E2E sites set ignore_csrf=1 (run_ephemeral_e2e.sh). Local dev sites running
+// the suite need the same site_config flag so call_api seeding works without a Desk hop.
 Cypress.Commands.add("seed_context", (method, args = {}) => {
-	const routePrefix = (Cypress.env("routePrefix") || "app").replace(/^\/+/, "") || "app";
-	return cy
-		.login()
-		.visit(`/${routePrefix}`, { failOnStatusCode: false })
-		.window()
-		.its("frappe.csrf_token")
-		.should("be.a", "string")
-		.then(() => cy.call(method, args))
-		.then((result) => (result && result.message ? result.message : result));
+	return cy.login().call_api(method, args);
 });

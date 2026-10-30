@@ -59,9 +59,17 @@ fi
 bench new-site "$SITE_NAME" --db-root-username "$DB_ROOT_USERNAME" --db-root-password "$DB_ROOT_PASSWORD" --admin-password "$EPHEMERAL_ADMIN_PASSWORD"
 bench --site "$SITE_NAME" install-app erpnext
 bench --site "$SITE_NAME" install-app asn_module
-bench build --app asn_module
+# CI's workflow already ran a full `bench build` before this script; only rebuild when
+# running locally against a bench that may never have built assets.
+if [ "${GITHUB_ACTIONS:-}" != "true" ] && [ "${CI:-}" != "true" ] && [ "${CI:-}" != "Yes" ]; then
+	bench build --app asn_module
+	bench build --app frappe
+fi
 
 bench --site "$SITE_NAME" set-config allow_tests true
+# Token-less API seeding: Cypress posts to whitelisted methods without loading Desk
+# to mint a CSRF token (frappe/auth.py validate_csrf_token honors this on v15 and v16).
+bench --site "$SITE_NAME" set-config ignore_csrf 1
 # Default host_name uses the ephemeral site hostname. If /etc/hosts update cannot
 # run in a non-interactive environment, this is switched to 127.0.0.1 below.
 bench --site "$SITE_NAME" set-config host_name "http://${HOST_NAME}:${SERVE_PORT}"
