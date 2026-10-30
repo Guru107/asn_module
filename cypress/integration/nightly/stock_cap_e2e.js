@@ -41,8 +41,22 @@ context("ASN stock cap", { testIsolation: false }, () => {
 
 	const clickVisibleModalYes = () => {
 		cy.get(".modal:visible .modal-footer", { timeout: 15000 })
-			.contains("button", "Yes")
+			.contains("button", /^Yes$/)
 			.click({ force: true });
+	};
+
+	const clickPrimaryAction = (label) => {
+		cy.get(".primary-action", { timeout: 20000 })
+			.contains("button", new RegExp(`^${label}$`))
+			.click({ force: true });
+	};
+
+	const expectDraftDoc = () => {
+		cy.window().its("cur_frm.doc.docstatus", { timeout: 20000 }).should("eq", 0);
+	};
+
+	const expectSubmittedDoc = () => {
+		cy.window().its("cur_frm.doc.docstatus", { timeout: 20000 }).should("eq", 1);
 	};
 
 	const dismissSupplierClearConfirm = () => {
@@ -107,20 +121,20 @@ context("ASN stock cap", { testIsolation: false }, () => {
 
 	it("submits when projected stock stays within the cap", () => {
 		newAsnWithQty(seeded.passing_qty);
-		cy.get(".primary-action").contains("Save").click();
+		clickPrimaryAction("Save");
 		cy.get(".page-head", { timeout: 20000 }).should("exist");
-		cy.get(".primary-action").contains("Submit").click();
+		clickPrimaryAction("Submit");
 		clickVisibleModalYes();
-		cy.get(".indicator-pill", { timeout: 20000 }).should("not.contain", "Draft");
+		expectSubmittedDoc();
 	});
 
 	it("warns on save but still saves when the cap is breached", () => {
 		newAsnWithQty(seeded.breaching_qty);
-		cy.get(".primary-action").contains("Save").click();
+		clickPrimaryAction("Save");
 		cy.get(".modal", { timeout: 20000 }).should("contain", seeded.item_code);
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
-		cy.get(".indicator-pill", { timeout: 20000 }).should("contain", "Draft");
+		expectDraftDoc();
 	});
 
 	it("blocks submit and leaves the ASN in draft when the cap is breached", () => {
@@ -129,11 +143,11 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// that test's last assertion), which would otherwise cover the Submit button.
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
-		cy.get(".primary-action").contains("Submit").click();
+		clickPrimaryAction("Submit");
 		clickVisibleModalYes();
 		cy.get(".modal", { timeout: 20000 }).should("contain", "exceeds maximum");
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
-		cy.get(".indicator-pill", { timeout: 20000 }).should("contain", "Draft");
+		expectDraftDoc();
 	});
 });
