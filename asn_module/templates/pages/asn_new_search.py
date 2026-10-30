@@ -50,6 +50,24 @@ def supplier_draft_asn_name(supplier: str | None, asn_name: str | None) -> str |
 	return name
 
 
+def _unit_price_po_item_names(purchase_order: str) -> set[str]:
+	"""PO Item names on a unit-price order (ordered qty zero on the line)."""
+	if not purchase_order or not frappe.db.has_column("Purchase Order", "has_unit_price_items"):
+		return set()
+	if not cint(frappe.db.get_value("Purchase Order", purchase_order, "has_unit_price_items")):
+		return set()
+	return {
+		row["name"]
+		for row in frappe.get_all(
+			"Purchase Order Item",
+			filters={"parent": purchase_order},
+			fields=["name", "qty"],
+			limit_page_length=0,
+		)
+		if flt(row.get("qty")) == 0
+	}
+
+
 @frappe.whitelist()
 def search_open_purchase_orders(txt: str = "", start: int = 0, page_len: int = 20) -> list[dict]:
 	supplier = _get_supplier()
@@ -199,6 +217,7 @@ def search_purchase_order_items(
 		{row["name"]: flt(row["qty"]) for row in rows},
 		exclude_asn_name=supplier_draft_asn_name(supplier, asn_name),
 	)
+	unit_price_items = _unit_price_po_item_names(purchase_order)
 	filtered = []
 	for row in rows:
 		if txt:
@@ -212,7 +231,9 @@ def search_purchase_order_items(
 		row_name = row["name"]
 		remaining_qty = remaining_by_item.get(row_name, 0)
 		if remaining_qty is not None and remaining_qty <= 0:
-			continue
+			if row_name not in unit_price_items:
+				continue
+			remaining_qty = 0
 		filtered.append(
 			{
 				"value": row["item_code"],

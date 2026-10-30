@@ -27,7 +27,7 @@ jobs:
         include:
           - frappe_version: "15"
             erpnext_version: "15"
-            python_version: "3.10"
+            python_version: "3.12"
             node_version: "20"
             frappe_route_prefix: "app"
             mariadb_version: "10.6"
@@ -75,9 +75,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-e2e-${{ matrix.frappe_version }}-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          key: ${{ runner.os }}-pip-e2e-py${{ matrix.python_version }}-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
           restore-keys: |
-            ${{ runner.os }}-pip-e2e-${{ matrix.frappe_version }}-
+            ${{ runner.os }}-pip-e2e-py${{ matrix.python_version }}-
             ${{ runner.os }}-pip-
 
       - name: Get yarn cache directory path
@@ -93,10 +93,11 @@ jobs:
             ${{ runner.os }}-yarn-e2e-${{ matrix.frappe_version }}-
             ${{ runner.os }}-yarn-
 
+      - name: Harden apt against stalled mirrors
+        run: echo 'Acquire::http::Timeout "30"; Acquire::https::Timeout "30"; Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/99-e2e
+
       - name: Install MariaDB Client
-        run: |
-          sudo apt update
-          sudo apt-get install -y mariadb-client
+        run: sudo apt-get update && sudo apt-get install -y mariadb-client
 
       - name: Setup bench
         run: |

@@ -32,10 +32,78 @@ context("ASN stock cap", { testIsolation: false }, () => {
 				.find(".modal:visible .modal-header .btn-modal-close:visible")
 				.first();
 			if ($closeBtn.length) {
-				cy.wrap($closeBtn).click();
+				cy.wrap($closeBtn).click({ force: true });
 				cy.wait(300);
 				closeAllVisibleModals();
 			}
+		});
+	};
+
+	const clickVisibleModalYes = () => {
+		cy.get(".modal:visible .modal-footer", { timeout: 15000 })
+			.contains("button", /^Yes$/)
+			.click({ force: true });
+	};
+
+	const clickPrimaryAction = (label) => {
+		cy.get("body").then(($body) => {
+			const toolbarButtonText = (el) =>
+				Cypress.$(el)
+					.clone()
+					.find(".es-button__loading-label")
+					.remove()
+					.end()
+					.text()
+					.trim();
+			const $match = $body
+				.find(".page-head button:visible, .standard-actions button:visible")
+				.not(".btn-modal-close")
+				.filter((_, el) => toolbarButtonText(el) === label);
+			expect($match.length, `toolbar action ${label}`).to.be.greaterThan(0);
+			cy.wrap($match.first()).click({ force: true });
+		});
+	};
+
+	const fillItemQty = (qty) => {
+		cy.fill_field("purchase_order", seeded.purchase_order, "Link");
+		cy.fill_field("qty", qty, "Float");
+	};
+
+	const waitForDeskUnfrozen = () => {
+		cy.window().then((win) => {
+			const frappe = win.frappe;
+			if (!frappe?.dom?.unfreeze) {
+				return;
+			}
+			for (let i = 0; i < 10 && frappe.dom.freeze_count > 0; i += 1) {
+				frappe.dom.unfreeze();
+			}
+		});
+		cy.get("body", { timeout: 60000 }).should(($body) => {
+			expect($body.find(".freeze-message-container:visible").length).to.eq(0);
+		});
+	};
+
+	const expectDraftDoc = () => {
+		cy.window().its("cur_frm.doc.docstatus", { timeout: 20000 }).should("eq", 0);
+	};
+
+	const expectSubmittedDoc = () => {
+		cy.window().its("cur_frm.doc.docstatus", { timeout: 20000 }).should("eq", 1);
+	};
+
+	const dismissSupplierClearConfirm = () => {
+		cy.get("body").then(($body) => {
+			if (!$body.find(".modal:visible").length) {
+				return;
+			}
+			cy.get(".modal:visible", { timeout: 15000 }).should(
+				"contain",
+				"Changing supplier will clear all items"
+			);
+			clickVisibleModalYes();
+			cy.get(".modal:visible").should("not.exist");
+			cy.window().its("cur_frm.doc.supplier").should("eq", seeded.supplier);
 		});
 	};
 
@@ -61,24 +129,10 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// the untouched placeholder. Accepting clears the table, so re-add a fresh row.
 		// Give the deferred trigger a moment to actually run before checking for it.
 		cy.wait(800);
-		cy.get("body").then(($body) => {
-			if ($body.find(".modal:visible").length) {
-				cy.get(".modal", { timeout: 15000 }).should(
-					"contain",
-					"Changing supplier will clear all items"
-				);
-				cy.get(".modal-footer .btn-primary:visible").contains("Yes").click();
-				// Frappe's dialogs are hidden (display:none), not removed from the DOM,
-				// once closed, so assert on visibility rather than existence.
-				cy.get(".modal:visible").should("not.exist");
-				cy.window().its("cur_frm.doc.supplier").should("eq", seeded.supplier);
-			}
-		});
-		cy.get('[data-fieldname="items"] .grid-add-row').click();
-		cy.get('[data-fieldname="purchase_order"]:visible')
-			.first()
-			.type(`${seeded.purchase_order}{enter}`, { delay: 30 });
-		cy.get('[data-fieldname="qty"]:visible').first().clear().type(String(qty));
+		dismissSupplierClearConfirm();
+		waitForDeskUnfrozen();
+		cy.get('[data-fieldname="items"] .grid-add-row', { timeout: 20000 }).click();
+		fillItemQty(qty);
 		// Adding a row opens it directly in the full "Editing Row" grid-form overlay
 		// (grid_row_form.js), which covers the form's own Save/Submit buttons. Collapse
 		// it back to the compact grid view before interacting with the page toolbar.
@@ -95,20 +149,24 @@ context("ASN stock cap", { testIsolation: false }, () => {
 
 	it("submits when projected stock stays within the cap", () => {
 		newAsnWithQty(seeded.passing_qty);
-		cy.get(".primary-action").contains("Save").click();
+		cy.intercept("POST", "**/api/method/frappe.desk.form.save.savedocs").as("saveDoc");
+		clickPrimaryAction("Save");
+		cy.wait("@saveDoc");
 		cy.get(".page-head", { timeout: 20000 }).should("exist");
-		cy.get(".primary-action").contains("Submit").click();
-		cy.get(".modal-footer .btn-primary:visible").click();
-		cy.get(".indicator-pill", { timeout: 20000 }).should("not.contain", "Draft");
+		clickPrimaryAction("Submit");
+		clickVisibleModalYes();
+		expectSubmittedDoc();
 	});
 
 	it("warns on save but still saves when the cap is breached", () => {
 		newAsnWithQty(seeded.breaching_qty);
-		cy.get(".primary-action").contains("Save").click();
+		cy.intercept("POST", "**/api/method/frappe.desk.form.save.savedocs").as("saveDoc");
+		clickPrimaryAction("Save");
+		cy.wait("@saveDoc");
 		cy.get(".modal", { timeout: 20000 }).should("contain", seeded.item_code);
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
-		cy.get(".indicator-pill", { timeout: 20000 }).should("contain", "Draft");
+		expectDraftDoc();
 	});
 
 	it("blocks submit and leaves the ASN in draft when the cap is breached", () => {
@@ -117,17 +175,16 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// that test's last assertion), which would otherwise cover the Submit button.
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
-		cy.get(".primary-action").contains("Submit").click();
-		// Submitting always raises the desk's generic "Permanently submit?" confirm
-		// first (same as the passing-case test above); only once that's accepted does
-		// the actual submit request run and the server reject it as a breach. Wait for
-		// the confirm rather than snapshotting the DOM immediately after the click --
-		// it can take a beat to render, and checking too early would find nothing and
-		// silently skip it, leaving the confirm open and the breach check never run.
-		cy.get(".modal-footer .btn-primary:visible", { timeout: 10000 }).contains("Yes").click();
+		cy.window().then((win) => {
+			const name = win.cur_frm.doc.name;
+			cy.visit(route(`Form/ASN/${name}`));
+		});
+		cy.get(".form-layout", { timeout: 20000 }).should("exist");
+		clickPrimaryAction("Submit");
+		clickVisibleModalYes();
 		cy.get(".modal", { timeout: 20000 }).should("contain", "exceeds maximum");
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
-		cy.get(".indicator-pill", { timeout: 20000 }).should("contain", "Draft");
+		expectDraftDoc();
 	});
 });

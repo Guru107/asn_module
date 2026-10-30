@@ -27,14 +27,13 @@ Cypress.Commands.add("fill_portal_asn_vehicle", () => {
 		.type("MH12AB1234");
 });
 
+// Ephemeral E2E sites set ignore_csrf=1 (run_ephemeral_e2e.sh). Use cy.call (in-browser) after
+// one Desk visit so seeding shares the logged-in session; skip the csrf_token wait.
 Cypress.Commands.add("seed_context", (method, args = {}) => {
 	const routePrefix = (Cypress.env("routePrefix") || "app").replace(/^\/+/, "") || "app";
 	return cy
 		.login()
 		.visit(`/${routePrefix}`, { failOnStatusCode: false })
-		.window()
-		.its("frappe.csrf_token")
-		.should("be.a", "string")
 		.then(() => cy.call(method, args))
 		.then((result) => (result && result.message ? result.message : result));
 });

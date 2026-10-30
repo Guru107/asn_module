@@ -58,6 +58,7 @@ Use `--lightmode` to avoid ERPNext test-record bootstrapping errors (fiscal year
 - Frappe v16 **requires Python ≥ 3.14**. The system Python 3.12 will not work for bench operations.
 - The `bench init` may fail with a crontab error; this is non-critical. Install `cron` package if needed.
 - When running tests without `--lightmode`, ERPNext's test-record bootstrap may throw a fiscal-year overlap error after all asn_module tests pass. This is harmless to asn_module tests but causes a non-zero exit code.
+- Local Cypress E2E (`scripts/run_ephemeral_e2e.sh`) sets `ignore_csrf: 1` on the ephemeral site so `seed_context` can use `call_api` without an extra Desk load. For a persistent dev site, add `"ignore_csrf": 1` to `site_config.json` only while running UI tests (do not use in production).
 - The app is installed via `bench get-app --soft-link /workspace`, so code changes in `/workspace` are immediately reflected.
 - `bench build --app asn_module` rebuilds frontend assets. The `bench start` watcher auto-rebuilds JS/CSS on save.
 - Backward compatibility is intentionally out of scope while this module is under active development unless a task explicitly requires it.
