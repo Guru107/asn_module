@@ -48,7 +48,13 @@ context("ASN stock cap", { testIsolation: false }, () => {
 	const clickPrimaryAction = (label) => {
 		cy.get("body").then(($body) => {
 			const toolbarButtonText = (el) =>
-				Cypress.$(el).clone().find(".es-button__loading-label").remove().end().text().trim();
+				Cypress.$(el)
+					.clone()
+					.find(".es-button__loading-label")
+					.remove()
+					.end()
+					.text()
+					.trim();
 			const $match = $body
 				.find(".page-head button:visible, .standard-actions button:visible")
 				.not(".btn-modal-close")
