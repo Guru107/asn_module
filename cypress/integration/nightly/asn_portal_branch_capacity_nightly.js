@@ -3,7 +3,9 @@ function fillAndSubmit(purchaseOrder, qty) {
 	cy.get("#single-po-input", { timeout: 20000 }).clear().type(purchaseOrder);
 	cy.get("#add-po-btn").click();
 	cy.get("#single-item-picker", { timeout: 20000 }).should("be.visible");
-	cy.get("#single-item-picker-list input[type='checkbox']").first().check({ force: true });
+	cy.get("#single-item-picker-list input[type='checkbox']", { timeout: 20000 })
+		.first()
+		.check({ force: true });
 	cy.get("form#single-asn-form input[name='supplier_invoice_no']")
 		.clear()
 		.type(`CAP-E2E-${Date.now()}`);

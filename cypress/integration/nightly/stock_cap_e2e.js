@@ -39,6 +39,21 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		});
 	};
 
+	const dismissSupplierClearConfirm = () => {
+		cy.get("body").then(($body) => {
+			if (!$body.find(".modal:visible").length) {
+				return;
+			}
+			cy.get(".modal:visible", { timeout: 15000 }).should(
+				"contain",
+				"Changing supplier will clear all items"
+			);
+			cy.get(".modal:visible").contains("button", "Yes").click({ force: true });
+			cy.get(".modal:visible").should("not.exist");
+			cy.window().its("cur_frm.doc.supplier").should("eq", seeded.supplier);
+		});
+	};
+
 	const newAsnWithQty = (qty) => {
 		cy.visit(route("Form/ASN/new"), { failOnStatusCode: false });
 		cy.get(".form-layout", { timeout: 20000 }).should("exist");
@@ -61,19 +76,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// the untouched placeholder. Accepting clears the table, so re-add a fresh row.
 		// Give the deferred trigger a moment to actually run before checking for it.
 		cy.wait(800);
-		cy.get("body").then(($body) => {
-			if ($body.find(".modal:visible").length) {
-				cy.get(".modal", { timeout: 15000 }).should(
-					"contain",
-					"Changing supplier will clear all items"
-				);
-				cy.get(".modal-footer .btn-primary:visible").contains("Yes").click();
-				// Frappe's dialogs are hidden (display:none), not removed from the DOM,
-				// once closed, so assert on visibility rather than existence.
-				cy.get(".modal:visible").should("not.exist");
-				cy.window().its("cur_frm.doc.supplier").should("eq", seeded.supplier);
-			}
-		});
+		dismissSupplierClearConfirm();
 		cy.get('[data-fieldname="items"] .grid-add-row').click();
 		cy.get('[data-fieldname="purchase_order"]:visible')
 			.first()
@@ -98,7 +101,10 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		cy.get(".primary-action").contains("Save").click();
 		cy.get(".page-head", { timeout: 20000 }).should("exist");
 		cy.get(".primary-action").contains("Submit").click();
-		cy.get(".modal-footer .btn-primary:visible").click();
+		cy.get(".modal:visible", { timeout: 10000 })
+			.find(".modal-footer .btn-primary:visible, .modal-footer button.btn-primary")
+			.first()
+			.click({ force: true });
 		cy.get(".indicator-pill", { timeout: 20000 }).should("not.contain", "Draft");
 	});
 
@@ -118,13 +124,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
 		cy.get(".primary-action").contains("Submit").click();
-		// Submitting always raises the desk's generic "Permanently submit?" confirm
-		// first (same as the passing-case test above); only once that's accepted does
-		// the actual submit request run and the server reject it as a breach. Wait for
-		// the confirm rather than snapshotting the DOM immediately after the click --
-		// it can take a beat to render, and checking too early would find nothing and
-		// silently skip it, leaving the confirm open and the breach check never run.
-		cy.get(".modal-footer .btn-primary:visible", { timeout: 10000 }).contains("Yes").click();
+		cy.get(".modal:visible", { timeout: 10000 }).contains("button", "Yes").click({ force: true });
 		cy.get(".modal", { timeout: 20000 }).should("contain", "exceeds maximum");
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
