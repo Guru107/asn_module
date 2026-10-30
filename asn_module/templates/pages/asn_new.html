@@ -1055,11 +1055,10 @@
 
 	function filteredItems() {
 		const txt = itemFilterInput.value.trim().toLowerCase();
-		const selectable = poItems.filter(
-			(entry) => entry.remaining_qty == null || Number(entry.remaining_qty) > 0
-		);
-		if (!txt) return selectable;
-		return selectable.filter((entry) => {
+		// Visibility is decided server-side (e.g. fully received lines are omitted;
+		// unit-price lines at zero branch headroom are kept with remaining_qty 0).
+		if (!txt) return poItems;
+		return poItems.filter((entry) => {
 			const haystack = [
 				String(entry.value || "").toLowerCase(),
 				String(entry.item_name || "").toLowerCase(),

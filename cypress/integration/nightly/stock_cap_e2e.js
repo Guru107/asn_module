@@ -39,6 +39,12 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		});
 	};
 
+	const clickVisibleModalYes = () => {
+		cy.get(".modal:visible .modal-footer", { timeout: 15000 })
+			.contains("button", "Yes")
+			.click({ force: true });
+	};
+
 	const dismissSupplierClearConfirm = () => {
 		cy.get("body").then(($body) => {
 			if (!$body.find(".modal:visible").length) {
@@ -48,7 +54,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 				"contain",
 				"Changing supplier will clear all items"
 			);
-			cy.get(".modal:visible").contains("button", "Yes").click({ force: true });
+			clickVisibleModalYes();
 			cy.get(".modal:visible").should("not.exist");
 			cy.window().its("cur_frm.doc.supplier").should("eq", seeded.supplier);
 		});
@@ -104,7 +110,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		cy.get(".primary-action").contains("Save").click();
 		cy.get(".page-head", { timeout: 20000 }).should("exist");
 		cy.get(".primary-action").contains("Submit").click();
-		cy.get(".modal:visible", { timeout: 10000 }).contains("button", "Yes").click({ force: true });
+		clickVisibleModalYes();
 		cy.get(".indicator-pill", { timeout: 20000 }).should("not.contain", "Draft");
 	});
 
@@ -124,7 +130,7 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
 		cy.get(".primary-action").contains("Submit").click();
-		cy.get(".modal:visible", { timeout: 10000 }).contains("button", "Yes").click({ force: true });
+		clickVisibleModalYes();
 		cy.get(".modal", { timeout: 20000 }).should("contain", "exceeds maximum");
 		closeAllVisibleModals();
 		cy.get(".modal:visible").should("not.exist");
