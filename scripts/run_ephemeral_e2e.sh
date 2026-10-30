@@ -59,9 +59,11 @@ fi
 bench new-site "$SITE_NAME" --db-root-username "$DB_ROOT_USERNAME" --db-root-password "$DB_ROOT_PASSWORD" --admin-password "$EPHEMERAL_ADMIN_PASSWORD"
 bench --site "$SITE_NAME" install-app erpnext
 bench --site "$SITE_NAME" install-app asn_module
-# CI's workflow already ran a full `bench build` before this script; only rebuild when
-# running locally against a bench that may never have built assets.
-if [ "${GITHUB_ACTIONS:-}" != "true" ] && [ "${CI:-}" != "true" ] && [ "${CI:-}" != "Yes" ]; then
+# CI workflow runs a full `bench build` first; skip only the duplicate app build there.
+# Always build frappe locally (v16 --skip-assets benches need desk bundles).
+if [ "${GITHUB_ACTIONS:-}" = "true" ] || [ "${CI:-}" = "true" ] || [ "${CI:-}" = "Yes" ]; then
+	:
+else
 	bench build --app asn_module
 	bench build --app frappe
 fi

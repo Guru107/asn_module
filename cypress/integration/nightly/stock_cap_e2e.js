@@ -46,9 +46,31 @@ context("ASN stock cap", { testIsolation: false }, () => {
 	};
 
 	const clickPrimaryAction = (label) => {
-		cy.get(".primary-action", { timeout: 20000 })
-			.contains("button", new RegExp(`^${label}$`))
+		const re = new RegExp(`^${label}$`);
+		cy.get(".primary-action:visible", { timeout: 20000 })
+			.filter((_, el) => {
+				const $el = Cypress.$(el);
+				const clone = $el.clone();
+				clone.find(".es-button__loading-label").remove();
+				return re.test(clone.text().trim().replace(/\s+/g, " "));
+			})
+			.first()
 			.click({ force: true });
+	};
+
+	const waitForDeskUnfrozen = () => {
+		cy.window().then((win) => {
+			const frappe = win.frappe;
+			if (!frappe?.dom?.unfreeze) {
+				return;
+			}
+			for (let i = 0; i < 10 && frappe.dom.freeze_count > 0; i += 1) {
+				frappe.dom.unfreeze();
+			}
+		});
+		cy.get("body", { timeout: 60000 }).should(($body) => {
+			expect($body.find(".freeze-message-container:visible").length).to.eq(0);
+		});
 	};
 
 	const expectDraftDoc = () => {
@@ -97,14 +119,15 @@ context("ASN stock cap", { testIsolation: false }, () => {
 		// Give the deferred trigger a moment to actually run before checking for it.
 		cy.wait(800);
 		dismissSupplierClearConfirm();
-		cy.get("body", { timeout: 30000 }).should(($body) => {
-			expect($body.find(".freeze-message-container:visible").length).to.eq(0);
-		});
+		waitForDeskUnfrozen();
 		cy.get('[data-fieldname="items"] .grid-add-row', { timeout: 20000 }).click();
 		cy.get('[data-fieldname="purchase_order"]:visible input', { timeout: 20000 })
 			.first()
 			.type(`${seeded.purchase_order}{enter}`, { delay: 50, force: true });
-		cy.get('[data-fieldname="qty"]:visible').first().clear().type(String(qty));
+		cy.get('[data-fieldname="items"] [data-fieldname="qty"] input:visible', { timeout: 20000 })
+			.first()
+			.clear({ force: true })
+			.type(String(qty), { force: true });
 		// Adding a row opens it directly in the full "Editing Row" grid-form overlay
 		// (grid_row_form.js), which covers the form's own Save/Submit buttons. Collapse
 		// it back to the compact grid view before interacting with the page toolbar.

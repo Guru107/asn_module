@@ -27,8 +27,13 @@ Cypress.Commands.add("fill_portal_asn_vehicle", () => {
 		.type("MH12AB1234");
 });
 
-// Ephemeral E2E sites set ignore_csrf=1 (run_ephemeral_e2e.sh). Local dev sites running
-// the suite need the same site_config flag so call_api seeding works without a Desk hop.
+// Ephemeral E2E sites set ignore_csrf=1 (run_ephemeral_e2e.sh). Local dev sites need the
+// same site_config flag while running UI tests. One Desk visit after login binds the
+// session cookie for cy.request; no CSRF token round-trip is required.
 Cypress.Commands.add("seed_context", (method, args = {}) => {
-	return cy.login().call_api(method, args);
+	const routePrefix = (Cypress.env("routePrefix") || "app").replace(/^\/+/, "") || "app";
+	return cy
+		.login()
+		.visit(`/${routePrefix}`, { failOnStatusCode: false })
+		.call_api(method, args);
 });
