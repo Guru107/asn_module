@@ -651,7 +651,7 @@ def seed_portal_draft_remaining_context():
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_portal_branch_capacity_context(already_full: int = 0):
 	"""A portal purchase order whose branch can take 4, or nothing when already full."""
 	if not frappe.conf.get("allow_tests"):
@@ -683,7 +683,8 @@ def seed_portal_branch_capacity_context(already_full: int = 0):
 			{"has_unit_price_items": 1, "branch": branch},
 		)
 		frappe.db.set_value("Purchase Order Item", po_item.name, "qty", 0)
-		frappe.db.commit()
+		# Persist unit-price PO flags for portal search in follow-up HTTP requests (Cypress).
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit
 	frappe.db.delete("ASN Stock Cap Warehouse", {"warehouse": po_item.warehouse})
 	if frappe.db.exists("ASN Stock Cap Settings", branch):
 		frappe.delete_doc("ASN Stock Cap Settings", branch, force=True)
