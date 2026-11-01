@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import frappe
@@ -74,7 +75,7 @@ class TestConfirmPutaway(FrappeTestCase):
 			pr.name,
 			{
 				"asn": "ASN-001",
-				"asn_items": '{"1": {"asn_item_name": "ASN-ITEM-001"}}',
+				"asn_items": json.dumps({pr.items[0].name: {"asn_item_name": "ASN-ITEM-001"}}),
 			},
 			update_modified=False,
 		)
