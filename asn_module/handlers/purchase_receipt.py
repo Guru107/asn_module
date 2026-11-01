@@ -1005,14 +1005,15 @@ def _attach_followup_codes(doc) -> None:
 
 	Runs before the ASN bookkeeping so an unlinked receipt (one born from a
 	Subcontracting Receipt) is not skipped. The putaway code is attached only
-	when an item does not call for inspection first.
+	when no item calls for inspection first; a mixed receipt takes the
+	Quality Inspection → stock-transfer/reject path instead.
 	"""
 	attach_scan_codes_to_doc(doc, "create_purchase_invoice")
 
-	putaway_required = any(
+	no_item_needs_inspection = bool(doc.items) and all(
 		not frappe.get_cached_value("Item", pr_item.item_code, "inspection_required_before_purchase")
 		for pr_item in doc.items
 	)
 
-	if putaway_required:
+	if no_item_needs_inspection:
 		attach_scan_codes_to_doc(doc, "confirm_putaway")
