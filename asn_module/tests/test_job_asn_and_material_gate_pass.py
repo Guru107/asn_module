@@ -795,6 +795,67 @@ class TestMaterialGatePassScan(FrappeTestCase):
 			asn.submit()
 		return purchase_order, asn
 
+	def test_deleting_a_draft_row_before_submit_credits_each_asn_line_its_own_qty(self):
+		"""The desk renumbers rows when a draft is edited; the row-to-line map must
+		follow the row, not its position."""
+		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		try:
+			purchase_order = create_purchase_order(item_count=3, unique_items=True, qty=6)
+			asn = frappe.get_doc(
+				{
+					"doctype": "ASN",
+					"supplier": purchase_order.supplier,
+					"supplier_invoice_no": f"MAP-{frappe.generate_hash(length=8)}",
+					"supplier_invoice_date": today(),
+					"expected_delivery_date": today(),
+					"supplier_invoice_amount": sum(
+						flt(row.qty) * flt(row.rate) for row in purchase_order.items
+					),
+					"vehicle_number": "MH12AB1234",
+					"items": [
+						{
+							"purchase_order": purchase_order.name,
+							"purchase_order_item": po_item.name,
+							"item_code": po_item.item_code,
+							"qty": 2,
+							"uom": po_item.uom,
+							"rate": po_item.rate,
+						}
+						for po_item in purchase_order.items
+					],
+				}
+			)
+			asn.insert(ignore_permissions=True)
+			with real_asn_attachment_context():
+				asn.submit()
+			with integration_user_context():
+				created = create_from_asn("ASN", asn.name, {})
+		finally:
+			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+
+		self.assertEqual(created["doctype"], "Purchase Receipt")
+		receipt = frappe.get_doc("Purchase Receipt", created["name"])
+		self.assertEqual(len(receipt.items), 3)
+		removed_asn_item = asn.items[0].name
+		kept_asn_items = [row.name for row in asn.items[1:]]
+
+		# The desk deletes the first row and renumbers the rest before submitting.
+		receipt.items.pop(0)
+		for pos, row in enumerate(receipt.items, start=1):
+			row.idx = pos
+		receipt.save(ignore_permissions=True)
+		with (
+			real_asn_attachment_context(),
+			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
+			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+		):
+			receipt.submit()
+
+		self.assertEqual(flt(frappe.db.get_value("ASN Item", removed_asn_item, "received_qty")), 0)
+		for asn_item_name in kept_asn_items:
+			self.assertEqual(flt(frappe.db.get_value("ASN Item", asn_item_name, "received_qty")), 2)
+
 	def test_a_later_scan_opens_the_same_gate_pass(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
 		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)

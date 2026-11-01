@@ -163,6 +163,7 @@ doc_events = {
 	},
 	"Purchase Receipt": {
 		"before_insert": "asn_module.handlers.purchase_receipt.stamp_receipt_built_by_gate_pass",
+		"after_insert": "asn_module.handlers.purchase_receipt.stamp_asn_item_mapping",
 		"before_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_before_submit",
 		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
 		"on_cancel": "asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",

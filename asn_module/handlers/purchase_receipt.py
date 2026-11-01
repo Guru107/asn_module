@@ -185,7 +185,7 @@ def _record_linked_received_qty(doc, sign: int) -> tuple[list[str], bool]:
 	received_qty_by_asn_item: dict[str, float] = {}
 	mapped_names: dict[str, None] = {}
 	for pr_item, delivered in _lines_with_delivered_qty(doc):
-		asn_item_name = (mapping.get(str(pr_item.idx)) or {}).get("asn_item_name")
+		asn_item_name = (mapping.get(pr_item.name) or {}).get("asn_item_name")
 		if not asn_item_name:
 			continue
 		mapped_names.setdefault(asn_item_name, None)
@@ -849,7 +849,10 @@ def _apply_asn_fields(pr, asn, *, preserve_qty: bool = False) -> None:
 	for asn_item in asn.items:
 		asn_items_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
 
-	asn_items_map = {}
+	# Row names do not exist until insert, so the map is stamped afterwards, keyed by
+	# name: the desk renumbers rows (idx) when a draft is edited, which would silently
+	# re-credit quantities to the wrong ASN lines on submit.
+	asn_item_pairs = []
 	for pr_item in pr.items:
 		matching_asn_items = asn_items_by_po_item.get(pr_item.purchase_order_item) or []
 		asn_item = matching_asn_items.pop(0) if matching_asn_items else None
@@ -862,12 +865,27 @@ def _apply_asn_fields(pr, asn, *, preserve_qty: bool = False) -> None:
 		pr_item.batch_no = asn_item.batch_no
 		pr_item.serial_no = asn_item.serial_nos
 		_set_amounts_from_qty(pr, pr_item)
-		asn_items_map[str(pr_item.idx)] = {
-			"asn_item_name": asn_item.name,
-			"original_qty": asn_item.qty,
-		}
+		asn_item_pairs.append((pr_item, asn_item))
 
-	pr.asn_items = json.dumps(asn_items_map)
+	pr._asn_item_pairs = asn_item_pairs
+
+
+def stamp_asn_item_mapping(doc, method=None) -> None:
+	"""Persist the PR-row → ASN-line map keyed by row name (after_insert hook).
+
+	shortcut: drafts created before name keying are not migrated (pre-production)
+	"""
+	del method
+	pairs = getattr(doc, "_asn_item_pairs", None) or []
+	if not pairs:
+		return
+	doc.asn_items = json.dumps(
+		{
+			pr_item.name: {"asn_item_name": asn_item.name, "original_qty": asn_item.qty}
+			for pr_item, asn_item in pairs
+		}
+	)
+	frappe.db.set_value(doc.doctype, doc.name, "asn_items", doc.asn_items, update_modified=False)
 
 
 def _preserve_asn_item_rows(pr, asn_items) -> None:
