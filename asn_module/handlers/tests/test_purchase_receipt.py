@@ -249,6 +249,8 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			on_purchase_receipt_submit(doc, "on_submit")
 
 		get_doc.assert_not_called()
+		# Empty item list also doubles as the "no putaway code" edge: the
+		# guard requires at least one inspection-free item.
 		attach_scan_codes.assert_called_once_with(doc, "create_purchase_invoice")
 
 	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
@@ -319,7 +321,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		)
 		pr = frappe.get_doc("Purchase Receipt", result["name"])
 
-		on_purchase_receipt_submit(pr, "on_submit")
+		pr.submit()
 		asn.reload()
 
 		self.assertEqual(asn.status, "Received")
@@ -329,6 +331,68 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(
 			[call.args[1] for call in attach_scan_codes.call_args_list],
 			["create_purchase_invoice", "confirm_putaway"],
+		)
+
+	@patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc")
+	def test_mixed_inspection_receipt_gets_no_putaway_code(self, attach_scan_codes):
+		"""A real receipt with one inspection-required item gets no putaway code."""
+		purchase_order = create_purchase_order_with_fiscal_dates(qty=10, item_count=2, unique_items=True)
+		frappe.db.set_value(
+			"Item",
+			purchase_order.items[1].item_code,
+			"inspection_required_before_purchase",
+			1,
+			update_modified=False,
+		)
+		asn = make_test_asn(purchase_order=purchase_order, qty=5)
+		second_row = purchase_order.items[1]
+		asn.append(
+			"items",
+			{
+				"purchase_order": purchase_order.name,
+				"purchase_order_item": second_row.name,
+				"item_code": second_row.item_code,
+				"qty": 5,
+				"uom": second_row.uom,
+				"rate": second_row.rate,
+			},
+		)
+		asn.insert(ignore_permissions=True)
+		with _mock_asn_attachments():
+			asn.submit()
+
+		result = create_from_asn(
+			source_doctype="ASN",
+			source_name=asn.name,
+			payload={"action": "create_purchase_receipt"},
+		)
+		pr = frappe.get_doc("Purchase Receipt", result["name"])
+		self.assertEqual(len(pr.items), 2)
+
+		# The inspection-required row gates PR submit: a real mixed receipt only
+		# reaches the follow-up codes once its Quality Inspection exists.
+		qi = frappe.get_doc(
+			{
+				"doctype": "Quality Inspection",
+				"inspection_type": "Incoming",
+				"reference_type": "Purchase Receipt",
+				"reference_name": pr.name,
+				"item_code": second_row.item_code,
+				"sample_size": 1,
+				"status": "Accepted",
+				"inspected_by": frappe.session.user,
+				"manual_inspection": 1,
+			}
+		)
+		qi.insert(ignore_permissions=True)
+		qi.submit()
+		pr.reload()  # the QI links itself onto the receipt row server-side
+
+		pr.submit()
+
+		self.assertEqual(
+			[call.args[1] for call in attach_scan_codes.call_args_list],
+			["create_purchase_invoice"],
 		)
 
 
