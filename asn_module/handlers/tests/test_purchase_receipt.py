@@ -12,6 +12,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn_with_two_items,
 )
 from asn_module.handlers.purchase_receipt import (
+	_attach_followup_codes,
 	asn_dispatch_action_key,
 	create_from_asn,
 	create_gate_pass_from_asn,
@@ -249,7 +250,11 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			on_purchase_receipt_submit(doc, "on_submit")
 
 		get_doc.assert_not_called()
-		attach_scan_codes.assert_called_once_with(doc, "create_purchase_invoice")
+		# Empty-items stub: no item requires inspection, so both codes attach.
+		self.assertEqual(
+			[call.args[1] for call in attach_scan_codes.call_args_list],
+			["create_purchase_invoice", "confirm_putaway"],
+		)
 
 	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
 		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0, asn="ASN-UNIT-004")
@@ -329,6 +334,24 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(
 			[call.args[1] for call in attach_scan_codes.call_args_list],
 			["create_purchase_invoice", "confirm_putaway"],
+		)
+
+	@patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc")
+	def test_mixed_inspection_receipt_gets_no_putaway_code(self, attach_scan_codes):
+		doc = SimpleNamespace(
+			items=[SimpleNamespace(item_code="ITEM-A"), SimpleNamespace(item_code="ITEM-B")]
+		)
+		inspections = {"ITEM-A": 0, "ITEM-B": 1}
+
+		with patch(
+			"asn_module.handlers.purchase_receipt.frappe.get_cached_value",
+			side_effect=lambda doctype, name, field: inspections[name],
+		):
+			_attach_followup_codes(doc)
+
+		self.assertEqual(
+			[call.args[1] for call in attach_scan_codes.call_args_list],
+			["create_purchase_invoice"],
 		)
 
 
