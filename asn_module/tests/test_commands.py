@@ -8,27 +8,6 @@ from asn_module.qr_engine.scan_codes import _random_scan_code_value
 
 
 class TestVerifyScanCodeRegistry(FrappeTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		for row in frappe.get_all("Scan Code", filters={"source_doctype": "Bogus DocType"}):
-			frappe.delete_doc("Scan Code", row["name"], force=True, ignore_permissions=True)
-		# Defensive cleanup for orphan rows created by failure-path integration tests.
-		for row in frappe.get_all(
-			"Scan Code",
-			filters={
-				"source_doctype": "ASN",
-				"source_name": ["in", ["Fake-ASN-For-Test", "NONEXISTENT-DOC-XYZ"]],
-			},
-			pluck="name",
-		):
-			frappe.delete_doc("Scan Code", row, force=True, ignore_permissions=True)
-		# On persistent dev sites, dispatch's failure-path commit can leave scan codes
-		# behind when a later suite raw-deletes their source; sweep any committed
-		# orphans so the happy-path assertion only sees this run's state.
-		for row in verify_scan_code_registry().get("orphans", []):
-			frappe.delete_doc("Scan Code", row["name"], force=True, ignore_permissions=True)
-
 	def _make_orphan_scan_code(self):
 		doc = frappe.get_doc(
 			{

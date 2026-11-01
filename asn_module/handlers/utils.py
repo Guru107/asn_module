@@ -2,7 +2,7 @@ import base64
 
 import frappe
 from frappe import _
-from frappe.utils import today
+from frappe.utils import flt, today
 
 
 def fiscal_year_for_date(date: str, company: str | None = None) -> str | None:
@@ -37,54 +37,59 @@ def fiscal_year_for_date(date: str, company: str | None = None) -> str | None:
 
 
 def apply_site_document_requirements(doc) -> None:
-	"""Fill the fields sites mark mandatory on documents the scan chain builds.
+	"""Fill the fields sites mark mandatory on a document built from scratch.
 
-	A desk form fills these for the user; scan-built receipts and invoices never
-	see a form, so a site that made ``custom_fiscal_year`` or the ``taxes`` table
-	mandatory (Property Setter / Custom Field) would reject the server-side
-	insert. Taxes are copied from the linked Purchase Order -- the PO is the
-	source of truth for an item's tax setup. No-op where the site requires
-	neither.
+	For documents no mapper fills (a Purchase Return): a site that made
+	``custom_fiscal_year`` or the ``taxes`` table mandatory (Property Setter /
+	Custom Field) would reject the server-side insert. Taxes are copied from the
+	linked Purchase Order -- the PO is the source of truth for an item's tax
+	setup. Mapped documents inherit taxes and need only ``fill_custom_fiscal_year``.
+	No-op where the site requires neither.
 	"""
 	fill_custom_fiscal_year(doc)
 	_fill_taxes_from_purchase_order(doc)
 
 
 def _fill_taxes_from_purchase_order(doc) -> None:
-	"""Copy the linked PO's taxes rows onto a scan-built document missing them.
+	"""Copy the linked PO's taxes rows onto a document built from scratch.
 
-	Mapped documents already carry the PO's taxes; this only fills documents
-	built from scratch (e.g. a Purchase Return). Rows are copied verbatim --
-	``calculate_taxes_and_totals`` recomputes computed amounts on validate.
+	Whole rows are copied so row references and print-rate flags survive;
+	``calculate_taxes_and_totals`` recomputes every computed amount on validate
+	except ``Actual`` rows, which get this document's share of the PO amount (a
+	return's negative qty makes that share negative).
 	"""
 	meta = getattr(doc, "meta", None)
 	field = meta.get_field("taxes") if meta else None
 	if not field or not field.reqd or doc.get("taxes"):
 		return
 
-	po_name = next(
-		(row.get("purchase_order") for row in doc.get("items") or [] if row.get("purchase_order")),
-		None,
+	po_names = sorted(
+		{row.get("purchase_order") for row in doc.get("items") or [] if row.get("purchase_order")}
 	)
-	if not po_name:
+	if not po_names:
 		return
+	if len(po_names) > 1:
+		frappe.throw(
+			_("Cannot pick taxes for this {0}: its items come from several Purchase Orders ({1})").format(
+				doc.doctype, ", ".join(po_names)
+			)
+		)
 
-	for tax in frappe.get_all(
-		"Purchase Taxes and Charges",
-		filters={"parent": po_name},
-		fields=[
-			"category",
-			"add_deduct_tax",
-			"charge_type",
-			"account_head",
-			"description",
-			"rate",
-			"tax_amount",
-			"cost_center",
-		],
-		order_by="idx asc",
-	):
-		doc.append("taxes", dict(tax))
+	po = frappe.get_doc("Purchase Order", po_names[0])
+	if not po.taxes:
+		frappe.throw(
+			_("Purchase Order {0} has no taxes to copy, and this site requires taxes on {1}").format(
+				po.name, doc.doctype
+			)
+		)
+
+	doc_amount = sum(flt(row.get("qty")) * flt(row.get("rate")) for row in doc.get("items"))
+	share = doc_amount / flt(po.total) if flt(po.total) else 0
+	for tax in po.taxes:
+		row = tax.as_dict(no_default_fields=True)
+		if row.charge_type == "Actual":
+			row.tax_amount = flt(row.tax_amount) * share
+		doc.append("taxes", row)
 
 
 def fill_custom_fiscal_year(doc) -> None:

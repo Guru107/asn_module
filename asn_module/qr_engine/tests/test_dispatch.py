@@ -294,13 +294,15 @@ class TestDispatch(FrappeTestCase):
 		)
 		sc.insert(ignore_permissions=True, ignore_links=True)
 
+		# The source does not exist: a real commit would persist an orphan Scan Code.
 		with (
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch.object(frappe.db, "commit") as commit,
 		):
 			with self.assertRaises(frappe.ValidationError):
 				dispatch(code=sc.name, device_info="Desktop")
 
-		frappe.db.rollback()
+		commit.assert_called_once()
 		log = frappe.get_all(
 			"Scan Log",
 			filters={

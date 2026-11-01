@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 
-from asn_module.handlers.utils import apply_site_document_requirements, attach_scan_codes_to_doc
+from asn_module.handlers.utils import attach_scan_codes_to_doc, fill_custom_fiscal_year
 from asn_module.qr_engine.scan_codes import void_scan_codes
 
 SUBCONTRACTING_RECEIPT_PR_ACTION = "create_purchase_receipt_from_subcontracting_receipt"
@@ -48,7 +48,7 @@ def create_receipt_from_subcontracting_order(source_doctype: str, source_name: s
 	)
 
 	scr = make_subcontracting_receipt(sco.name)
-	apply_site_document_requirements(scr)
+	fill_custom_fiscal_year(scr)
 	scr.insert(ignore_permissions=True)
 
 	return {
@@ -92,7 +92,7 @@ def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name:
 	)
 
 	pr = make_purchase_receipt(scr.name)
-	apply_site_document_requirements(pr)
+	fill_custom_fiscal_year(pr)
 	pr.insert(ignore_permissions=True)
 
 	return {

@@ -25,26 +25,6 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 		pin_gate_pass_mode_for_tests(cls)
 
 	def test_verify_registry_ok_after_dispatch_flow(self):
-		# Rows from ``test_dispatch_rejects_source_doctype_mismatch`` (legacy fixed code or failed cleanups).
-		for name in frappe.get_all(
-			"Scan Code",
-			filters={"source_doctype": "Bogus DocType", "source_name": "Bogus Name"},
-			pluck="name",
-		):
-			frappe.delete_doc("Scan Code", name, force=True, ignore_permissions=True)
-		# Defensive cleanup for orphan rows created by error-path integration tests.
-		for name in frappe.get_all(
-			"Scan Code",
-			filters={"source_doctype": "ASN", "source_name": "Fake-ASN-For-Test"},
-			pluck="name",
-		):
-			frappe.delete_doc("Scan Code", name, force=True, ignore_permissions=True)
-		# On persistent dev sites, dispatch's failure-path commit can leave scan codes
-		# behind when a later suite raw-deletes their source; sweep any committed
-		# orphans so the assertion only sees this run's state.
-		for row in verify_scan_code_registry().get("orphans", []):
-			frappe.delete_doc("Scan Code", row["name"], force=True, ignore_permissions=True)
-
 		run_asn_pr_pi_via_dispatch(
 			supplier_invoice_no=f"REG-OK-{frappe.generate_hash(length=8)}",
 			qty=3,

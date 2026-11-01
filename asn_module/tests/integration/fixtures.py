@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import frappe
-from frappe.utils import cint
 
 # Roles required together for create_purchase_receipt + create_purchase_invoice dispatch.
 DEFAULT_INTEGRATION_ROLES = (
@@ -67,19 +67,13 @@ def integration_user_context(email: str = INTEGRATION_USER_EMAIL) -> Generator[N
 		frappe.set_user(previous)
 
 
-def pin_gate_pass_mode_for_tests(cls, value: int = 0) -> None:
-	"""Pin ``ASN Settings.gate_pass_mode`` for a test class, then restore the site's value.
+def pin_gate_pass_mode_for_tests(cls) -> None:
+	"""Run a test class with gate-pass mode off, without touching the site's setting.
 
 	Receipt-opening scans and handlers assume the fresh-site default (off);
-	configured production-clone sites run it ON. ``dispatch`` commits
-	mid-test, so the restore commits too -- the site keeps its own setting
-	after the run.
+	configured production-clone sites run it ON. Patched rather than written, so
+	dispatch's mid-test commit cannot persist it and a killed run cannot leave it.
 	"""
-	previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
-	frappe.db.set_single_value("ASN Settings", "gate_pass_mode", value)
-
-	def restore() -> None:
-		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit - outlive dispatch's mid-test commit
-
-	cls.addClassCleanup(restore)
+	patcher = patch("asn_module.handlers.purchase_receipt._gate_pass_mode_on", return_value=False)
+	patcher.start()
+	cls.addClassCleanup(patcher.stop)

@@ -5,6 +5,7 @@ from importlib import import_module
 
 import frappe
 
+from asn_module.qr_engine.scan_codes import purge_scan_codes_for_source
 from asn_module.stock_cap.models import Breach
 
 TEST_COMPANY_NAME = "_Test Company"
@@ -70,14 +71,26 @@ def _ensure_company_defaults() -> None:
 	frappe.defaults.set_user_default("company", company)
 
 
-def before_tests() -> None:
-	"""Ensure a deterministic ERPNext company baseline exists for ASN tests."""
+def before_test_run() -> None:
+	"""The ``before_tests`` hook: runs once per process, before tests are loaded."""
 	# v15 test discovery auto-creates test records for every linked doctype of
 	# each doctype test file; on multi-app dev sites that machinery needs
 	# cross-app test accounts that do not exist (LinkValidationError). ASN tests
-	# build their own fixtures, so skip it like india_compliance does.
+	# build their own fixtures, so skip it like india_compliance does. v16 ignores
+	# the flag.
 	frappe.flags.skip_test_records = True
+	_ensure_test_baseline()
 
+
+def before_tests() -> None:
+	"""Ensure a deterministic ERPNext company baseline exists for ASN tests."""
+	# Called from setUpClass, so the runner has finished loading tests: drop the
+	# hook's flag so it cannot change what a test's own make_test_records does.
+	frappe.flags.skip_test_records = False
+	_ensure_test_baseline()
+
+
+def _ensure_test_baseline() -> None:
 	if not frappe.db.exists("Company", None) or not frappe.db.exists("Cost Center", None):
 		if erpnext_before_tests := _get_erpnext_before_tests():
 			erpnext_before_tests()
@@ -160,7 +173,12 @@ def apply_purchase_order_site_requirements(po, *, tax_description: str):
 	receipt_taxes_field = frappe.get_meta("Purchase Receipt").get_field("taxes")
 	needs_taxes = (taxes_field and taxes_field.reqd) or (receipt_taxes_field and receipt_taxes_field.reqd)
 	if needs_taxes and not po.get("taxes"):
-		tax_account = frappe.db.get_value("Account", {"company": po.company, "is_group": 0}, "name")
+		tax_account = frappe.db.get_value(
+			"Account",
+			{"company": po.company, "account_type": "Tax", "is_group": 0},
+			"name",
+			order_by="name asc",
+		)
 		if tax_account:
 			po.append(
 				"taxes",
@@ -196,6 +214,21 @@ def build_purchase_order_with_mandatory_fields(
 	if not do_not_submit:
 		po.submit()
 	return po
+
+
+def delete_asns_with_items(item_codes: list[str]) -> None:
+	"""Raw-delete ASNs carrying these items, with their Scan Codes.
+
+	Raw deletes skip ASN's on-trash purge; without this, dispatch's failure-path
+	commit can persist the delete and leave the Scan Codes orphaned.
+	"""
+	names = frappe.get_all("ASN Item", filters={"item_code": ["in", item_codes]}, pluck="parent")
+	if not names:
+		return
+	for name in set(names):
+		purge_scan_codes_for_source("ASN", name)
+	frappe.db.delete("ASN Item", {"parent": ["in", names]})
+	frappe.db.delete("ASN", {"name": ["in", names]})
 
 
 def resolve_test_company() -> str:

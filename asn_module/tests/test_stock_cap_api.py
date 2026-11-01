@@ -20,6 +20,7 @@ from asn_module.utils.test_setup import (
 	apply_item_site_requirements,
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
+	delete_asns_with_items,
 	disable_hsn_validation,
 	message_log_text,
 )
@@ -303,10 +304,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		# submitted ASN inserted by an earlier test in this class (e.g.
 		# test_receipt_not_linked_to_its_asn_is_not_double_counted) would otherwise keep
 		# contributing to later tests' in-transit totals.
-		stale_asn_names = frappe.get_all("ASN Item", filters={"item_code": PR_ITEM}, pluck="parent")
-		if stale_asn_names:
-			frappe.db.delete("ASN Item", {"parent": ["in", stale_asn_names]})
-			frappe.db.delete("ASN", {"name": ["in", stale_asn_names]})
+		delete_asns_with_items([PR_ITEM])
 		frappe.db.delete("ASN Stock Cap Warehouse")
 		frappe.db.delete("ASN Stock Cap Settings")
 		frappe.db.delete("ASN Item Branch Cap", {"item": PR_ITEM})

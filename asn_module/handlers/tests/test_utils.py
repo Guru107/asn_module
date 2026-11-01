@@ -242,24 +242,17 @@ def _doc_with_taxes_field(reqd: int = 1, **values) -> frappe._dict:
 
 
 class TestApplySiteDocumentRequirements(FrappeTestCase):
-	def test_copies_taxes_from_the_linked_purchase_order(self):
-		doc = _doc_with_taxes_field(items=[{"item_code": "X", "purchase_order": "PO-1"}])
-		po_taxes = [
-			{"charge_type": "On Net Total", "account_head": "VAT - TC", "rate": 18, "description": "GST"},
-			{
-				"charge_type": "Actual",
-				"account_head": "Freight - TC",
-				"tax_amount": 10,
-				"description": "Freight",
-			},
-		]
+	def test_refuses_to_guess_between_several_purchase_orders(self):
+		doc = _doc_with_taxes_field(items=[{"purchase_order": "PO-1"}, {"purchase_order": "PO-2"}])
 
-		with patch.object(frappe, "get_all", return_value=po_taxes) as get_all:
+		with (
+			patch.object(frappe, "get_doc", side_effect=AssertionError("must not load")),
+			self.assertRaises(frappe.ValidationError) as context,
+		):
 			apply_site_document_requirements(doc)
 
-		self.assertEqual(doc.taxes, po_taxes)
-		get_all.assert_called_once()
-		self.assertEqual(get_all.call_args.kwargs["filters"], {"parent": "PO-1"})
+		self.assertIn("PO-1", str(context.exception))
+		self.assertIn("PO-2", str(context.exception))
 
 	def test_leaves_existing_taxes_alone(self):
 		doc = _doc_with_taxes_field(
@@ -267,7 +260,7 @@ class TestApplySiteDocumentRequirements(FrappeTestCase):
 			taxes=[{"description": "kept"}],
 		)
 
-		with patch.object(frappe, "get_all", side_effect=AssertionError("must not query")):
+		with patch.object(frappe, "get_doc", side_effect=AssertionError("must not load")):
 			apply_site_document_requirements(doc)
 
 		self.assertEqual(doc.taxes, [{"description": "kept"}])
@@ -275,7 +268,7 @@ class TestApplySiteDocumentRequirements(FrappeTestCase):
 	def test_no_op_when_the_site_does_not_require_taxes(self):
 		doc = _doc_with_taxes_field(reqd=0, items=[{"purchase_order": "PO-1"}])
 
-		with patch.object(frappe, "get_all", side_effect=AssertionError("must not query")):
+		with patch.object(frappe, "get_doc", side_effect=AssertionError("must not load")):
 			apply_site_document_requirements(doc)
 
 		self.assertEqual(doc.taxes, [])
@@ -283,7 +276,7 @@ class TestApplySiteDocumentRequirements(FrappeTestCase):
 	def test_no_op_without_a_purchase_order_link(self):
 		doc = _doc_with_taxes_field(items=[{"item_code": "X"}])
 
-		with patch.object(frappe, "get_all", side_effect=AssertionError("must not query")):
+		with patch.object(frappe, "get_doc", side_effect=AssertionError("must not load")):
 			apply_site_document_requirements(doc)
 
 		self.assertEqual(doc.taxes, [])

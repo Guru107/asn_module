@@ -19,6 +19,14 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 		super().setUpClass()
 		ensure_integration_user()
 
+	def setUp(self):
+		super().setUp()
+		# The sources below do not exist: a real failure-path commit would persist
+		# orphan Scan Codes past this class's rollback.
+		patcher = patch.object(frappe.db, "commit")
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	def _create_scan_code(self, action_key, source_doctype, source_name):
 		code_val = "".join(secrets.choice(SCAN_CODE_ALPHABET) for _ in range(SCAN_CODE_LENGTH))
 		sc = frappe.get_doc(

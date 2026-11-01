@@ -8,6 +8,7 @@ from asn_module.utils.test_setup import (
 	apply_item_site_requirements,
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
+	delete_asns_with_items,
 	disable_hsn_validation,
 )
 
@@ -231,10 +232,7 @@ class TestStockCapFetchInTransit(FrappeTestCase):
 		# frappe.deprecation_dumpster.FrappeTestCase.setUpClass), so a submitted ASN
 		# from an earlier test in this class would otherwise keep contributing to later
 		# in-transit totals. Clear this test class's own ASN fixtures before each test.
-		stale_asn_names = frappe.get_all("ASN Item", filters={"item_code": "_Test ASN Item"}, pluck="parent")
-		if stale_asn_names:
-			frappe.db.delete("ASN Item", {"parent": ["in", stale_asn_names]})
-			frappe.db.delete("ASN", {"name": ["in", stale_asn_names]})
+		delete_asns_with_items(["_Test ASN Item"])
 
 		self.purchase_order = _create_purchase_order(create_purchase_order)
 		self.po_item = self.purchase_order.items[0]
@@ -356,12 +354,7 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 		self.item_b = self.item_b_name()
 
 		# FrappeTestCase only rolls back once at class teardown, not per test.
-		stale_asn_names = frappe.get_all(
-			"ASN Item", filters={"item_code": ["in", [self.item_a, self.item_b]]}, pluck="parent"
-		)
-		if stale_asn_names:
-			frappe.db.delete("ASN Item", {"parent": ["in", stale_asn_names]})
-			frappe.db.delete("ASN", {"name": ["in", stale_asn_names]})
+		delete_asns_with_items([self.item_a, self.item_b])
 		frappe.db.delete("ASN Stock Cap Warehouse")
 		frappe.db.delete("ASN Stock Cap Settings")
 
