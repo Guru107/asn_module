@@ -818,11 +818,11 @@ class TestMaterialGatePassScan(FrappeTestCase):
 							"purchase_order": purchase_order.name,
 							"purchase_order_item": po_item.name,
 							"item_code": po_item.item_code,
-							"qty": 2,
+							"qty": qty,
 							"uom": po_item.uom,
 							"rate": po_item.rate,
 						}
-						for po_item in purchase_order.items
+						for qty, po_item in zip((2, 3, 4), purchase_order.items)
 					],
 				}
 			)
@@ -838,7 +838,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		receipt = frappe.get_doc("Purchase Receipt", created["name"])
 		self.assertEqual(len(receipt.items), 3)
 		removed_asn_item = asn.items[0].name
-		kept_asn_items = [row.name for row in asn.items[1:]]
+		kept_asn_items = [(row.name, row.qty) for row in asn.items[1:]]
 
 		# The desk deletes the first row and renumbers the rest before submitting.
 		receipt.items.pop(0)
@@ -853,8 +853,10 @@ class TestMaterialGatePassScan(FrappeTestCase):
 			receipt.submit()
 
 		self.assertEqual(flt(frappe.db.get_value("ASN Item", removed_asn_item, "received_qty")), 0)
-		for asn_item_name in kept_asn_items:
-			self.assertEqual(flt(frappe.db.get_value("ASN Item", asn_item_name, "received_qty")), 2)
+		for asn_item_name, expected_qty in kept_asn_items:
+			self.assertEqual(
+				flt(frappe.db.get_value("ASN Item", asn_item_name, "received_qty")), flt(expected_qty)
+			)
 
 	def test_a_later_scan_opens_the_same_gate_pass(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))

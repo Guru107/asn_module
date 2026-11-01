@@ -20,6 +20,9 @@ def setup():
 				"label": "ASN Items Mapping",
 				"hidden": 1,
 				"insert_after": "asn",
+				# Row names belong to one inserted document; a duplicate or mapper copy
+				# must not carry a map that matches none of its new rows.
+				"no_copy": 1,
 			},
 		]
 	}

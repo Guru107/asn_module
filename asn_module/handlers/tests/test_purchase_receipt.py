@@ -278,11 +278,11 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		asn = SimpleNamespace(name="ASN-UNIT-003", reload=lambda: None, update_receipt_status=lambda: None)
 		doc = SimpleNamespace(
 			asn="ASN-UNIT-003",
-			asn_items='{"1": {}, "2": {"asn_item_name": "ASN-ITEM-002"}}',
+			asn_items='{"pr-row-1": {}, "pr-row-2": {"asn_item_name": "ASN-ITEM-002"}}',
 			items=[
-				SimpleNamespace(idx=1, name="1", qty=1, item_code="ITEM-001"),
-				SimpleNamespace(idx=2, name="2", qty=2, item_code="ITEM-002"),
-				SimpleNamespace(idx=3, name="3", qty=3, item_code="ITEM-003"),
+				SimpleNamespace(idx=1, name="pr-row-1", qty=1, item_code="ITEM-001"),
+				SimpleNamespace(idx=2, name="pr-row-2", qty=2, item_code="ITEM-002"),
+				SimpleNamespace(idx=3, name="pr-row-3", qty=3, item_code="ITEM-003"),
 			],
 			name="PR-UNIT-003",
 		)
