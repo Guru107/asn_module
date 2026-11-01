@@ -469,18 +469,20 @@ class TestJobAsnScanWithMandatoryFiscalYear(FrappeTestCase):
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
 
 		receipt = frappe.get_doc("Subcontracting Receipt", result["name"])
-		expected = frappe.db.get_value(
+		# Several test fiscal years can cover the same posting date (they overlap
+		# by design), so don't pin the exact pick: assert the scan filled the
+		# mandatory link with an enabled Fiscal Year covering the posting date.
+		chosen = frappe.db.get_value(
 			"Fiscal Year",
-			{
-				"disabled": 0,
-				"year_start_date": ("<=", receipt.posting_date),
-				"year_end_date": (">=", receipt.posting_date),
-			},
-			"name",
+			receipt.custom_fiscal_year,
+			["disabled", "year_start_date", "year_end_date"],
+			as_dict=True,
 		)
 		self.assertEqual(receipt.docstatus, 0)
 		self.assertEqual(receipt.asn, asn.name)
-		self.assertEqual(receipt.custom_fiscal_year, expected)
+		self.assertIsNotNone(chosen, "custom_fiscal_year names a real Fiscal Year")
+		self.assertFalse(chosen.disabled)
+		self.assertTrue(chosen.year_start_date <= receipt.posting_date <= chosen.year_end_date)
 
 
 def ensure_gate_pass_for_tests() -> None:
@@ -1055,7 +1057,10 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				asn.lr_no = "LR-44"
 				asn.lr_date = today()
 				asn.items[0].batch_no = batch_id
-				asn.items[0].serial_nos = "SER-44"
+				# A unique serial name: production-clone sites carry committed
+				# Serial No docs for fixed names, bound to a different batch.
+				serial_no = f"SER-{frappe.generate_hash(length=8)}"
+				asn.items[0].serial_nos = serial_no
 				asn.insert(ignore_permissions=True)
 				with real_asn_attachment_context():
 					asn.submit()
@@ -1075,7 +1080,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(receipt.supplier_delivery_note, asn.supplier_invoice_no)
 		self.assertEqual(receipt.lr_no, "LR-44")
 		self.assertEqual(receipt.items[0].batch_no, batch_id)
-		self.assertEqual(receipt.items[0].serial_no, "SER-44")
+		self.assertEqual(receipt.items[0].serial_no, serial_no)
 		self.assertEqual(flt(receipt.items[0].qty), 1)
 		self.assertEqual(flt(receipt.items[0].received_qty), 1)
 		gate_pass = frappe.get_doc("Gate Pass", opened["name"])
@@ -1153,8 +1158,15 @@ class TestMaterialGatePassScan(FrappeTestCase):
 
 	def test_create_refuses_a_user_without_a_stock_role(self):
 		email = ensure_integration_user("asn.accounts.only@asn-module.test", roles=("Accounts User",))
-		with integration_user_context(email), self.assertRaises(frappe.PermissionError):
-			create_receipt_from_gate_pass("GP-NO-STOCK")
+		previous_in_test = frappe.flags.in_test
+		try:
+			with integration_user_context(email), self.assertRaises(frappe.PermissionError):
+				# v15's frappe.only_for skips the role check entirely while
+				# in_test is set; v16 checks roles regardless.
+				frappe.flags.in_test = False
+				create_receipt_from_gate_pass("GP-NO-STOCK")
+		finally:
+			frappe.flags.in_test = previous_in_test
 
 	def test_create_on_a_submitted_job_gate_pass_opens_a_subcontracting_receipt_linked_to_the_asn(self):
 		previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))

@@ -36,6 +36,57 @@ def fiscal_year_for_date(date: str, company: str | None = None) -> str | None:
 	return None
 
 
+def apply_site_document_requirements(doc) -> None:
+	"""Fill the fields sites mark mandatory on documents the scan chain builds.
+
+	A desk form fills these for the user; scan-built receipts and invoices never
+	see a form, so a site that made ``custom_fiscal_year`` or the ``taxes`` table
+	mandatory (Property Setter / Custom Field) would reject the server-side
+	insert. Taxes are copied from the linked Purchase Order -- the PO is the
+	source of truth for an item's tax setup. No-op where the site requires
+	neither.
+	"""
+	fill_custom_fiscal_year(doc)
+	_fill_taxes_from_purchase_order(doc)
+
+
+def _fill_taxes_from_purchase_order(doc) -> None:
+	"""Copy the linked PO's taxes rows onto a scan-built document missing them.
+
+	Mapped documents already carry the PO's taxes; this only fills documents
+	built from scratch (e.g. a Purchase Return). Rows are copied verbatim --
+	``calculate_taxes_and_totals`` recomputes computed amounts on validate.
+	"""
+	meta = getattr(doc, "meta", None)
+	field = meta.get_field("taxes") if meta else None
+	if not field or not field.reqd or doc.get("taxes"):
+		return
+
+	po_name = next(
+		(row.get("purchase_order") for row in doc.get("items") or [] if row.get("purchase_order")),
+		None,
+	)
+	if not po_name:
+		return
+
+	for tax in frappe.get_all(
+		"Purchase Taxes and Charges",
+		filters={"parent": po_name},
+		fields=[
+			"category",
+			"add_deduct_tax",
+			"charge_type",
+			"account_head",
+			"description",
+			"rate",
+			"tax_amount",
+			"cost_center",
+		],
+		order_by="idx asc",
+	):
+		doc.append("taxes", dict(tax))
+
+
 def fill_custom_fiscal_year(doc) -> None:
 	"""Satisfy a site's mandatory Fiscal Year on a document the scan chain builds.
 

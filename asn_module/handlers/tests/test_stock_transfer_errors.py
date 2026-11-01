@@ -9,6 +9,11 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 )
 from asn_module.handlers.stock_transfer import create_from_quality_inspection
 from asn_module.handlers.tests.qi_schema import ensure_quality_inspection_purchase_receipt_item_column
+from asn_module.utils.test_setup import (
+	apply_item_site_requirements,
+	apply_receipt_site_requirements,
+	reset_test_item_stock_flags,
+)
 
 
 class TestStockTransferErrors(FrappeTestCase):
@@ -22,11 +27,12 @@ class TestStockTransferErrors(FrappeTestCase):
 		item_code = "_Test ASN Item"
 		if frappe.db.exists("Item", item_code):
 			frappe.db.set_value("Item", item_code, "inspection_required_before_purchase", 1)
+			reset_test_item_stock_flags(item_code)
 			return item_code
 
 		item_group = frappe.db.get_value("Item Group", {}, "name") or "All Item Groups"
 		uom = frappe.db.get_value("UOM", {}, "name") or "Nos"
-		frappe.get_doc(
+		item = frappe.get_doc(
 			{
 				"doctype": "Item",
 				"item_code": item_code,
@@ -35,7 +41,9 @@ class TestStockTransferErrors(FrappeTestCase):
 				"stock_uom": uom,
 				"inspection_required_before_purchase": 1,
 			}
-		).insert(ignore_permissions=True)
+		)
+		apply_item_site_requirements(item)
+		item.insert(ignore_permissions=True)
 		return item_code
 
 	def _ensure_destination_warehouse(self, company):
@@ -106,6 +114,7 @@ class TestStockTransferErrors(FrappeTestCase):
 				],
 			}
 		)
+		apply_receipt_site_requirements(pr)
 		pr.insert(ignore_permissions=True)
 		qi = self._make_quality_inspection(pr.name, item_code, qi_status)
 		if submit_quality_inspection:
@@ -189,6 +198,7 @@ class TestStockTransferErrors(FrappeTestCase):
 				],
 			}
 		)
+		apply_receipt_site_requirements(pr)
 		pr.insert(ignore_permissions=True)
 
 		qi = self._make_quality_inspection(pr.name, item_code, "Accepted")

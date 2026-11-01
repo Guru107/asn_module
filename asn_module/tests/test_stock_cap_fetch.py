@@ -5,6 +5,7 @@ from frappe.utils import flt, today
 from asn_module.stock_cap.fetch import fetch_cap_context
 from asn_module.stock_cap.models import Line
 from asn_module.utils.test_setup import (
+	apply_item_site_requirements,
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
@@ -37,7 +38,7 @@ class TestStockCapFetch(FrappeTestCase):
 		if not frappe.db.exists("Branch", BRANCH):
 			frappe.get_doc({"doctype": "Branch", "branch": BRANCH}).insert(ignore_permissions=True)
 		if not frappe.db.exists("Item", ITEM):
-			frappe.get_doc(
+			item = frappe.get_doc(
 				{
 					"doctype": "Item",
 					"item_code": ITEM,
@@ -45,7 +46,9 @@ class TestStockCapFetch(FrappeTestCase):
 					"item_group": frappe.db.get_value("Item Group", {}, "name"),
 					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 				}
-			).insert(ignore_permissions=True)
+			)
+			apply_item_site_requirements(item)
+			item.insert(ignore_permissions=True)
 
 	def setUp(self):
 		self.warehouse = _warehouse("_Test Fetch WH")
@@ -131,7 +134,7 @@ class TestStockCapFetch(FrappeTestCase):
 		self._make_settings()
 		other = "_Test Fetch Item Duplicate"
 		if not frappe.db.exists("Item", other):
-			frappe.get_doc(
+			other_item = frappe.get_doc(
 				{
 					"doctype": "Item",
 					"item_code": other,
@@ -139,7 +142,9 @@ class TestStockCapFetch(FrappeTestCase):
 					"item_group": frappe.db.get_value("Item Group", {}, "name"),
 					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 				}
-			).insert(ignore_permissions=True)
+			)
+			apply_item_site_requirements(other_item)
+			other_item.insert(ignore_permissions=True)
 		frappe.get_doc(
 			{"doctype": "ASN Item Branch Cap", "branch": BRANCH, "item": other, "max_qty": 4}
 		).insert(ignore_permissions=True)
@@ -319,7 +324,7 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 			frappe.get_doc({"doctype": "Branch", "branch": cls.branch_name()}).insert(ignore_permissions=True)
 		for item_code in (cls.item_a_name(), cls.item_b_name()):
 			if not frappe.db.exists("Item", item_code):
-				frappe.get_doc(
+				item = frappe.get_doc(
 					{
 						"doctype": "Item",
 						"item_code": item_code,
@@ -327,7 +332,9 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 						"item_group": frappe.db.get_value("Item Group", {}, "name"),
 						"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 					}
-				).insert(ignore_permissions=True)
+				)
+				apply_item_site_requirements(item)
+				item.insert(ignore_permissions=True)
 
 	@classmethod
 	def branch_name(cls) -> str:

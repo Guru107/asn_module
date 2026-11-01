@@ -23,6 +23,11 @@ class TestVerifyScanCodeRegistry(FrappeTestCase):
 			pluck="name",
 		):
 			frappe.delete_doc("Scan Code", row, force=True, ignore_permissions=True)
+		# On persistent dev sites, dispatch's failure-path commit can leave scan codes
+		# behind when a later suite raw-deletes their source; sweep any committed
+		# orphans so the happy-path assertion only sees this run's state.
+		for row in verify_scan_code_registry().get("orphans", []):
+			frappe.delete_doc("Scan Code", row["name"], force=True, ignore_permissions=True)
 
 	def _make_orphan_scan_code(self):
 		doc = frappe.get_doc(

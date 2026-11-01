@@ -17,6 +17,7 @@ from asn_module.stock_cap.api import breaches_for_asn_rows, breaches_for_purchas
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.utils.permissions import get_accessible_doc
 from asn_module.utils.test_setup import (
+	apply_item_site_requirements,
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
@@ -133,7 +134,7 @@ class TestStockCapAccessControlAndRedaction(FrappeTestCase):
 		if not frappe.db.exists("Branch", BRANCH):
 			frappe.get_doc({"doctype": "Branch", "branch": BRANCH}).insert(ignore_permissions=True)
 		if not frappe.db.exists("Item", ITEM):
-			frappe.get_doc(
+			item = frappe.get_doc(
 				{
 					"doctype": "Item",
 					"item_code": ITEM,
@@ -141,7 +142,9 @@ class TestStockCapAccessControlAndRedaction(FrappeTestCase):
 					"item_group": frappe.db.get_value("Item Group", {}, "name"),
 					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 				}
-			).insert(ignore_permissions=True)
+			)
+			apply_item_site_requirements(item)
+			item.insert(ignore_permissions=True)
 
 		_ensure_role(PO_ONLY_ROLE)
 		_ensure_role(FULL_ROLE)
@@ -283,7 +286,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		if not frappe.db.exists("Branch", PR_BRANCH):
 			frappe.get_doc({"doctype": "Branch", "branch": PR_BRANCH}).insert(ignore_permissions=True)
 		if not frappe.db.exists("Item", PR_ITEM):
-			frappe.get_doc(
+			item = frappe.get_doc(
 				{
 					"doctype": "Item",
 					"item_code": PR_ITEM,
@@ -291,7 +294,9 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 					"item_group": frappe.db.get_value("Item Group", {}, "name"),
 					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 				}
-			).insert(ignore_permissions=True)
+			)
+			apply_item_site_requirements(item)
+			item.insert(ignore_permissions=True)
 
 	def setUp(self):
 		# FrappeTestCase only rolls back once at class teardown, not per test, so a

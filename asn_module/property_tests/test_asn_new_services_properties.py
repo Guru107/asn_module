@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from frappe.tests import UnitTestCase
+from frappe.tests.utils import FrappeTestCase as UnitTestCase
 from frappe.utils import flt
 from hypothesis import given
 from hypothesis import settings as hypothesis_settings

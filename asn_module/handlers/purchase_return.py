@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 
-from asn_module.handlers.utils import find_pr_row_for_qi
+from asn_module.handlers.utils import apply_site_document_requirements, find_pr_row_for_qi
 
 
 def create_from_quality_inspection(source_doctype: str, source_name: str, payload: dict) -> dict:
@@ -49,6 +49,8 @@ def create_from_quality_inspection(source_doctype: str, source_name: str, payloa
 			"purchase_receipt_item": source_row.name,
 		},
 	)
+	# After the items append: the PO link on the row is where the taxes come from.
+	apply_site_document_requirements(return_pr)
 	return_pr.insert(ignore_permissions=True)
 
 	return {
