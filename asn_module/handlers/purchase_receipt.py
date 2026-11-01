@@ -8,6 +8,7 @@ from frappe.utils import cint, flt
 from asn_module.handlers.utils import (
 	attach_scan_codes_to_doc,
 	fill_custom_fiscal_year,
+	fill_mandatory_taxes,
 )
 from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
@@ -92,6 +93,7 @@ def _create_receipt_from_asn(asn, source_name: str) -> dict:
 	pr = make_purchase_receipt(purchase_order, args={"filtered_children": purchase_order_items})
 	_apply_asn_fields(pr, asn)
 	fill_custom_fiscal_year(pr)
+	fill_mandatory_taxes(pr)
 
 	pr.insert(ignore_permissions=True)
 
@@ -595,6 +597,7 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 	pr = map_purchase_receipt_draft_from_gate_pass(gate_pass)
 	_apply_asn_fields(pr, asn, preserve_qty=True)
 	fill_custom_fiscal_year(pr)
+	fill_mandatory_taxes(pr)
 	pr.insert(ignore_permissions=True)
 
 	for asn_item in asn.items:
@@ -769,6 +772,7 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 	_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
 	receipt.asn = asn.name
 	fill_custom_fiscal_year(receipt)
+	fill_mandatory_taxes(receipt)
 	receipt.insert(ignore_permissions=True)
 
 	return {

@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 
-from asn_module.handlers.utils import find_pr_row_for_qi
+from asn_module.handlers.utils import fill_custom_fiscal_year, fill_mandatory_taxes, find_pr_row_for_qi
 
 
 def create_from_quality_inspection(source_doctype: str, source_name: str, payload: dict) -> dict:
@@ -35,6 +35,8 @@ def create_from_quality_inspection(source_doctype: str, source_name: str, payloa
 	return_pr.supplier = original_pr.supplier
 	return_pr.is_return = 1
 	return_pr.return_against = original_pr.name
+	fill_custom_fiscal_year(return_pr)
+	fill_mandatory_taxes(return_pr)
 	return_pr.append(
 		"items",
 		{

@@ -1,4 +1,4 @@
-from frappe.tests import UnitTestCase
+from frappe.tests.utils import FrappeTestCase as UnitTestCase
 from hypothesis import given
 from hypothesis import strategies as st
 

@@ -9,6 +9,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order_with_fiscal_dates,
 )
 from asn_module.handlers.putaway import confirm_putaway
+from asn_module.utils.test_setup import apply_receipt_site_requirements
 
 
 class TestConfirmPutaway(FrappeTestCase):
@@ -36,6 +37,7 @@ class TestConfirmPutaway(FrappeTestCase):
 				],
 			}
 		)
+		apply_receipt_site_requirements(pr)
 		pr.insert(ignore_permissions=True)
 		return pr
 

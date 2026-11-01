@@ -36,6 +36,45 @@ def fiscal_year_for_date(date: str, company: str | None = None) -> str | None:
 	return None
 
 
+def fill_mandatory_taxes(doc, *, description: str = "Tax") -> None:
+	"""Add a zero-amount tax row when the site marks a document's taxes mandatory.
+
+	Sites make the ``taxes`` child table mandatory via Property Setter. A desk
+	form makes the user pick a row; scan-chain documents are built server-side
+	and would die on the missing mandatory field. A zero-amount Actual row
+	satisfies validation without changing any total. No-op elsewhere.
+	"""
+	meta = getattr(doc, "meta", None)
+	field = meta.get_field("taxes") if meta else None
+	if not field or not field.reqd or doc.get("taxes"):
+		return
+
+	# A Tax-type account (deterministic pick) -- this row exists only to satisfy
+	# a site-level mandatory field; the zero amount keeps every total unchanged.
+	tax_account = frappe.db.get_value(
+		"Account",
+		{"company": doc.get("company"), "is_group": 0, "account_type": "Tax"},
+		"name",
+		order_by="name asc",
+	)
+	if not tax_account:
+		tax_account = frappe.db.get_value(
+			"Account", {"company": doc.get("company"), "is_group": 0}, "name", order_by="name asc"
+		)
+	if tax_account:
+		doc.append(
+			"taxes",
+			{
+				"category": "Total",
+				"add_deduct_tax": "Add",
+				"charge_type": "Actual",
+				"account_head": tax_account,
+				"description": description,
+				"tax_amount": 0,
+			},
+		)
+
+
 def fill_custom_fiscal_year(doc) -> None:
 	"""Satisfy a site's mandatory Fiscal Year on a document the scan chain builds.
 

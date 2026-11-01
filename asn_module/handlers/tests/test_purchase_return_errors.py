@@ -10,6 +10,10 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 from asn_module.handlers.purchase_return import create_from_quality_inspection
 from asn_module.handlers.tests.qi_schema import ensure_quality_inspection_purchase_receipt_item_column
 from asn_module.handlers.tests.test_stock_transfer import TestCreateStockTransfer
+from asn_module.utils.test_setup import (
+	apply_item_site_requirements,
+	apply_receipt_site_requirements,
+)
 
 
 class TestPurchaseReturnErrors(FrappeTestCase):
@@ -73,7 +77,7 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 			if not frappe.db.exists("Item", item_code):
 				item_group = frappe.db.get_value("Item Group", {}, "name") or "All Item Groups"
 				uom = frappe.db.get_value("UOM", {}, "name") or "Nos"
-				frappe.get_doc(
+				item = frappe.get_doc(
 					{
 						"doctype": "Item",
 						"item_code": item_code,
@@ -81,7 +85,9 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 						"item_group": item_group,
 						"stock_uom": uom,
 					}
-				).insert(ignore_permissions=True)
+				)
+				apply_item_site_requirements(item)
+				item.insert(ignore_permissions=True)
 			purchase_order = create_purchase_order_with_fiscal_dates(
 				item_code=item_code,
 				qty=10,
@@ -115,6 +121,7 @@ class TestPurchaseReturnErrors(FrappeTestCase):
 					],
 				}
 			)
+			apply_receipt_site_requirements(pr)
 			pr.insert(ignore_permissions=True)
 
 			qi = fixture._make_quality_inspection(pr.name, item_code, "Rejected")

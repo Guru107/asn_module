@@ -8,7 +8,7 @@ from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
 from frappe import _
 from frappe.utils import cint, flt
 
-from asn_module.handlers.utils import fill_custom_fiscal_year
+from asn_module.handlers.utils import fill_custom_fiscal_year, fill_mandatory_taxes
 from asn_module.traceability import emit_asn_item_transition
 
 
@@ -46,6 +46,7 @@ def create_from_purchase_receipt(source_doctype: str, source_name: str, payload:
 		pi.bill_no = asn.supplier_invoice_no
 		pi.bill_date = asn.supplier_invoice_date
 	fill_custom_fiscal_year(pi)
+	fill_mandatory_taxes(pi)
 	pi.insert(ignore_permissions=True)
 
 	if pr.asn:

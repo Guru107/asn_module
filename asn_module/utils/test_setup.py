@@ -4,6 +4,7 @@ from collections.abc import Callable
 from importlib import import_module
 
 import frappe
+from frappe.utils import cint
 
 from asn_module.stock_cap.models import Breach
 
@@ -72,6 +73,12 @@ def _ensure_company_defaults() -> None:
 
 def before_tests() -> None:
 	"""Ensure a deterministic ERPNext company baseline exists for ASN tests."""
+	# v15 test discovery auto-creates test records for every linked doctype of
+	# each doctype test file; on multi-app dev sites that machinery needs
+	# cross-app test accounts that do not exist (LinkValidationError). ASN tests
+	# build their own fixtures, so skip it like india_compliance does.
+	frappe.flags.skip_test_records = True
+
 	if not frappe.db.exists("Company", None) or not frappe.db.exists("Cost Center", None):
 		if erpnext_before_tests := _get_erpnext_before_tests():
 			erpnext_before_tests()
@@ -185,6 +192,85 @@ def build_purchase_order_with_mandatory_fields(
 	if not do_not_submit:
 		po.submit()
 	return po
+
+
+def resolve_test_company() -> str:
+	company = TEST_COMPANY_NAME if frappe.db.exists("Company", TEST_COMPANY_NAME) else None
+	return (
+		company
+		or frappe.db.get_single_value("Global Defaults", "default_company")
+		or frappe.db.get_value("Company", {}, "name", order_by="creation asc")
+	)
+
+
+def pin_gate_pass_mode_for_tests(cls, value: int = 0) -> None:
+	"""Pin ``ASN Settings.gate_pass_mode`` for a test class, then restore the site's value.
+
+	Receipt-opening scans and handlers assume the fresh-site default (off);
+	configured production-clone sites run it ON. ``dispatch`` commits
+	mid-test, so the restore commits too -- the site keeps its own setting
+	after the run.
+	"""
+	previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
+	frappe.db.set_single_value("ASN Settings", "gate_pass_mode", value)
+
+	def restore() -> None:
+		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit - outlive dispatch's mid-test commit
+
+	cls.addClassCleanup(restore)
+
+
+def reset_test_item_stock_flags(item_code: str) -> None:
+	"""Clear serial/batch flags a previous run or site import left on a test Item.
+
+	``frappe.db.set_value`` bypasses Item validation on purpose (the flag has
+	historical stock-ledger rows behind it) and invalidates the document cache
+	itself; a broader ``frappe.clear_cache(doctype=...)`` here would bump the
+	global metadata version mid-test and break meta-cold tests.
+	"""
+	frappe.db.set_value(
+		"Item",
+		item_code,
+		{"has_serial_no": 0, "has_batch_no": 0},
+		update_modified=False,
+	)
+
+
+def apply_item_site_requirements(item):
+	"""Fill Item fields this site marks mandatory, and only those.
+
+	Production-clone sites make ``Item.gst_hsn_code`` mandatory (Property
+	Setter) and mark ``item_tax_template`` mandatory on purchase rows, which
+	mapped PO->PR rows only carry when the Item has an Item Tax row. A site
+	without those customisations leaves the document unchanged.
+	"""
+	hsn_field = item.meta.get_field("gst_hsn_code")
+	if hsn_field and hsn_field.reqd and not item.get("gst_hsn_code"):
+		if hsn_code := frappe.db.get_value("GST HSN Code", {}, "name"):
+			item.gst_hsn_code = hsn_code
+
+	pr_item_template = frappe.get_meta("Purchase Receipt Item").get_field("item_tax_template")
+	if pr_item_template and pr_item_template.reqd and not item.get("taxes"):
+		template = frappe.db.get_value("Item Tax Template", {"company": resolve_test_company()}, "name")
+		if template:
+			item.append("taxes", {"item_tax_template": template})
+	return item
+
+
+def apply_receipt_site_requirements(receipt):
+	"""Fill Purchase Receipt fields this site marks mandatory, and only those.
+
+	``custom_fiscal_year`` (Custom Field, reqd) carries a stale default after a
+	fiscal-year rollover on production-clone sites, and ``taxes`` is mandatory
+	via Property Setter. A site without those customisations leaves the
+	document unchanged.
+	"""
+	from asn_module.handlers.utils import fill_custom_fiscal_year, fill_mandatory_taxes
+
+	fill_custom_fiscal_year(receipt)
+	fill_mandatory_taxes(receipt, description="Test Zero Tax")
+	return receipt
 
 
 def message_log_text() -> str:

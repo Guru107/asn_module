@@ -147,9 +147,9 @@ def _doc_with_fiscal_year_field(reqd: int = 1, **values) -> frappe._dict:
 	doc = frappe._dict(
 		doctype="Subcontracting Receipt",
 		meta=SimpleNamespace(
-			get_field=lambda fieldname: SimpleNamespace(reqd=reqd)
-			if fieldname == "custom_fiscal_year"
-			else None
+			get_field=lambda fieldname: (
+				SimpleNamespace(reqd=reqd) if fieldname == "custom_fiscal_year" else None
+			)
 		),
 	)
 	doc.update(values)

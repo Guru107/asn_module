@@ -1,4 +1,4 @@
-from frappe.tests import UnitTestCase
+from frappe.tests.utils import FrappeTestCase as UnitTestCase
 from hypothesis import given
 
 from asn_module.property_tests.strategies import scan_text

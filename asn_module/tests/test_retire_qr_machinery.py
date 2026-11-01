@@ -5,7 +5,11 @@ from asn_module.patches.retire_qr_machinery import execute
 
 
 def _forget_scan_code_columns() -> None:
-	frappe.client_cache.delete_value("table_columns::tabScan Code")
+	# v16 caches table columns in frappe.client_cache; v15 in a redis hash.
+	if client_cache := getattr(frappe, "client_cache", None):
+		client_cache.delete_value("table_columns::tabScan Code")
+	else:
+		frappe.cache().hdel("table_columns", "tabScan Code")
 
 
 class TestRetireQrMachinery(FrappeTestCase):

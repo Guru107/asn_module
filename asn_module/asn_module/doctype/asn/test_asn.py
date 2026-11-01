@@ -12,6 +12,7 @@ from asn_module.asn_module.doctype.asn.asn import (
 	get_po_items,
 	get_purchase_order_items,
 )
+from asn_module.handlers.utils import fill_custom_fiscal_year
 from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	PortalValidationError,
@@ -21,11 +22,14 @@ from asn_module.templates.pages.asn_new_services import (
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import (
 	TEST_COMPANY_NAME,
+	apply_item_site_requirements,
+	apply_receipt_site_requirements,
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
 	make_test_breach,
 	message_log_text,
+	reset_test_item_stock_flags,
 )
 
 IGNORE_TEST_RECORD_DEPENDENCIES = [
@@ -92,6 +96,8 @@ def _ensure_item(item_code: str = "_Test ASN Item") -> str:
 				0,
 				update_modified=False,
 			)
+		# Site imports can leave serial/batch flags on the persistent test item.
+		reset_test_item_stock_flags(item_code)
 		return item_code
 
 	item_group = _first_or_none("Item Group") or "All Item Groups"
@@ -104,12 +110,8 @@ def _ensure_item(item_code: str = "_Test ASN Item") -> str:
 		"stock_uom": uom,
 		"inspection_required_before_purchase": 0,
 	}
-	# india_compliance adds this column and can require it. The CI site has neither.
-	if frappe.db.has_column("Item", "gst_hsn_code"):
-		existing_hsn_code = frappe.db.get_value("GST HSN Code", {}, "name")
-		if existing_hsn_code:
-			item_doc["gst_hsn_code"] = existing_hsn_code
 	item = frappe.get_doc(item_doc)
+	apply_item_site_requirements(item)
 	item.insert(ignore_permissions=True)
 	return item.name
 
@@ -1295,6 +1297,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=100)
 		invoice = make_purchase_invoice(po.name)
 		invoice.update_stock = 1
+		fill_custom_fiscal_year(invoice)
 		invoice.insert(ignore_permissions=True)
 		invoice.submit()
 		po.reload()
@@ -1315,6 +1318,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 
 		invoice = make_purchase_invoice(po.name)
 		invoice.update_stock = 1
+		fill_custom_fiscal_year(invoice)
 		invoice.items[0].qty = 30
 		invoice.insert(ignore_permissions=True)
 		invoice.submit()
@@ -1331,6 +1335,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 
 		invoice = make_purchase_invoice(po.name)
 		invoice.update_stock = 1
+		fill_custom_fiscal_year(invoice)
 		invoice.items[0].qty = 30
 		invoice.insert(ignore_permissions=True)
 		invoice.submit()
@@ -1465,6 +1470,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		if asn:
 			payload["asn"] = asn.name
 		receipt = frappe.get_doc(payload)
+		apply_receipt_site_requirements(receipt)
 		receipt.insert(ignore_permissions=True)
 		if asn:
 			# Row names exist only after insert, so the map is keyed by the row's name.

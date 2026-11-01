@@ -47,7 +47,7 @@ from asn_module.tests.integration.fixtures import (
 	integration_user_context,
 )
 from asn_module.tests.test_job_asn_and_material_gate_pass import ensure_gate_pass_for_tests
-from asn_module.utils.test_setup import before_tests
+from asn_module.utils.test_setup import apply_receipt_site_requirements, before_tests
 
 
 @contextmanager
@@ -415,6 +415,7 @@ class TestUnlinkedReceiptGetsInvoiceCode(FrappeTestCase):
 			pr = make_purchase_receipt(purchase_order.name)
 			for row in pr.items:
 				row.warehouse = purchase_order.items[0].warehouse
+			apply_receipt_site_requirements(pr)
 			pr.insert(ignore_permissions=True)
 			pr.submit()
 
