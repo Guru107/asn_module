@@ -77,3 +77,4 @@ dump.rdb
 !.gitignore
 !.gitkeep
 !.pre-commit-config.yaml
+frappe-semgrep-rules/
