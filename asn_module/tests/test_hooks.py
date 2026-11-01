@@ -62,6 +62,8 @@ class TestHooks(FrappeTestCase):
 		self.assertEqual(fields[0]["options"], "ASN")
 		self.assertEqual(fields[1]["fieldname"], "asn_items")
 		self.assertEqual(fields[1]["fieldtype"], "JSON")
+		# A duplicate carries new row names; the old map must not follow it.
+		self.assertEqual(fields[1]["no_copy"], 1)
 
 	def test_item_max_stock_removal_patch_is_registered_for_post_model_sync(self):
 		patches = (Path(__file__).resolve().parents[1] / "patches.txt").read_text()

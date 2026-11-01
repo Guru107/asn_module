@@ -29,7 +29,7 @@ def confirm_putaway(source_doctype: str, source_name: str, payload: dict) -> dic
 		if pr.asn:
 			asn_items_map = json.loads(pr.asn_items or "{}")
 			for pr_item in pr.items:
-				mapping = asn_items_map.get(str(pr_item.idx))
+				mapping = asn_items_map.get(pr_item.name)
 				if not mapping:
 					continue
 				emit_asn_item_transition(

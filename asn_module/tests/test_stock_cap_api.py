@@ -579,8 +579,14 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		asn_item_name = asn.items[0].name
 		pr_doc = SimpleNamespace(
 			asn=asn.name,
-			asn_items=json.dumps({"1": {"asn_item_name": asn_item_name, "original_qty": asn.items[0].qty}}),
-			items=[SimpleNamespace(idx=1, qty=accepted, rejected_qty=rejected, item_code=PR_ITEM)],
+			asn_items=json.dumps(
+				{"pr-row-a": {"asn_item_name": asn_item_name, "original_qty": asn.items[0].qty}}
+			),
+			items=[
+				SimpleNamespace(
+					idx=1, name="pr-row-a", qty=accepted, rejected_qty=rejected, item_code=PR_ITEM
+				)
+			],
 			name="PR-REJECT-DRAIN-0001",
 		)
 
@@ -843,10 +849,11 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 					asn=asn.name,
 					is_return=0,
 					name="PR-UOM-DRAIN",
-					asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
+					asn_items=json.dumps({"pr-row-a": {"asn_item_name": asn.items[0].name}}),
 					items=[
 						SimpleNamespace(
 							idx=1,
+							name="pr-row-a",
 							qty=2,
 							stock_qty=24,
 							rejected_qty=0,
@@ -876,8 +883,8 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			asn=asn.name,
 			is_return=0,
 			name="PR-CANCEL-DRAIN",
-			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
-			items=[SimpleNamespace(idx=1, qty=10, rejected_qty=0, item_code=PR_ITEM)],
+			asn_items=json.dumps({"pr-row-a": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=10, rejected_qty=0, item_code=PR_ITEM)],
 		)
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
@@ -921,15 +928,15 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			asn=asn.name,
 			is_return=0,
 			name="PR-RETURN-ORIGINAL",
-			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
-			items=[SimpleNamespace(idx=1, qty=10, rejected_qty=0, item_code=PR_ITEM)],
+			asn_items=json.dumps({"pr-row-a": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=10, rejected_qty=0, item_code=PR_ITEM)],
 		)
 		purchase_return = SimpleNamespace(
 			asn=asn.name,
 			is_return=1,
 			name="PR-RETURN-PARTIAL",
-			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
-			items=[SimpleNamespace(idx=1, qty=-2, rejected_qty=0, item_code=PR_ITEM)],
+			asn_items=json.dumps({"pr-row-a": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=-2, rejected_qty=0, item_code=PR_ITEM)],
 		)
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
@@ -988,15 +995,15 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			asn=asn.name,
 			is_return=0,
 			name=f"PR-ACCEPT-{frappe.generate_hash(length=6)}",
-			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
-			items=[SimpleNamespace(idx=1, qty=qty, rejected_qty=0, item_code=PR_ITEM)],
+			asn_items=json.dumps({"pr-row-a": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=qty, rejected_qty=0, item_code=PR_ITEM)],
 		)
 		purchase_return = SimpleNamespace(
 			asn=asn.name,
 			is_return=1,
 			name=f"PR-RETURN-{frappe.generate_hash(length=6)}",
-			asn_items=json.dumps({"1": {"asn_item_name": asn.items[0].name}}),
-			items=[SimpleNamespace(idx=1, qty=-10, rejected_qty=0, item_code=PR_ITEM)],
+			asn_items=json.dumps({"pr-row-a": {"asn_item_name": asn.items[0].name}}),
+			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=-10, rejected_qty=0, item_code=PR_ITEM)],
 		)
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),

@@ -1464,9 +1464,15 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		}
 		if asn:
 			payload["asn"] = asn.name
-			payload["asn_items"] = json.dumps({"1": {"asn_item_name": asn.items[0].name}})
 		receipt = frappe.get_doc(payload)
 		receipt.insert(ignore_permissions=True)
+		if asn:
+			# Row names exist only after insert, so the map is keyed by the row's name.
+			receipt.db_set(
+				"asn_items",
+				json.dumps({receipt.items[0].name: {"asn_item_name": asn.items[0].name}}),
+				notify=False,
+			)
 		self._submit_purchase_receipt(receipt)
 		return receipt
 

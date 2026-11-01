@@ -18,6 +18,7 @@ from asn_module.handlers.purchase_receipt import (
 	on_purchase_receipt_before_submit,
 	on_purchase_receipt_submit,
 	on_purchase_receipt_trash,
+	stamp_asn_item_mapping,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import make_test_breach
@@ -192,6 +193,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 						)
 					],
 					name="PR-UNIT-002",
+					doctype="Purchase Receipt",
 					company="TCPL",
 					currency="INR",
 					conversion_rate=1,
@@ -200,11 +202,16 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 			def insert(self, **kwargs):
 				self.insert_kwargs = kwargs
+				# Mimic Frappe: child names are assigned on insert, then after_insert hooks run.
+				for pos, row in enumerate(self.items, start=1):
+					row.name = f"new-pr-row-{pos}"
+				stamp_asn_item_mapping(self)
 
 		pr = _FakePurchaseReceipt()
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
 			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value=None),
+			patch("asn_module.handlers.purchase_receipt.frappe.db.set_value") as set_value,
 			patch("asn_module.handlers.purchase_receipt.make_purchase_receipt", return_value=pr) as make_pr,
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
 		):
@@ -222,8 +229,13 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(pr.items[0].warehouse, "Stores - TCPL")
 		self.assertEqual(pr.items[0].qty, 3)
 		self.assertEqual(pr.items[0].amount, 75)
-		self.assertEqual(pr.asn_items, '{"1": {"asn_item_name": "ASN-ITEM-001", "original_qty": 3}}')
+		self.assertEqual(
+			pr.asn_items, '{"new-pr-row-1": {"asn_item_name": "ASN-ITEM-001", "original_qty": 3}}'
+		)
 		self.assertEqual(pr.insert_kwargs, {"ignore_permissions": True})
+		set_value.assert_called_once_with(
+			"Purchase Receipt", "PR-UNIT-002", "asn_items", pr.asn_items, update_modified=False
+		)
 		make_pr.assert_called_once_with("PO-001", args={"filtered_children": ["POI-001"]})
 		emit.assert_called_once()
 
@@ -266,11 +278,11 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		asn = SimpleNamespace(name="ASN-UNIT-003", reload=lambda: None, update_receipt_status=lambda: None)
 		doc = SimpleNamespace(
 			asn="ASN-UNIT-003",
-			asn_items='{"1": {}, "2": {"asn_item_name": "ASN-ITEM-002"}}',
+			asn_items='{"pr-row-1": {}, "pr-row-2": {"asn_item_name": "ASN-ITEM-002"}}',
 			items=[
-				SimpleNamespace(idx=1, qty=1, item_code="ITEM-001"),
-				SimpleNamespace(idx=2, qty=2, item_code="ITEM-002"),
-				SimpleNamespace(idx=3, qty=3, item_code="ITEM-003"),
+				SimpleNamespace(idx=1, name="pr-row-1", qty=1, item_code="ITEM-001"),
+				SimpleNamespace(idx=2, name="pr-row-2", qty=2, item_code="ITEM-002"),
+				SimpleNamespace(idx=3, name="pr-row-3", qty=3, item_code="ITEM-003"),
 			],
 			name="PR-UNIT-003",
 		)
