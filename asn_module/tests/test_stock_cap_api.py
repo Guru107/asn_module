@@ -579,8 +579,14 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		asn_item_name = asn.items[0].name
 		pr_doc = SimpleNamespace(
 			asn=asn.name,
-			asn_items=json.dumps({"pr-row-a": {"asn_item_name": asn_item_name, "original_qty": asn.items[0].qty}}),
-			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=accepted, rejected_qty=rejected, item_code=PR_ITEM)],
+			asn_items=json.dumps(
+				{"pr-row-a": {"asn_item_name": asn_item_name, "original_qty": asn.items[0].qty}}
+			),
+			items=[
+				SimpleNamespace(
+					idx=1, name="pr-row-a", qty=accepted, rejected_qty=rejected, item_code=PR_ITEM
+				)
+			],
 			name="PR-REJECT-DRAIN-0001",
 		)
 

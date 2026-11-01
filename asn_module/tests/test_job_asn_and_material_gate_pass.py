@@ -822,7 +822,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 							"uom": po_item.uom,
 							"rate": po_item.rate,
 						}
-						for qty, po_item in zip((2, 3, 4), purchase_order.items)
+						for qty, po_item in zip((2, 3, 4), purchase_order.items, strict=True)
 					],
 				}
 			)
