@@ -988,11 +988,12 @@
 	}
 
 	function renderSelectedPoChip() {
-		if (!selectedPo) {
-			selectedPoChip.innerHTML = "";
-			return;
-		}
-		selectedPoChip.innerHTML = `<span class="asn-selected-po-chip">${selectedPo}</span>`;
+		selectedPoChip.innerHTML = "";
+		if (!selectedPo) return;
+		const chip = document.createElement("span");
+		chip.className = "asn-selected-po-chip";
+		chip.textContent = selectedPo;
+		selectedPoChip.appendChild(chip);
 	}
 
 	function rateToInputValue(rate) {
@@ -1000,52 +1001,100 @@
 		return String(rate);
 	}
 
-	function createRowHtml(itemKey, entry) {
+	function makeRowCell(labelText, input) {
+		const cell = document.createElement("div");
+		cell.className = "asn-new-cell";
+		const label = document.createElement("label");
+		label.className = "asn-new-cell-label";
+		label.textContent = labelText;
+		cell.appendChild(label);
+		cell.appendChild(input);
+		return cell;
+	}
+
+	function makeReadonlyInput(name, value) {
+		const input = document.createElement("input");
+		input.className = "form-control";
+		input.name = name;
+		input.value = value;
+		input.readOnly = true;
+		return input;
+	}
+
+	function makeNumberInput(name, value) {
+		const input = document.createElement("input");
+		input.type = "number";
+		input.setAttribute("min", "0");
+		input.setAttribute("step", "0.0001");
+		input.className = "form-control";
+		input.name = name;
+		input.value = value;
+		return input;
+	}
+
+	function createRowElement(itemKey, entry) {
 		const isJobLine = Boolean(entry.subcontracting_order_item);
 		const orderName = isJobLine ? String(entry.subcontracting_order || "") : selectedPo;
 		const orderLabel = isJobLine ? "SCO" : "PO";
 		const qtyName = isJobLine ? "job_asn_qty" : "single_manual_qty";
-		const jobLineInput = isJobLine
-			? `<input type="hidden" name="subcontracting_order_item" value="${String(entry.subcontracting_order_item)}">`
-			: "";
-		return `
-		<div class="single-row asn-new-manual-grid-row" data-item-key="${itemKey}">
-			${jobLineInput}
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">${orderLabel}</label>
-				<input class="form-control" name="single_manual_purchase_order" value="${orderName}" readonly>
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">Sr No</label>
-				<input class="form-control" name="single_manual_sr_no" value="${String(entry.sr_no || "")}" readonly>
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">Item</label>
-				<input class="form-control" name="single_manual_item_code" value="${String(entry.value || "")}" readonly>
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">UOM</label>
-				<input class="form-control" name="single_manual_uom" value="${String(entry.uom || "")}" readonly>
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">Qty</label>
-				<input type="number" min="0" step="0.0001" class="form-control" name="${qtyName}" value="${entry.qty != null && entry.qty !== "" ? String(entry.qty) : ""}">
-			</div>
-			<div class="asn-new-cell">
-				<label class="asn-new-cell-label">Rate</label>
-				<input type="number" min="0" step="0.0001" class="form-control" name="single_manual_rate" value="${rateToInputValue(entry.rate)}">
-			</div>
-			<div class="asn-new-cell asn-new-remove">
-				<button type="button" class="btn btn-outline-danger btn-sm remove-row" aria-label="Remove row">×</button>
-			</div>
-		</div>
-	`;
+
+		const row = document.createElement("div");
+		row.className = "single-row asn-new-manual-grid-row";
+		row.dataset.itemKey = itemKey;
+
+		if (isJobLine) {
+			const jobLineInput = document.createElement("input");
+			jobLineInput.type = "hidden";
+			jobLineInput.name = "subcontracting_order_item";
+			jobLineInput.value = String(entry.subcontracting_order_item);
+			row.appendChild(jobLineInput);
+		}
+
+		row.appendChild(
+			makeRowCell(orderLabel, makeReadonlyInput("single_manual_purchase_order", orderName))
+		);
+		row.appendChild(
+			makeRowCell("Sr No", makeReadonlyInput("single_manual_sr_no", String(entry.sr_no || "")))
+		);
+		row.appendChild(
+			makeRowCell(
+				"Item",
+				makeReadonlyInput("single_manual_item_code", String(entry.value || ""))
+			)
+		);
+		row.appendChild(
+			makeRowCell("UOM", makeReadonlyInput("single_manual_uom", String(entry.uom || "")))
+		);
+		row.appendChild(
+			makeRowCell(
+				"Qty",
+				makeNumberInput(
+					qtyName,
+					entry.qty != null && entry.qty !== "" ? String(entry.qty) : ""
+				)
+			)
+		);
+		row.appendChild(
+			makeRowCell("Rate", makeNumberInput("single_manual_rate", rateToInputValue(entry.rate)))
+		);
+
+		const removeCell = document.createElement("div");
+		removeCell.className = "asn-new-cell asn-new-remove";
+		const removeBtn = document.createElement("button");
+		removeBtn.type = "button";
+		removeBtn.className = "btn btn-outline-danger btn-sm remove-row";
+		removeBtn.setAttribute("aria-label", "Remove row");
+		removeBtn.textContent = "×";
+		removeCell.appendChild(removeBtn);
+		row.appendChild(removeCell);
+
+		return row;
 	}
 
 	function addRowForItem(entry) {
 		const itemKey = keyForItem(entry);
 		if (!itemKey || rowsRoot.querySelector(`[data-item-key="${CSS.escape(itemKey)}"]`)) return;
-		rowsRoot.insertAdjacentHTML("beforeend", createRowHtml(itemKey, entry));
+		rowsRoot.appendChild(createRowElement(itemKey, entry));
 	}
 
 	function removeRowForItemKey(itemKey) {
