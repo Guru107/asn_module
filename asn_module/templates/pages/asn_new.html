@@ -1567,12 +1567,20 @@
 		if (draftForm.purchase_order) {
 			void setSelectedPurchaseOrder(draftForm.purchase_order).then(() => {
 				(draftForm.rows || []).forEach((row) => {
+					// The picker hides lines whose Remaining Qty is now zero (e.g. another
+					// notice shipped the line). Rebuild a missed row from the stored draft
+					// so Save cannot drop it silently; the server still rejects over-qty.
 					const entry = poItems.find(
 						(item) =>
 							String(item.sr_no || "") === String(row.sr_no || "") &&
 							String(item.value || "") === String(row.item_code || "")
-					);
-					if (!entry) return;
+					) || {
+						sr_no: row.sr_no,
+						value: row.item_code,
+						uom: row.uom,
+						rate: row.rate,
+						qty: row.qty,
+					};
 					if (row.rate != null && row.rate !== "") entry.rate = row.rate;
 					if (row.qty != null && row.qty !== "") entry.qty = row.qty;
 					selectItem(entry);

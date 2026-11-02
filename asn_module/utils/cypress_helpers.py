@@ -651,6 +651,41 @@ def seed_portal_draft_remaining_context():
 	}
 
 
+@frappe.whitelist()
+def seed_portal_draft_hidden_line_context():
+	"""Draft row on a PO line whose full Remaining Qty another notice then shipped.
+
+	The draft row carries qty 0, so it holds back no Remaining Qty and the submitted
+	notice can ship all 10. Reopening the draft then finds the line missing from the
+	item picker (Remaining Qty 0) — the restore path must still render the stored row.
+	"""
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
+	supplier, portal_user, portal_password = _portal_e2e_supplier()
+	item_code = "_Cypress Draft Hidden Item"
+	_ensure_cypress_item(item_code)
+	_drop_cypress_asns(item_code)
+	warehouse = _ensure_cypress_warehouse("_Cypress Draft Hidden Warehouse")
+	po = _cypress_purchase_order(
+		supplier=supplier.name,
+		qty=10,
+		item_code=item_code,
+		warehouse=warehouse,
+		branch=None,
+	)
+	draft = _insert_cypress_asn(supplier=supplier.name, purchase_order=po, qty=0)
+	shipped = _insert_cypress_asn(supplier=supplier.name, purchase_order=po, qty=10, submit=True)
+	return {
+		"portal_user": portal_user,
+		"portal_password": portal_password,
+		"purchase_order": po.name,
+		"draft_name": draft.name,
+		"shipped_asn_name": shipped.name,
+	}
+
+
 @frappe.whitelist(methods=["POST"])
 def seed_portal_branch_capacity_context(already_full: int = 0):
 	"""A portal purchase order whose branch can take 4, or nothing when already full."""
