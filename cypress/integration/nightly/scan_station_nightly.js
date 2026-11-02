@@ -23,14 +23,19 @@ context("Scan Station nightly", () => {
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
 	});
 
-	it("accepts scan code and shows success or expected feedback", () => {
+	it("accepts scan code, stays on the station and links to the created document", () => {
 		cy.visit(route("scan-station"));
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
 		expect(seededData.scan_code).to.have.length(16);
 		cy.get(".scan-input").clear();
 		cy.get(".scan-input").type(seededData.scan_code);
-		cy.location("pathname", { timeout: 20000 }).should("include", "/purchase-receipt/");
-		cy.url({ timeout: 20000 }).should("not.include", "/login");
+		cy.location("pathname", { timeout: 20000 }).should("include", "scan-station");
+		cy.url().should("not.include", "/login");
+		cy.get(".alert.desk-alert.green .alert-message a", { timeout: 20000 })
+			.should("be.visible")
+			.and("have.attr", "href")
+			.and("include", "/purchase-receipt/");
+		cy.get(".scan-input").should("be.focused");
 	});
 
 	it("malformed code shows error feedback", () => {
