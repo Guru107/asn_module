@@ -532,19 +532,38 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertIn("ASN-0002", context.bulk_success)
 
 	def test_validate_supplier_invoices_not_reused_raises_portal_error(self):
-		with patch("asn_module.templates.pages.asn_new_services.frappe.db.exists", return_value="ASN-00001"):
+		with patch("asn_module.templates.pages.asn_new_services.frappe.get_all", return_value=["INV-DUP"]):
 			with self.assertRaises(PortalValidationError) as ctx:
 				validate_supplier_invoices_not_reused("Supp-001", ["INV-DUP"])
 		msgs = " ".join(e.get("message", "") for e in ctx.exception.errors)
 		self.assertIn("INV-DUP", msgs)
 
-	def test_resuming_a_draft_does_not_treat_its_own_invoice_as_reused(self):
-		def exists(_doctype, filters):
-			if filters.get("name") == ("!=", "ASN-DRAFT"):
-				return None
-			return "ASN-DRAFT"
+	def test_validate_supplier_invoices_not_reused_runs_one_query_for_a_batch(self):
+		invoice_numbers = [f"INV-{index}" for index in range(500)]
+		with patch(
+			"asn_module.templates.pages.asn_new_services.frappe.get_all", return_value=["INV-7"]
+		) as get_all:
+			with self.assertRaises(PortalValidationError) as ctx:
+				validate_supplier_invoices_not_reused("Supp-001", invoice_numbers)
 
-		with patch("asn_module.templates.pages.asn_new_services.frappe.db.exists", side_effect=exists):
+		get_all.assert_called_once()
+		self.assertEqual(get_all.call_args.args[0], "ASN")
+		in_filter = get_all.call_args.kwargs["filters"]["supplier_invoice_no"]
+		self.assertEqual(set(in_filter[1]), set(invoice_numbers))
+		self.assertEqual(len(ctx.exception.errors), 1)
+		error = ctx.exception.errors[0]
+		self.assertEqual(error["field"], "supplier_invoice_no")
+		self.assertEqual(error["invoice_no"], "INV-7")
+		self.assertIn("INV-7", error["message"])
+		self.assertIn("already used on another notice", error["message"])
+
+	def test_resuming_a_draft_does_not_treat_its_own_invoice_as_reused(self):
+		def get_all(_doctype, filters=None, **_kwargs):
+			if filters.get("name") == ("!=", "ASN-DRAFT"):
+				return []
+			return ["INV-1"]
+
+		with patch("asn_module.templates.pages.asn_new_services.frappe.get_all", side_effect=get_all):
 			validate_supplier_invoices_not_reused("Supp-001", ["INV-1"], exclude_asn_name="ASN-DRAFT")
 
 	def test_service_rejects_duplicate_po_sr_no_in_same_invoice_group(self):

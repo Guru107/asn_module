@@ -32,6 +32,19 @@ class _FakeNotificationDoc:
 
 
 class TestNotificationSetup(FrappeTestCase):
+	def test_create_notifications_called_twice_does_not_recreate(self):
+		# First run creates all four templates; a second run (install then migrate) creates none.
+		new_doc = _FakeNotificationDoc()
+		with patch("asn_module.notifications.setup.frappe.db.exists", return_value=False):
+			with patch("asn_module.notifications.setup.frappe.get_doc", return_value=new_doc) as get_doc:
+				notifications_setup.create_notifications()
+		self.assertEqual(get_doc.call_count, len(notifications_setup.NOTIFICATION_TEMPLATES))
+
+		with patch("asn_module.notifications.setup.frappe.db.exists", return_value="ASN Submitted"):
+			with patch("asn_module.notifications.setup.frappe.get_doc", return_value=new_doc) as get_doc:
+				notifications_setup.create_notifications()
+		get_doc.assert_not_called()
+
 	def test_create_notifications_is_idempotent_by_default(self):
 		with patch("asn_module.notifications.setup.frappe.db.exists", return_value="ASN Submitted"):
 			with patch("asn_module.notifications.setup.frappe.get_doc") as get_doc:
