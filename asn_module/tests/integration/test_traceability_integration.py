@@ -6,7 +6,7 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.asn_module.doctype.asn.asn import get_item_transition_summary
 from asn_module.asn_module.report.asn_item_transition_trace.asn_item_transition_trace import execute
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
-from asn_module.tests.integration.fixtures import ensure_integration_user
+from asn_module.tests.integration.fixtures import ensure_integration_user, pin_gate_pass_mode_for_tests
 from asn_module.utils.test_setup import before_tests
 
 
@@ -16,6 +16,7 @@ class TestTraceabilityIntegration(FrappeTestCase):
 		before_tests()
 		super().setUpClass()
 		ensure_integration_user()
+		pin_gate_pass_mode_for_tests(cls)
 
 	def test_transition_log_summary_and_report_align_after_asn_pr_pi(self):
 		inv = f"TRACE-{frappe.generate_hash(length=8)}"

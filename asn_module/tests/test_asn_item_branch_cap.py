@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.utils.test_setup import before_tests, disable_hsn_validation
+from asn_module.utils.test_setup import apply_item_site_requirements, before_tests, disable_hsn_validation
 
 BRANCH = "_Test Cap Branch Item"
 ITEM = "_Test Cap Item"
@@ -15,7 +15,7 @@ def _ensure_branch(name: str) -> str:
 
 def _ensure_item(code: str) -> str:
 	if not frappe.db.exists("Item", code):
-		frappe.get_doc(
+		item = frappe.get_doc(
 			{
 				"doctype": "Item",
 				"item_code": code,
@@ -23,7 +23,9 @@ def _ensure_item(code: str) -> str:
 				"item_group": frappe.db.get_value("Item Group", {}, "name"),
 				"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 			}
-		).insert(ignore_permissions=True)
+		)
+		apply_item_site_requirements(item)
+		item.insert(ignore_permissions=True)
 	return code
 
 

@@ -8,7 +8,11 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.commands import verify_scan_code_registry
 from asn_module.qr_engine.scan_codes import SCAN_CODE_ALPHABET, SCAN_CODE_LENGTH
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
-from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
+from asn_module.tests.integration.fixtures import (
+	ensure_integration_user,
+	integration_user_context,
+	pin_gate_pass_mode_for_tests,
+)
 from asn_module.utils.test_setup import before_tests
 
 
@@ -18,23 +22,9 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 		before_tests()
 		super().setUpClass()
 		ensure_integration_user()
+		pin_gate_pass_mode_for_tests(cls)
 
 	def test_verify_registry_ok_after_dispatch_flow(self):
-		# Rows from ``test_dispatch_rejects_source_doctype_mismatch`` (legacy fixed code or failed cleanups).
-		for name in frappe.get_all(
-			"Scan Code",
-			filters={"source_doctype": "Bogus DocType", "source_name": "Bogus Name"},
-			pluck="name",
-		):
-			frappe.delete_doc("Scan Code", name, force=True, ignore_permissions=True)
-		# Defensive cleanup for orphan rows created by error-path integration tests.
-		for name in frappe.get_all(
-			"Scan Code",
-			filters={"source_doctype": "ASN", "source_name": "Fake-ASN-For-Test"},
-			pluck="name",
-		):
-			frappe.delete_doc("Scan Code", name, force=True, ignore_permissions=True)
-
 		run_asn_pr_pi_via_dispatch(
 			supplier_invoice_no=f"REG-OK-{frappe.generate_hash(length=8)}",
 			qty=3,

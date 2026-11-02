@@ -9,7 +9,11 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
-from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
+from asn_module.tests.integration.fixtures import (
+	ensure_integration_user,
+	integration_user_context,
+	pin_gate_pass_mode_for_tests,
+)
 from asn_module.utils.test_setup import before_tests
 
 
@@ -21,6 +25,7 @@ class TestEndToEndFlow(FrappeTestCase):
 		before_tests()
 		super().setUpClass()
 		ensure_integration_user()
+		pin_gate_pass_mode_for_tests(cls)
 
 	def test_full_asn_to_purchase_invoice_flow_via_dispatch(self):
 		out = run_asn_pr_pi_via_dispatch(

@@ -106,8 +106,11 @@ class TestASNNewPortalPage(FrappeTestCase):
 		)
 
 	def test_seed_supplier_large_po_context_rejects_when_tests_disabled(self):
+		# v15's translation cache reads conf.db_name inside frappe.throw, so the
+		# stub must carry it or the throw itself blows up.
+		stub_conf = SimpleNamespace(get=lambda _key: False, db_name=getattr(frappe.conf, "db_name", None))
 		with (
-			patch.object(cypress_helpers.frappe, "conf", SimpleNamespace(get=lambda _key: False)),
+			patch.object(cypress_helpers.frappe, "conf", stub_conf),
 			self.assertRaises(frappe.exceptions.ValidationError),
 		):
 			cypress_helpers.seed_supplier_large_po_context()

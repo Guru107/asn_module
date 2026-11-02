@@ -328,7 +328,9 @@ class TestASNNewSearch(FrappeTestCase):
 				return_value=sco.supplier,
 			),
 		):
-			rows = asn_new_search.search_open_subcontracting_orders(txt="")
+			# Search by name: the suite leaves many open orders behind within one
+			# transaction, and page one (20 rows) need not hold the newest one.
+			rows = asn_new_search.search_open_subcontracting_orders(txt=sco.name.lower())
 			closed = asn_new_search.search_open_subcontracting_orders(txt="missing")
 		self.assertIn(sco.name, [row["value"] for row in rows])
 		self.assertEqual(closed, [])

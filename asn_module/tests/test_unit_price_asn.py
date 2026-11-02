@@ -26,6 +26,7 @@ from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
+	resolve_test_company,
 )
 
 BRANCH = "_Test Unit Price Cap Branch"
@@ -41,19 +42,50 @@ class TestUnitPricePurchaseOrderAsn(FrappeTestCase):
 		if not frappe.db.exists("Branch", BRANCH):
 			frappe.get_doc({"doctype": "Branch", "branch": BRANCH}).insert(ignore_permissions=True)
 		_ensure_item()
+		# The portal search lists at most 200 open POs per supplier; the shared
+		# "_Test ASN Supplier" accrues committed residue on dev sites, drowning a
+		# test's own PO. Isolate the class on its own supplier.
+		supplier_name = "_Test Unit Price Supplier"
+		if not frappe.db.exists("Supplier", supplier_name):
+			frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": supplier_name,
+					"supplier_type": "Company",
+					"supplier_group": frappe.db.get_value("Supplier Group", {}, "name")
+					or "All Supplier Groups",
+				}
+			).insert(ignore_permissions=True)
+		cls.supplier = supplier_name
 
 	def setUp(self):
 		frappe.set_user("Administrator")
 		frappe.db.delete("ASN Stock Cap Warehouse")
 		frappe.db.delete("ASN Stock Cap Settings")
+		# A dedicated warehouse keeps on-hand stock at zero: the shared company
+		# warehouse on a production-clone site carries residue stock of the test
+		# item from earlier committed runs, which silently eats cap headroom.
+		self.warehouse = (
+			frappe.get_doc(
+				{
+					"doctype": "Warehouse",
+					"warehouse_name": f"_Test Unit Price Cap WH {frappe.generate_hash(length=5)}",
+					"company": resolve_test_company(),
+					"is_group": 0,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 		self.po = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,
 			tax_description="_Test Unit Price ASN Tax",
+			supplier=self.supplier,
 			qty=10,
+			warehouse=self.warehouse,
 			do_not_submit=True,
 		)
 		self.item_code = self.po.items[0].item_code
-		self.warehouse = self.po.items[0].warehouse
 		frappe.db.set_value(
 			"Purchase Order",
 			self.po.name,

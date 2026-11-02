@@ -29,6 +29,7 @@ from asn_module.templates.pages.asn_new_services import (
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import (
+	apply_item_site_requirements,
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
@@ -691,7 +692,7 @@ class TestBulkUploadStockCapRealPipeline(FrappeTestCase):
 
 		self.item_code = "_Test Bulk Real Cap Item"
 		if not frappe.db.exists("Item", self.item_code):
-			frappe.get_doc(
+			item = frappe.get_doc(
 				{
 					"doctype": "Item",
 					"item_code": self.item_code,
@@ -699,7 +700,9 @@ class TestBulkUploadStockCapRealPipeline(FrappeTestCase):
 					"item_group": frappe.db.get_value("Item Group", {}, "name"),
 					"stock_uom": frappe.db.get_value("UOM", {}, "name"),
 				}
-			).insert(ignore_permissions=True)
+			)
+			apply_item_site_requirements(item)
+			item.insert(ignore_permissions=True)
 		frappe.db.delete("ASN Item Branch Cap", {"item": self.item_code})
 		frappe.get_doc(
 			{

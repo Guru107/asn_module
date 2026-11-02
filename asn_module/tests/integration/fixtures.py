@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import frappe
 
@@ -64,3 +65,15 @@ def integration_user_context(email: str = INTEGRATION_USER_EMAIL) -> Generator[N
 		yield
 	finally:
 		frappe.set_user(previous)
+
+
+def pin_gate_pass_mode_for_tests(cls) -> None:
+	"""Run a test class with gate-pass mode off, without touching the site's setting.
+
+	Receipt-opening scans and handlers assume the fresh-site default (off);
+	configured production-clone sites run it ON. Patched rather than written, so
+	dispatch's mid-test commit cannot persist it and a killed run cannot leave it.
+	"""
+	patcher = patch("asn_module.handlers.purchase_receipt._gate_pass_mode_on", return_value=False)
+	patcher.start()
+	cls.addClassCleanup(patcher.stop)

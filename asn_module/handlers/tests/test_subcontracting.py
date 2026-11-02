@@ -12,6 +12,7 @@ from asn_module.handlers.subcontracting import (
 	on_subcontracting_order_submit,
 	on_subcontracting_receipt_submit,
 )
+from asn_module.utils.test_setup import apply_item_site_requirements, resolve_test_company
 
 
 def patch_subcontracting_incoming_rate(return_value):
@@ -57,6 +58,7 @@ class TestSubcontractingHandlers(FrappeTestCase):
 				"is_sub_contracted_item": 1 if is_stock_item else 0,
 			}
 		)
+		apply_item_site_requirements(item)
 		item.insert(ignore_permissions=True)
 		return item_code
 
@@ -106,7 +108,7 @@ class TestSubcontractingHandlers(FrappeTestCase):
 		return bom.name
 
 	def _make_integration_subcontracting_order(self, *, po_item_code=None):
-		company = frappe.db.get_value("Company", {}, "name")
+		company = resolve_test_company()
 		source_warehouse = self._ensure_warehouse("_Test Subcontract Source Warehouse", company)
 		supplier_warehouse = self._ensure_warehouse("_Test Subcontract Supplier Warehouse", company)
 		po = create_purchase_order(

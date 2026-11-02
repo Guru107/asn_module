@@ -7,6 +7,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	before_tests,
 	create_purchase_order_with_fiscal_dates,
 )
+from asn_module.utils.test_setup import apply_receipt_site_requirements
 
 
 class TestQualityInspectionSubmitHook(FrappeTestCase):
@@ -38,6 +39,7 @@ class TestQualityInspectionSubmitHook(FrappeTestCase):
 				],
 			}
 		)
+		apply_receipt_site_requirements(pr)
 		pr.insert(ignore_permissions=True)
 		if submit:
 			pr.submit()

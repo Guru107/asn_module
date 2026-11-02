@@ -11,6 +11,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn,
 )
 from asn_module.handlers.purchase_invoice import create_from_purchase_receipt
+from asn_module.utils.test_setup import apply_receipt_site_requirements
 
 
 class TestCreatePurchaseInvoice(FrappeTestCase):
@@ -45,6 +46,7 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 				],
 			}
 		)
+		apply_receipt_site_requirements(pr)
 		pr.insert(ignore_permissions=True)
 		if per_billed:
 			frappe.db.set_value("Purchase Receipt", pr.name, "per_billed", per_billed, update_modified=False)

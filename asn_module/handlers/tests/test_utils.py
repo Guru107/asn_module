@@ -7,6 +7,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order, make_test_asn
 from asn_module.handlers.utils import (
+	apply_site_document_requirements,
 	attach_qr_to_doc,
 	attach_scan_codes_to_doc,
 	backfill_scan_code_attachments,
@@ -147,9 +148,9 @@ def _doc_with_fiscal_year_field(reqd: int = 1, **values) -> frappe._dict:
 	doc = frappe._dict(
 		doctype="Subcontracting Receipt",
 		meta=SimpleNamespace(
-			get_field=lambda fieldname: SimpleNamespace(reqd=reqd)
-			if fieldname == "custom_fiscal_year"
-			else None
+			get_field=lambda fieldname: (
+				SimpleNamespace(reqd=reqd) if fieldname == "custom_fiscal_year" else None
+			)
 		),
 	)
 	doc.update(values)
@@ -223,6 +224,62 @@ class TestFillCustomFiscalYear(FrappeTestCase):
 			fill_custom_fiscal_year(doc)
 
 		self.assertNotIn("custom_fiscal_year", doc)
+
+
+def _doc_with_taxes_field(reqd: int = 1, **values) -> frappe._dict:
+	"""A document stub whose meta carries a site-style mandatory ``taxes`` table."""
+	doc = frappe._dict(
+		doctype="Purchase Receipt",
+		meta=SimpleNamespace(
+			get_field=lambda fieldname: SimpleNamespace(reqd=reqd) if fieldname == "taxes" else None
+		),
+		items=[],
+	)
+	doc.taxes = []
+	doc.append = lambda fieldname, row: doc[fieldname].append(row)
+	doc.update(values)
+	return doc
+
+
+class TestApplySiteDocumentRequirements(FrappeTestCase):
+	def test_refuses_to_guess_between_several_purchase_orders(self):
+		doc = _doc_with_taxes_field(items=[{"purchase_order": "PO-1"}, {"purchase_order": "PO-2"}])
+
+		with (
+			patch.object(frappe, "get_doc", side_effect=AssertionError("must not load")),
+			self.assertRaises(frappe.ValidationError) as context,
+		):
+			apply_site_document_requirements(doc)
+
+		self.assertIn("PO-1", str(context.exception))
+		self.assertIn("PO-2", str(context.exception))
+
+	def test_leaves_existing_taxes_alone(self):
+		doc = _doc_with_taxes_field(
+			items=[{"item_code": "X", "purchase_order": "PO-1"}],
+			taxes=[{"description": "kept"}],
+		)
+
+		with patch.object(frappe, "get_doc", side_effect=AssertionError("must not load")):
+			apply_site_document_requirements(doc)
+
+		self.assertEqual(doc.taxes, [{"description": "kept"}])
+
+	def test_no_op_when_the_site_does_not_require_taxes(self):
+		doc = _doc_with_taxes_field(reqd=0, items=[{"purchase_order": "PO-1"}])
+
+		with patch.object(frappe, "get_doc", side_effect=AssertionError("must not load")):
+			apply_site_document_requirements(doc)
+
+		self.assertEqual(doc.taxes, [])
+
+	def test_no_op_without_a_purchase_order_link(self):
+		doc = _doc_with_taxes_field(items=[{"item_code": "X"}])
+
+		with patch.object(frappe, "get_doc", side_effect=AssertionError("must not load")):
+			apply_site_document_requirements(doc)
+
+		self.assertEqual(doc.taxes, [])
 
 
 class TestFiscalYearForDate(FrappeTestCase):

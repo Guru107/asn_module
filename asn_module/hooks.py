@@ -217,7 +217,7 @@ doc_events = {
 # Testing
 # -------
 
-before_tests = "asn_module.utils.test_setup.before_tests"
+before_tests = "asn_module.utils.test_setup.before_test_run"
 
 after_migrate = "asn_module.setup.after_migrate"
 
