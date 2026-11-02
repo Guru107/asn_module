@@ -44,7 +44,7 @@ def breaches_for_purchase_receipt(doc) -> list[Breach]:
 
 	Keyed by ``purchase_order_item`` rather than the receipt's ``asn`` field: ``asn`` is
 	set only when the receipt was created through the ASN's own "Create Purchase Receipt"
-	action (handlers/purchase_receipt.py:create_from_asn). Nothing stops the standard
+	action (handlers/purchase_receipt.py:create_gate_pass_from_asn). Nothing stops the standard
 	Purchase Order -> Create -> Purchase Receipt action, which leaves ``asn`` empty, and
 	that receipt's goods must still not be counted once as in-transit on the originating
 	ASN and again as this receipt's own incoming.

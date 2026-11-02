@@ -21,7 +21,7 @@ from asn_module.handlers.purchase_receipt import (
 	_get_single_purchase_order,
 	_set_if_present,
 	asn_dispatch_action_key,
-	create_from_asn,
+	create_gate_pass_from_asn,
 	create_receipt_from_gate_pass,
 	stamp_receipt_built_by_gate_pass,
 )
@@ -377,7 +377,7 @@ class TestJobAsnScan(FrappeTestCase):
 			code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
 			with integration_user_context(), patch_subcontracting_incoming_rate(5):
 				first = dispatch(code=code, device_info="job-asn")
-				reopened = create_from_asn("ASN", asn.name, {})
+				reopened = create_gate_pass_from_asn("ASN", asn.name, {})
 				second = dispatch(code=code, device_info="job-asn-again")
 		finally:
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
@@ -832,7 +832,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 			with real_asn_attachment_context():
 				asn.submit()
 			with integration_user_context():
-				created = create_from_asn("ASN", asn.name, {})
+				created = create_gate_pass_from_asn("ASN", asn.name, {})
 		finally:
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
 
@@ -901,7 +901,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		try:
 			with integration_user_context():
 				_purchase_order, asn = self._submitted_material_asn()
-				receipt = create_from_asn("ASN", asn.name, {})
+				receipt = create_gate_pass_from_asn("ASN", asn.name, {})
 				frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
 				code = get_or_create_scan_code(ASN_GATE_PASS_SCAN_ACTION, "ASN", asn.name)
 				opened = dispatch(code=code, device_info="gate-pass-on-existing-receipt")
@@ -1130,7 +1130,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				opened = dispatch(code=code, device_info="gate-pass-before-existing-receipt")
 				frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
 				frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
-				existing = create_from_asn("ASN", asn.name, {})
+				existing = create_gate_pass_from_asn("ASN", asn.name, {})
 				created = create_receipt_from_gate_pass(opened["name"])
 		finally:
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
@@ -1217,7 +1217,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 					patch.object(controller, "validate", validate, create=True),
 					self.assertRaises(frappe.ValidationError) as raised,
 				):
-					create_from_asn("ASN", asn.name, {})
+					create_gate_pass_from_asn("ASN", asn.name, {})
 		finally:
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
 
@@ -1229,8 +1229,8 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		try:
 			with integration_user_context():
 				_purchase_order, asn = self._submitted_material_asn()
-				first = create_from_asn("ASN", asn.name, {})
-				second = create_from_asn("ASN", asn.name, {})
+				first = create_gate_pass_from_asn("ASN", asn.name, {})
+				second = create_gate_pass_from_asn("ASN", asn.name, {})
 		finally:
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
 
@@ -1253,7 +1253,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 					patch("asn_module.handlers.purchase_receipt.frappe.db.exists", side_effect=exists),
 					self.assertRaises(frappe.ValidationError) as raised,
 				):
-					create_from_asn("ASN", asn.name, {})
+					create_gate_pass_from_asn("ASN", asn.name, {})
 		finally:
 			frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
 

@@ -2,7 +2,7 @@
 
 ACTIONS = {
 	"create_purchase_receipt": {
-		"handler": "asn_module.handlers.purchase_receipt.create_from_asn",
+		"handler": "asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
 		"source_doctype": "ASN",
 		"roles": ["Stock User", "Stock Manager"],
 	},

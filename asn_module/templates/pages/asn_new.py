@@ -596,30 +596,6 @@ def _optional_supplier_invoice_amount() -> float:
 	return val
 
 
-def _request_supplier_invoice_amount() -> float:
-	raw = (frappe.form_dict.get("supplier_invoice_amount") or "").strip()
-	if not raw:
-		raise PortalValidationError(
-			[
-				error_entry(
-					field="supplier_invoice_amount",
-					message=_("Supplier invoice amount is required."),
-				)
-			]
-		)
-	val = frappe.utils.flt(raw)
-	if val < 0:
-		raise PortalValidationError(
-			[
-				error_entry(
-					field="supplier_invoice_amount",
-					message=_("Supplier invoice amount cannot be negative."),
-				)
-			]
-		)
-	return val
-
-
 def _safe_get(values: list[str], idx: int) -> str:
 	if idx < len(values):
 		return values[idx] or ""

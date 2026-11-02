@@ -450,7 +450,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 	def test_receipt_not_linked_to_its_asn_is_not_double_counted(self):
 		"""Nothing disables the standard Purchase Order -> Create -> Purchase Receipt
 		action, which leaves Purchase Receipt.asn empty -- handlers/purchase_receipt.py:
-		create_from_asn is the only place that sets it. breaches_for_purchase_receipt must
+		create_gate_pass_from_asn is the only place that sets it. breaches_for_purchase_receipt must
 		not double-count such a receipt's goods (once as the submitted ASN's in-transit
 		quantity, again as this receipt's own incoming) even though it has no ASN name to
 		exclude by; it must exclude by the Purchase Order Item instead.
