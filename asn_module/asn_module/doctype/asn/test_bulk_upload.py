@@ -1,4 +1,5 @@
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -10,6 +11,7 @@ from asn_module.templates.pages.asn_new_services import (
 	PortalValidationError,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+from asn_module.utils.test_setup import before_tests
 
 
 def _test_dates():
@@ -144,13 +146,41 @@ class TestDeskBulkASNUpload(FrappeTestCase):
 
 	def test_read_file_content_returns_bytes(self):
 		file_doc = frappe._dict(get_content=lambda: b"csv-bytes")
-		with patch("asn_module.asn_module.doctype.asn.bulk_upload.frappe.get_doc", return_value=file_doc):
+		with (
+			patch("asn_module.asn_module.doctype.asn.bulk_upload.frappe.get_doc", return_value=file_doc),
+			patch(
+				"asn_module.asn_module.doctype.asn.bulk_upload.frappe.has_permission",
+				return_value=True,
+			),
+		):
 			self.assertEqual(bulk_upload._read_file_content("/private/files/asn.csv"), b"csv-bytes")
 
 	def test_read_file_content_encodes_text(self):
 		file_doc = frappe._dict(get_content=lambda: "csv-text")
-		with patch("asn_module.asn_module.doctype.asn.bulk_upload.frappe.get_doc", return_value=file_doc):
+		with (
+			patch("asn_module.asn_module.doctype.asn.bulk_upload.frappe.get_doc", return_value=file_doc),
+			patch(
+				"asn_module.asn_module.doctype.asn.bulk_upload.frappe.has_permission",
+				return_value=True,
+			),
+		):
 			self.assertEqual(bulk_upload._read_file_content("/private/files/asn.csv"), b"csv-text")
+
+	def test_read_file_content_without_read_permission_raises_permission_error(self):
+		file_doc = frappe._dict(get_content=Mock(return_value=b"secret-cell-content"))
+		with (
+			patch("asn_module.asn_module.doctype.asn.bulk_upload.frappe.get_doc", return_value=file_doc),
+			patch(
+				"asn_module.asn_module.doctype.asn.bulk_upload.frappe.has_permission",
+				return_value=False,
+			),
+			self.assertRaises(frappe.PermissionError) as ctx,
+		):
+			bulk_upload._read_file_content("/private/files/secret.csv")
+
+		file_doc.get_content.assert_not_called()
+		self.assertNotIn("secret-cell-content", str(ctx.exception))
+		self.assertNotIn("/private/files/secret.csv", str(ctx.exception))
 
 	def test_read_file_content_raises_clear_error_for_missing_file(self):
 		with (
@@ -170,3 +200,112 @@ class TestDeskBulkASNUpload(FrappeTestCase):
 			bulk_upload._format_validation_errors([{"message": " "}]),
 			"Bulk upload failed. No ASNs created.",
 		)
+
+
+FILE_PERM_USER = "asn.bulk.upload.file.perm@asn-module.test"
+
+
+@contextmanager
+def _as_user(email: str):
+	previous = frappe.session.user
+	frappe.set_user(email)
+	try:
+		yield
+	finally:
+		frappe.set_user(previous)
+
+
+class TestDeskBulkUploadFilePermission(FrappeTestCase):
+	"""Issue #65 regression: the desk bulk-upload endpoint must check read permission
+	on the referenced File before reading its content, using the real Frappe permission
+	engine (a private File owned by someone else, a plain enabled User).
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		if not frappe.db.exists("User", FILE_PERM_USER):
+			user = frappe.get_doc(
+				{
+					"doctype": "User",
+					"email": FILE_PERM_USER,
+					"first_name": "ASN Bulk Upload Test",
+					"send_welcome_email": 0,
+					"enabled": 1,
+				}
+			)
+			user.insert(ignore_permissions=True)
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def _make_csv_file(self, *, file_name, content, is_private, owner=None):
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": file_name,
+				"content": content,
+				"is_private": is_private,
+			}
+		)
+		file_doc.insert(ignore_permissions=True)
+		if owner and file_doc.owner != owner:
+			frappe.db.set_value("File", file_doc.name, "owner", owner, update_modified=False)
+			file_doc.reload()
+		return file_doc
+
+	def test_create_from_csv_file_without_file_read_permission_raises_permission_error(self):
+		secret = "SECRET-CELL-78945"
+		file_doc = self._make_csv_file(
+			file_name=f"secret-{frappe.generate_hash(length=6)}.csv",
+			content=f"col\n{secret}",
+			is_private=1,
+		)
+		with (
+			patch.object(bulk_upload, "_require_desk_bulk_permissions"),
+			patch(
+				"asn_module.asn_module.doctype.asn.bulk_upload.parse_bulk_csv_content"
+			) as parse_bulk_csv_content,
+			patch(
+				"asn_module.asn_module.doctype.asn.bulk_upload.create_bulk_asns_for_supplier",
+				return_value=["ASN-0001"],
+			),
+			_as_user(FILE_PERM_USER),
+			self.assertRaises(frappe.PermissionError) as ctx,
+		):
+			bulk_upload.create_from_csv_file(file_url=file_doc.file_url, supplier="Supp-001")
+
+		parse_bulk_csv_content.assert_not_called()
+		self.assertNotIn(secret, str(ctx.exception))
+		self.assertNotIn(file_doc.file_name, str(ctx.exception))
+		self.assertNotIn(file_doc.file_url, str(ctx.exception))
+
+	def test_create_from_csv_file_with_file_read_permission_succeeds(self):
+		file_doc = self._make_csv_file(
+			file_name=f"owned-{frappe.generate_hash(length=6)}.csv",
+			content="csv-text",
+			is_private=1,
+			owner=FILE_PERM_USER,
+		)
+		rows = [_bulk_row()]
+		with (
+			patch.object(bulk_upload, "_require_desk_bulk_permissions"),
+			patch(
+				"asn_module.asn_module.doctype.asn.bulk_upload.parse_bulk_csv_content",
+				return_value=rows,
+			) as parse_bulk_csv_content,
+			patch(
+				"asn_module.asn_module.doctype.asn.bulk_upload.create_bulk_asns_for_supplier",
+				return_value=["ASN-0001"],
+			) as create_bulk_asns_for_supplier,
+			_as_user(FILE_PERM_USER),
+		):
+			result = bulk_upload.create_from_csv_file(file_url=file_doc.file_url, supplier="Supp-001")
+
+		parse_bulk_csv_content.assert_called_once_with(b"csv-text")
+		create_bulk_asns_for_supplier.assert_called_once_with("Supp-001", rows)
+		self.assertEqual(result, {"asn_names": ["ASN-0001"], "created_count": 1})

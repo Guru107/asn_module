@@ -50,6 +50,12 @@ def _read_file_content(file_url: str) -> bytes:
 			_("Uploaded file {0} was not found. Please re-upload the CSV.").format(file_url),
 			frappe.ValidationError,
 		)
+	if not frappe.has_permission("File", "read", doc=file_doc):
+		# Never echo the file URL, name, or any content back: the caller may not read it.
+		frappe.throw(
+			_("You do not have permission to read the uploaded file. Please re-upload the CSV."),
+			frappe.PermissionError,
+		)
 	content = file_doc.get_content()
 	if isinstance(content, bytes):
 		return content
