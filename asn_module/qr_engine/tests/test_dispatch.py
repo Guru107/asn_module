@@ -391,6 +391,47 @@ class TestDispatch(FrappeTestCase):
 		self.assertEqual(log["device_info"], "Desktop")
 		self.assertIn("handler failed", log["error_message"])
 
+	def test_dispatch_handler_failure_rolls_back_partial_writes(self):
+		code = self._make_scan_code(
+			action_key="create_purchase_receipt_partial_writes",
+			source_doctype=SOURCE_DOCTYPE,
+			source_name=SOURCE_NAME,
+		)
+		inserted = {}
+
+		def failing_handler(handler_method, source_doctype, source_name, payload):
+			todo = frappe.get_doc({"doctype": "ToDo", "description": "Partial handler write"}).insert(
+				ignore_permissions=True
+			)
+			inserted["todo_name"] = todo.name
+			raise RuntimeError("handler failed mid-insert")
+
+		with (
+			patched_action(
+				"create_purchase_receipt_partial_writes",
+				"asn_module.handlers.purchase_receipt.create_from_asn",
+			),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=failing_handler),
+		):
+			with self.assertRaises(RuntimeError):
+				dispatch(code=code, device_info="Desktop")
+
+		self.assertFalse(frappe.db.exists("ToDo", inserted["todo_name"]))
+		log = frappe.get_all(
+			"Scan Log",
+			filters={
+				"action": "create_purchase_receipt_partial_writes",
+				"source_name": SOURCE_NAME,
+				"result": "Failure",
+			},
+			fields=["scan_code", "error_message"],
+			order_by="creation desc",
+			limit=1,
+		)[0]
+		self.assertEqual(log["scan_code"], code)
+		self.assertIn("handler failed mid-insert", log["error_message"])
+
 	def test_dispatch_raises_permission_denied_for_users_without_allowed_roles(self):
 		code = self._make_scan_code()
 
