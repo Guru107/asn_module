@@ -15,6 +15,11 @@ context("ASN scan station", () => {
 		);
 	});
 
+	beforeEach(() => {
+		// Cypress test isolation clears the session between tests.
+		cy.login();
+	});
+
 	it("renders scan input and rejects URLs without code query parameter", () => {
 		cy.visit(route("scan-station"));
 		cy.get(".scan-input", { timeout: 20000 }).should("be.visible");
@@ -30,7 +35,9 @@ context("ASN scan station", () => {
 		cy.get(".scan-input").clear();
 		cy.get(".scan-input").type(seededData.scan_code);
 		cy.location("pathname", { timeout: 20000 }).should("include", "scan-station");
-		cy.get(".alert.desk-alert.green .alert-message a", { timeout: 20000 })
+		// v15 renders show_alert as .alert.desk-alert; v16 renders a toast.
+		// The created-document link is the version-neutral target.
+		cy.get('a[href*="/purchase-receipt/"]', { timeout: 20000 })
 			.should("be.visible")
 			.and("have.attr", "href")
 			.and("include", "/purchase-receipt/");
