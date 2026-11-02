@@ -1,17 +1,28 @@
-const route = (path) => {
-	const p = path.replace(/^\//, "");
-	return `/${Cypress.env("routePrefix")}/${p}`;
-};
-
 context("ASN portal smoke", () => {
+	let portalUser;
+	let portalPassword;
+
 	before(() => {
-		cy.login();
+		cy.seed_context("asn_module.utils.cypress_helpers.seed_supplier_asn_context").then(
+			(seededData) => {
+				portalUser = seededData.portal_user;
+				portalPassword = seededData.portal_password;
+			}
+		);
 	});
 
-	it("portal user can see ASN list page without errors", () => {
-		cy.visit(route("asn"), { failOnStatusCode: false });
-		cy.get(".page-head, .standard-list-section, .list-row-head", { timeout: 20000 }).should(
-			"exist"
+	beforeEach(() => {
+		cy.login(portalUser, portalPassword);
+		cy.request("/api/method/frappe.auth.get_logged_user")
+			.its("body.message")
+			.should("eq", portalUser);
+	});
+
+	it("portal user sees their ASN list with at least one row", () => {
+		cy.visit("/asn", { failOnStatusCode: false });
+		cy.get(".list-group .list-group-item", { timeout: 20000 }).should(
+			"have.length.greaterThan",
+			0
 		);
 	});
 });

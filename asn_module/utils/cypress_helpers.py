@@ -686,6 +686,32 @@ def seed_portal_draft_hidden_line_context():
 	}
 
 
+@frappe.whitelist()
+def seed_supplier_asn_context():
+	"""Portal supplier with one draft ASN, so the /asn portal list renders a row."""
+	if not frappe.conf.get("allow_tests"):
+		frappe.throw(_("Only available in test mode"))
+	frappe.only_for("System Manager")
+
+	supplier, portal_user, portal_password = _portal_e2e_supplier()
+	item_code = "_Cypress Portal List Item"
+	_ensure_cypress_item(item_code)
+	warehouse = _ensure_cypress_warehouse("_Cypress Portal List Warehouse")
+	po = _cypress_purchase_order(
+		supplier=supplier.name,
+		qty=10,
+		item_code=item_code,
+		warehouse=warehouse,
+		branch=None,
+	)
+	asn = _insert_cypress_asn(supplier=supplier.name, purchase_order=po, qty=1)
+	return {
+		"portal_user": portal_user,
+		"portal_password": portal_password,
+		"asn_name": asn.name,
+	}
+
+
 @frappe.whitelist(methods=["POST"])
 def seed_portal_branch_capacity_context(already_full: int = 0):
 	"""A portal purchase order whose branch can take 4, or nothing when already full."""
