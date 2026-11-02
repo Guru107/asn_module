@@ -301,6 +301,9 @@
 		</div>
 	</div>
 </div>
+{% if can_submit_portal or can_cancel_portal or can_delete_portal %}
+<script src="/assets/asn_module/js/asn_portal.js"></script>
+{% endif %}
 {% if can_submit_portal %}
 <script>
 (() => {
@@ -311,52 +314,6 @@
 	const errorDialogTitle = {{ _("Error") | tojson }};
 	const btn = document.getElementById("asn-portal-submit-detail");
 	if (!btn) return;
-
-	function escapeHtmlText(s) {
-		const d = document.createElement("div");
-		d.textContent = s;
-		return d.innerHTML;
-	}
-
-	function showPortalError(message) {
-		const text = (message || "").trim();
-		if (!text) return;
-		if (window.frappe && typeof frappe.msgprint === "function") {
-			frappe.msgprint({
-				title: errorDialogTitle,
-				indicator: "red",
-				message: `<p class="mb-0" style="white-space: pre-wrap;">${escapeHtmlText(text)}</p>`,
-			});
-			return;
-		}
-		window.alert(text);
-	}
-
-	function plainTextForAlert(raw) {
-		if (raw == null || raw === "") return null;
-		const d = document.createElement("div");
-		d.innerHTML = String(raw);
-		const t = (d.textContent || d.innerText || "").replace(/\s+/g, " ").trim();
-		return t || null;
-	}
-
-	function parseServerError(data) {
-		if (!data) return null;
-		if (data._server_messages) {
-			try {
-				const arr = JSON.parse(data._server_messages);
-				for (const row of arr) {
-					const o = typeof row === "string" ? JSON.parse(row) : row;
-					if (o && o.message) return plainTextForAlert(o.message);
-				}
-			} catch (e) { /* ignore */ }
-		}
-		if (typeof data.message === "string" && data.message.trim()) {
-			return plainTextForAlert(data.message);
-		}
-		if (data.exc_type || data.exception) return genericErr;
-		return null;
-	}
 
 	btn.addEventListener("click", async () => {
 		const asnName = btn.getAttribute("data-asn-name");
@@ -376,13 +333,13 @@
 			const data = await res.json();
 			const inner = data.message !== undefined ? data.message : data;
 			if (!res.ok || data.exc || (inner && inner.exc)) {
-				showPortalError(parseServerError(data) || genericErr);
+				asnPortal.showPortalError(asnPortal.parseServerError(data, genericErr), errorDialogTitle);
 				btn.disabled = false;
 				return;
 			}
 			window.location.href = (inner && inner.redirect) || window.location.href;
 		} catch (e) {
-			showPortalError(genericErr);
+			asnPortal.showPortalError(genericErr, errorDialogTitle);
 			btn.disabled = false;
 		}
 	});
@@ -393,115 +350,22 @@
 <script>
 (() => {
 	const csrf = {{ frappe.session.csrf_token | tojson }};
-	const cancelConfirmMsg = {{ _("Cancel this shipping notice? This cannot be undone. You can submit a new notice with a different supplier invoice number if you need to replace it.") | tojson }};
-	const cancelErr = {{ _("This notice could not be cancelled. Try again or contact your buyer for help.") | tojson }};
-	const deleteConfirmMsg = {{ _("Permanently delete this cancelled notice? This cannot be undone.") | tojson }};
-	const deleteErr = {{ _("This notice could not be deleted. Try again or contact your buyer for help.") | tojson }};
-	const cancelPath = "/api/method/asn_module.templates.pages.asn.cancel_portal_asn";
-	const deletePath = "/api/method/asn_module.templates.pages.asn.delete_portal_asn";
 	const errorDialogTitle = {{ _("Error") | tojson }};
-
-	function escapeHtmlText(s) {
-		const d = document.createElement("div");
-		d.textContent = s;
-		return d.innerHTML;
-	}
-
-	function showPortalError(message) {
-		const text = (message || "").trim();
-		if (!text) return;
-		if (window.frappe && typeof frappe.msgprint === "function") {
-			frappe.msgprint({
-				title: errorDialogTitle,
-				indicator: "red",
-				message: `<p class="mb-0" style="white-space: pre-wrap;">${escapeHtmlText(text)}</p>`,
-			});
-			return;
-		}
-		window.alert(text);
-	}
-
-	function plainTextForAlert(raw) {
-		if (raw == null || raw === "") return null;
-		const d = document.createElement("div");
-		d.innerHTML = String(raw);
-		const t = (d.textContent || d.innerText || "").replace(/\s+/g, " ").trim();
-		return t || null;
-	}
-
-	function parseServerError(data) {
-		if (!data) return null;
-		if (data._server_messages) {
-			try {
-				const arr = JSON.parse(data._server_messages);
-				for (const row of arr) {
-					const o = typeof row === "string" ? JSON.parse(row) : row;
-					if (o && o.message) return plainTextForAlert(o.message);
-				}
-			} catch (e) { /* ignore */ }
-		}
-		if (typeof data.message === "string" && data.message.trim()) {
-			return plainTextForAlert(data.message);
-		}
-		return null;
-	}
-
-	document.querySelectorAll(".asn-portal-cancel-detail").forEach((cancelBtn) => {
-		cancelBtn.addEventListener("click", async () => {
-			const asnName = cancelBtn.getAttribute("data-asn-name") || "";
-			if (!asnName || !confirm(cancelConfirmMsg)) return;
-			try {
-				const res = await fetch(cancelPath, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						Accept: "application/json",
-						"X-Frappe-CSRF-Token": csrf,
-					},
-					credentials: "same-origin",
-					body: JSON.stringify({ asn_name: asnName }),
-				});
-				const data = await res.json();
-				const inner = data.message !== undefined ? data.message : data;
-				if (!res.ok || data.exc || (inner && inner.exc)) {
-					showPortalError(parseServerError(data) || cancelErr);
-					return;
-				}
-				const redirect = typeof inner === "object" && inner.redirect ? inner.redirect : "/asn";
-				window.location.href = redirect;
-			} catch (e) {
-				showPortalError(cancelErr);
-			}
-		});
+	asnPortal.wireButtons(".asn-portal-cancel-detail", {
+		path: "/api/method/asn_module.templates.pages.asn.cancel_portal_asn",
+		csrf,
+		errorTitle: errorDialogTitle,
+		confirmMsg: {{ _("Cancel this shipping notice? This cannot be undone. You can submit a new notice with a different supplier invoice number if you need to replace it.") | tojson }},
+		errorMsg: {{ _("This notice could not be cancelled. Try again or contact your buyer for help.") | tojson }},
+		defaultRedirect: "/asn",
 	});
-
-	document.querySelectorAll(".asn-portal-delete-detail").forEach((deleteBtn) => {
-		deleteBtn.addEventListener("click", async () => {
-			const asnName = deleteBtn.getAttribute("data-asn-name") || "";
-			if (!asnName || !confirm(deleteConfirmMsg)) return;
-			try {
-				const res = await fetch(deletePath, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						Accept: "application/json",
-						"X-Frappe-CSRF-Token": csrf,
-					},
-					credentials: "same-origin",
-					body: JSON.stringify({ asn_name: asnName }),
-				});
-				const data = await res.json();
-				const inner = data.message !== undefined ? data.message : data;
-				if (!res.ok || data.exc || (inner && inner.exc)) {
-					showPortalError(parseServerError(data) || deleteErr);
-					return;
-				}
-				const redirect = typeof inner === "object" && inner.redirect ? inner.redirect : "/asn";
-				window.location.href = redirect;
-			} catch (e) {
-				showPortalError(deleteErr);
-			}
-		});
+	asnPortal.wireButtons(".asn-portal-delete-detail", {
+		path: "/api/method/asn_module.templates.pages.asn.delete_portal_asn",
+		csrf,
+		errorTitle: errorDialogTitle,
+		confirmMsg: {{ _("Permanently delete this cancelled notice? This cannot be undone.") | tojson }},
+		errorMsg: {{ _("This notice could not be deleted. Try again or contact your buyer for help.") | tojson }},
+		defaultRedirect: "/asn",
 	});
 })();
 </script>
