@@ -4,6 +4,7 @@ from frappe.utils import cint
 
 from asn_module.qr_engine.scan_codes import (
 	RESCAN_SAFE_ACTIONS,
+	claim_scan_code_for_single_use,
 	get_scan_code_doc,
 	normalize_scan_code,
 	record_successful_scan,
@@ -191,6 +192,13 @@ def _can_open_existing_result(scan_doc: frappe.model.document.Document, action_k
 	return True
 
 
+def _is_single_use_action(action_key: str, source_doctype: str) -> bool:
+	"""True for the single-use chain (gate pass → receipt etc.): the code is claimed
+	atomically before the handler runs. ASN actions reopen their own drafts from
+	Used codes and re-scan-safe actions never flip status, so neither claims."""
+	return source_doctype != "ASN" and action_key not in RESCAN_SAFE_ACTIONS
+
+
 def _payload_from_scan_code_registry(scan_doc: frappe.model.document.Document, device_info: str) -> dict:
 	return {
 		"action": scan_doc.action_key,
@@ -278,6 +286,12 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		# handler writes never commit; only the Failure Scan Log does.
 		frappe.db.savepoint(DISPATCH_SAVEPOINT)
 		handler_savepoint_taken = True
+
+		# Claim single-use codes atomically inside the savepoint: a concurrent
+		# scan of the same code loses the rowcount race here, and a failed
+		# handler rolls the claim back with the savepoint.
+		if _is_single_use_action(action_key, action["source_doctype"]):
+			claim_scan_code_for_single_use(scan_doc.name)
 
 		handler_result = _validate_handler_result(
 			_call_handler(action["handler"], source_doctype, source_name, payload)
