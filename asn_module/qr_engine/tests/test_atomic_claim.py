@@ -12,12 +12,14 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.qr_engine.dispatch import dispatch
-from asn_module.qr_engine.scan_codes import (
-	claim_scan_code_for_single_use,
-	get_or_create_scan_code,
+from asn_module.asn_module.doctype.asn.test_asn import (
+	create_purchase_order_with_fiscal_dates,
+	make_test_asn,
 )
+from asn_module.qr_engine.dispatch import dispatch
+from asn_module.qr_engine.scan_codes import claim_scan_code_for_single_use, get_or_create_scan_code
 from asn_module.qr_engine.tests.test_dispatch import patched_action
+from asn_module.utils.test_setup import before_tests
 
 HANDLER = "asn_module.handlers.purchase_receipt.create_from_asn"
 
@@ -27,8 +29,26 @@ def _make_todo(description):
 
 
 class TestAtomicScanClaim(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		before_tests()
+		super().setUpClass()
+
 	def _make_scan_code(self, action_key, source_doctype="DocType", source_name="User"):
-		return get_or_create_scan_code(action_key, source_doctype, source_name)
+		# Fake sources need ignore_links; the dispatch tests do the same.
+		from asn_module.qr_engine.scan_codes import _random_scan_code_value
+
+		doc = frappe.get_doc(
+			{
+				"doctype": "Scan Code",
+				"scan_code": _random_scan_code_value(),
+				"action_key": action_key,
+				"source_doctype": source_doctype,
+				"source_name": source_name,
+			}
+		)
+		doc.insert(ignore_permissions=True, ignore_links=True)
+		return doc.name
 
 	def test_second_claim_on_same_code_loses(self):
 		"""The conditional UPDATE changes exactly one row; the loser gets rowcount 0."""
@@ -112,7 +132,11 @@ class TestAtomicScanClaim(FrappeTestCase):
 
 	def test_asn_action_rescan_reopens_draft_without_claiming(self):
 		"""ASN scans reopen their own draft from a Used code; they must not claim."""
-		code = self._make_scan_code("create_purchase_receipt", "ASN", "Fake-ASN-For-Test")
+		purchase_order = create_purchase_order_with_fiscal_dates(qty=2)
+		asn = make_test_asn(purchase_order=purchase_order, qty=1)
+		asn.insert(ignore_permissions=True)
+
+		code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
 		frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
 		todo = _make_todo("Existing ASN draft")
 
