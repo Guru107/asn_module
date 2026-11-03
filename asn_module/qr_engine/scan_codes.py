@@ -134,15 +134,19 @@ def normalize_scan_code(code: str | None) -> str:
 	return raw
 
 
+def _throw_already_used() -> None:
+	frappe.throw(
+		_("This scan code has already been used and cannot be scanned again."),
+		title=_("Scan not allowed"),
+	)
+
+
 def validate_scan_code_row(doc: frappe.model.document.Document, action_key: str) -> None:
 	"""Validate status and re-scan rules."""
 	if doc.status == "Used":
 		if action_key in RESCAN_SAFE_ACTIONS:
 			return
-		frappe.throw(
-			_("This scan code has already been used and cannot be scanned again."),
-			title=_("Scan not allowed"),
-		)
+		_throw_already_used()
 
 	if doc.status != "Active":
 		frappe.throw(_("This scan code is not valid for scanning."), title=_("Scan not allowed"))
@@ -163,6 +167,22 @@ def record_successful_scan(doc_name: str, action_key: str) -> None:
 
 	if action_key not in RESCAN_SAFE_ACTIONS:
 		frappe.db.set_value("Scan Code", doc_name, "status", "Used", update_modified=True)
+
+
+def claim_scan_code_for_single_use(doc_name: str) -> None:
+	"""Flip ``Active`` → ``Used`` in one conditional UPDATE so concurrent scans race on the row.
+
+	The winner changes exactly one row and proceeds; a concurrent loser changes
+	none (``ROW_COUNT()`` = 0) and gets the same already-used error as
+	``validate_scan_code_row``. Called inside the dispatch savepoint, so a failed
+	handler rolls the claim back and the code stays re-scannable.
+	"""
+	frappe.db.sql(
+		"UPDATE `tabScan Code` SET `status` = 'Used' WHERE `name` = %s AND `status` = 'Active'",
+		(doc_name,),
+	)
+	if cint(frappe.db.sql("SELECT ROW_COUNT()")[0][0]) != 1:
+		_throw_already_used()
 
 
 def purge_scan_codes_for_source(source_doctype: str, source_name: str) -> None:
