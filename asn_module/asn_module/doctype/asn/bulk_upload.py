@@ -43,14 +43,22 @@ def _require_desk_bulk_permissions():
 
 
 def _read_file_content(file_url: str) -> bytes:
-	try:
-		file_doc = frappe.get_doc("File", {"file_url": file_url})
-	except frappe.DoesNotExistError:
+	# Several File rows can share one URL (same file attached from different
+	# places); check permission per row and use the first the caller may read,
+	# newest first, instead of whichever an arbitrary first match returns.
+	file_names = frappe.get_all(
+		"File", filters={"file_url": file_url}, pluck="name", order_by="creation desc"
+	)
+	if not file_names:
 		frappe.throw(
 			_("Uploaded file {0} was not found. Please re-upload the CSV.").format(file_url),
 			frappe.ValidationError,
 		)
-	if not frappe.has_permission("File", "read", doc=file_doc):
+	for file_name in file_names:
+		file_doc = frappe.get_doc("File", file_name)
+		if frappe.has_permission("File", "read", doc=file_doc):
+			break
+	else:
 		# Never echo the file URL, name, or any content back: the caller may not read it.
 		frappe.throw(
 			_("You do not have permission to read the uploaded file. Please re-upload the CSV."),
