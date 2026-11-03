@@ -7,6 +7,7 @@ codes; legacy compatibility is out of scope unless explicitly requested.
 from __future__ import annotations
 
 import secrets
+from typing import NoReturn
 
 import frappe
 from frappe import _
@@ -134,7 +135,7 @@ def normalize_scan_code(code: str | None) -> str:
 	return raw
 
 
-def _throw_already_used() -> None:
+def _throw_already_used() -> NoReturn:
 	frappe.throw(
 		_("This scan code has already been used and cannot be scanned again."),
 		title=_("Scan not allowed"),
@@ -169,19 +170,29 @@ def record_successful_scan(doc_name: str, action_key: str) -> None:
 		frappe.db.set_value("Scan Code", doc_name, "status", "Used", update_modified=True)
 
 
+def is_single_use_action(action_key: str, source_doctype: str) -> bool:
+	"""True for the single-use chain (gate pass → receipt etc.): the code is claimed
+	atomically before the handler runs. ASN actions reopen their own drafts from
+	Used codes and re-scan-safe actions never flip status, so neither claims."""
+	return source_doctype != "ASN" and action_key not in RESCAN_SAFE_ACTIONS
+
+
 def claim_scan_code_for_single_use(doc_name: str) -> None:
 	"""Flip ``Active`` → ``Used`` in one conditional UPDATE so concurrent scans race on the row.
 
-	The winner changes exactly one row and proceeds; a concurrent loser changes
-	none (``ROW_COUNT()`` = 0) and gets the same already-used error as
-	``validate_scan_code_row``. Called inside the dispatch savepoint, so a failed
-	handler rolls the claim back and the code stays re-scannable.
+	The winner changes exactly one row and proceeds; a loser's UPDATE matches none
+	and gets the same already-used error as ``validate_scan_code_row``. Called
+	inside the dispatch savepoint, so a failed handler rolls the claim back and
+	the code stays re-scannable.
 	"""
 	frappe.db.sql(
-		"UPDATE `tabScan Code` SET `status` = 'Used' WHERE `name` = %s AND `status` = 'Active'",
-		(doc_name,),
+		"UPDATE `tabScan Code` SET `status` = 'Used', `modified` = %s, `modified_by` = %s "
+		"WHERE `name` = %s AND `status` = 'Active'",
+		(now_datetime(), frappe.session.user, doc_name),
 	)
-	if cint(frappe.db.sql("SELECT ROW_COUNT()")[0][0]) != 1:
+	# frappe exposes no public affected-rows count; the cursor's rowcount reflects
+	# the UPDATE just executed on this connection (set by both supported drivers).
+	if frappe.db._cursor.rowcount != 1:
 		_throw_already_used()
 
 

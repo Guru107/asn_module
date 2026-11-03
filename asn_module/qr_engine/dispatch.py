@@ -6,6 +6,7 @@ from asn_module.qr_engine.scan_codes import (
 	RESCAN_SAFE_ACTIONS,
 	claim_scan_code_for_single_use,
 	get_scan_code_doc,
+	is_single_use_action,
 	normalize_scan_code,
 	record_successful_scan,
 	validate_scan_code_row,
@@ -113,19 +114,23 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 DISPATCH_SAVEPOINT = "qr_scan_dispatch"
 
 
-def _rollback_to_dispatch_savepoint() -> None:
+def _rollback_to_dispatch_savepoint() -> bool:
 	"""Undo a failed handler's partial writes so only the Failure Scan Log commits.
 
-	Best effort, mirroring ``insert_and_submit_asn``: if the rollback itself fails,
-	the failure log is still attempted and the original error propagates.
+	Returns False when the rollback itself fails: the except path must then NOT
+	commit, because committing would persist the partial writes and the stale
+	scan-code claim — the request's error handling rolls everything back instead,
+	leaving the code re-scannable.
 	"""
 	try:
 		frappe.db.rollback(save_point=DISPATCH_SAVEPOINT)
+		return True
 	except Exception:
 		frappe.log_error(
 			title="QR dispatch: failed to roll back partial handler writes",
 			message=frappe.get_traceback(),
 		)
+		return False
 
 
 def _latest_success_document(
@@ -190,13 +195,6 @@ def _can_open_existing_result(scan_doc: frappe.model.document.Document, action_k
 	if scan_doc.status != "Used" or action_key in RESCAN_SAFE_ACTIONS:
 		return False
 	return True
-
-
-def _is_single_use_action(action_key: str, source_doctype: str) -> bool:
-	"""True for the single-use chain (gate pass → receipt etc.): the code is claimed
-	atomically before the handler runs. ASN actions reopen their own drafts from
-	Used codes and re-scan-safe actions never flip status, so neither claims."""
-	return source_doctype != "ASN" and action_key not in RESCAN_SAFE_ACTIONS
 
 
 def _payload_from_scan_code_registry(scan_doc: frappe.model.document.Document, device_info: str) -> dict:
@@ -287,10 +285,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		frappe.db.savepoint(DISPATCH_SAVEPOINT)
 		handler_savepoint_taken = True
 
-		# Claim single-use codes atomically inside the savepoint: a concurrent
-		# scan of the same code loses the rowcount race here, and a failed
-		# handler rolls the claim back with the savepoint.
-		if _is_single_use_action(action_key, action["source_doctype"]):
+		if is_single_use_action(action_key, action["source_doctype"]):
 			claim_scan_code_for_single_use(scan_doc.name)
 
 		handler_result = _validate_handler_result(
@@ -321,8 +316,9 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			"message": handler_result.get("message", ""),
 		}
 	except Exception as exc:
+		rolled_back = True
 		if handler_savepoint_taken:
-			_rollback_to_dispatch_savepoint()
+			rolled_back = _rollback_to_dispatch_savepoint()
 		failure_source_doctype, failure_source_name = _get_failure_log_identity(source_doctype, source_name)
 		_log_scan(
 			action=action_key,
@@ -333,5 +329,8 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			scan_code=scan_code_name,
 			error_message=str(exc),
 		)
-		frappe.db.commit()
+		if rolled_back:
+			# Only the Failure Scan Log commits. On rollback failure, commit nothing:
+			# the request's error handling aborts the transaction, claim included.
+			frappe.db.commit()
 		raise
