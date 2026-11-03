@@ -109,6 +109,24 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 	return handler_fn(source_doctype=source_doctype, source_name=source_name, payload=payload)
 
 
+DISPATCH_SAVEPOINT = "qr_scan_dispatch"
+
+
+def _rollback_to_dispatch_savepoint() -> None:
+	"""Undo a failed handler's partial writes so only the Failure Scan Log commits.
+
+	Best effort, mirroring ``insert_and_submit_asn``: if the rollback itself fails,
+	the failure log is still attempted and the original error propagates.
+	"""
+	try:
+		frappe.db.rollback(save_point=DISPATCH_SAVEPOINT)
+	except Exception:
+		frappe.log_error(
+			title="QR dispatch: failed to roll back partial handler writes",
+			message=frappe.get_traceback(),
+		)
+
+
 def _latest_success_document(
 	action_key: str,
 	source_doctype: str,
@@ -198,6 +216,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 	source_doctype = None
 	source_name = None
 	scan_code_name = None
+	handler_savepoint_taken = False
 
 	try:
 		if not normalized:
@@ -255,6 +274,11 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 
 		payload = _payload_from_scan_code_registry(scan_doc, device_info)
 
+		# On handler error the except path rolls back to this savepoint, so partial
+		# handler writes never commit; only the Failure Scan Log does.
+		frappe.db.savepoint(DISPATCH_SAVEPOINT)
+		handler_savepoint_taken = True
+
 		handler_result = _validate_handler_result(
 			_call_handler(action["handler"], source_doctype, source_name, payload)
 		)
@@ -283,6 +307,8 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			"message": handler_result.get("message", ""),
 		}
 	except Exception as exc:
+		if handler_savepoint_taken:
+			_rollback_to_dispatch_savepoint()
 		failure_source_doctype, failure_source_name = _get_failure_log_identity(source_doctype, source_name)
 		_log_scan(
 			action=action_key,
