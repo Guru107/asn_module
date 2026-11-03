@@ -50,15 +50,20 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 				$input.val("").prop("disabled", false).focus();
 
 				if (r.message && r.message.success) {
+					const doc_link = r.message.url
+						? ` <a href="${r.message.url}">${frappe.utils.escape_html(
+								r.message.name || r.message.url
+						  )}</a>`
+						: "";
 					frappe.show_alert(
 						{
-							message: __(r.message.message || "Document created"),
+							message: __(r.message.message || "Document created") + doc_link,
 							indicator: "green",
 						},
 						5
 					);
-					// Navigate to created document
-					frappe.set_route(r.message.url);
+					// Stay on the station; refresh history so the new scan shows up.
+					load_scan_history();
 				}
 			},
 			error(r) {
