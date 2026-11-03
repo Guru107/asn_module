@@ -15,3 +15,5 @@ def after_migrate():
 	setup_pr_fields()
 	setup_scr_fields()
 	setup_pi_fields()
+	# Idempotent by name; sites that installed before the templates existed pick them up here.
+	create_notifications()

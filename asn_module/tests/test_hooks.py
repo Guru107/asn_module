@@ -53,6 +53,28 @@ class TestHooks(FrappeTestCase):
 		create_notifications.assert_called_once_with()
 		self.assertEqual(call_order, ["pr", "scr", "pi", "notif"])
 
+	@patch("asn_module.setup.setup_pi_fields")
+	@patch("asn_module.setup.setup_scr_fields")
+	@patch("asn_module.setup.setup_pr_fields")
+	@patch("asn_module.setup.create_notifications")
+	def test_after_migrate_sets_up_fields_and_notifications(
+		self,
+		create_notifications,
+		setup_pr_fields,
+		setup_scr_fields,
+		setup_pi_fields,
+	):
+		setup_module.after_migrate()
+
+		setup_pr_fields.assert_called_once_with()
+		setup_scr_fields.assert_called_once_with()
+		setup_pi_fields.assert_called_once_with()
+		create_notifications.assert_called_once_with()
+
+	def test_after_migrate_hook_is_registered(self):
+		# Creation is idempotent by name, so migrate repairs sites that predate the templates.
+		self.assertEqual(hooks.after_migrate, "asn_module.setup.after_migrate")
+
 	def test_purchase_receipt_custom_fields_define_asn_link_and_item_mapping(self):
 		with patch("asn_module.custom_fields.purchase_receipt.create_custom_fields") as create_custom_fields:
 			purchase_receipt_fields.setup()

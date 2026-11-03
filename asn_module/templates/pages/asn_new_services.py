@@ -189,20 +189,23 @@ def validate_supplier_invoices_not_reused(
 	``exclude_asn_name`` is the draft being resumed. The ASN controller already ignores
 	that document in its own uniqueness check. This gate has to do the same, or the
 	supplier cannot submit the draft under the invoice number already stored on it.
+
+	One batched query for the whole list; a bulk CSV can carry 500 invoice numbers.
 	"""
+	requested = [inv for raw in invoice_numbers if (inv := (raw or "").strip())]
+	if not requested:
+		return
+	filters = {
+		"supplier": supplier,
+		"supplier_invoice_no": ("in", sorted(set(requested))),
+		"docstatus": ("!=", 2),
+	}
+	if exclude_asn_name:
+		filters["name"] = ("!=", exclude_asn_name)
+	reused = set(frappe.get_all("ASN", filters=filters, pluck="supplier_invoice_no"))
 	errors: list[dict] = []
-	for raw in invoice_numbers:
-		inv = (raw or "").strip()
-		if not inv:
-			continue
-		filters = {
-			"supplier": supplier,
-			"supplier_invoice_no": inv,
-			"docstatus": ("!=", 2),
-		}
-		if exclude_asn_name:
-			filters["name"] = ("!=", exclude_asn_name)
-		if not frappe.db.exists("ASN", filters):
+	for inv in requested:
+		if inv not in reused:
 			continue
 		errors.append(
 			error_entry(
