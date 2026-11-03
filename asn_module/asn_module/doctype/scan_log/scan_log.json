@@ -102,7 +102,7 @@
 	],
 	"index_web_pages_for_search": 0,
 	"in_create": 1,
-	"modified": "2026-04-02 00:00:00.000000",
+	"modified": "2026-11-02 00:00:00.000000",
 	"modified_by": "Administrator",
 	"module": "ASN Module",
 	"name": "Scan Log",
@@ -128,5 +128,9 @@
 	"sort_field": "creation",
 	"sort_order": "DESC",
 	"states": [],
-	"indexes": [["scan_code", "action", "source_doctype", "source_name", "result"]]
+	"indexes": [
+		["scan_code", "action", "source_doctype", "source_name", "result"],
+		["result_doctype", "result_name"],
+		["source_doctype", "source_name"]
+	]
 }
