@@ -6,4 +6,3 @@
 # Patches added in this section will be executed after doctypes are migrated
 asn_module.patches.remove_item_max_stock_field
 asn_module.patches.retire_qr_machinery
-asn_module.patches.add_scan_registry_indexes
