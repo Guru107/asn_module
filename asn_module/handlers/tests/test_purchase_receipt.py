@@ -13,7 +13,6 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 )
 from asn_module.handlers.purchase_receipt import (
 	asn_dispatch_action_key,
-	create_from_asn,
 	create_gate_pass_from_asn,
 	on_purchase_receipt_before_submit,
 	on_purchase_receipt_submit,
@@ -64,7 +63,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 	def test_creates_draft_purchase_receipt_from_asn(self):
 		asn = self._make_submitted_asn()
 
-		result = create_from_asn(
+		result = create_gate_pass_from_asn(
 			source_doctype="ASN",
 			source_name=asn.name,
 			payload={"action": "create_purchase_receipt"},
@@ -86,12 +85,12 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 	def test_duplicate_scan_returns_existing_draft_purchase_receipt(self):
 		asn = self._make_submitted_asn()
 
-		first = create_from_asn(
+		first = create_gate_pass_from_asn(
 			source_doctype="ASN",
 			source_name=asn.name,
 			payload={"action": "create_purchase_receipt"},
 		)
-		second = create_from_asn(
+		second = create_gate_pass_from_asn(
 			source_doctype="ASN",
 			source_name=asn.name,
 			payload={"action": "create_purchase_receipt"},
@@ -108,7 +107,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		frappe.db.set_value("ASN", asn.name, "status", "Received", update_modified=False)
 
 		with self.assertRaises(frappe.ValidationError):
-			create_from_asn(
+			create_gate_pass_from_asn(
 				source_doctype="ASN",
 				source_name=asn.name,
 				payload={"action": "create_purchase_receipt"},
@@ -119,7 +118,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		frappe.db.set_value("ASN", asn.name, "status", "Closed", update_modified=False)
 
 		with self.assertRaises(frappe.ValidationError):
-			create_from_asn(
+			create_gate_pass_from_asn(
 				source_doctype="ASN",
 				source_name=asn.name,
 				payload={"action": "create_purchase_receipt"},
@@ -131,26 +130,26 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		asn.insert(ignore_permissions=True)
 
 		with self.assertRaises(frappe.ValidationError):
-			create_from_asn(
+			create_gate_pass_from_asn(
 				source_doctype="ASN",
 				source_name=asn.name,
 				payload={"action": "create_purchase_receipt"},
 			)
 
-	def test_create_from_asn_returns_existing_draft_without_creating_new_doc(self):
+	def test_create_gate_pass_from_asn_returns_existing_draft_without_creating_new_doc(self):
 		asn = SimpleNamespace(docstatus=1, status="Submitted", name="ASN-UNIT-001")
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
 			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value="PR-DRAFT-001"),
 			patch("asn_module.handlers.purchase_receipt.frappe.new_doc") as new_doc,
 		):
-			result = create_from_asn("ASN", "ASN-UNIT-001", payload={})
+			result = create_gate_pass_from_asn("ASN", "ASN-UNIT-001", payload={})
 
 		self.assertEqual(result["name"], "PR-DRAFT-001")
 		self.assertIn("/app/purchase-receipt/PR-DRAFT-001", result["url"])
 		new_doc.assert_not_called()
 
-	def test_create_from_asn_builds_purchase_receipt_and_transition_logs(self):
+	def test_create_gate_pass_from_asn_builds_purchase_receipt_and_transition_logs(self):
 		asn_item = SimpleNamespace(
 			idx=1,
 			name="ASN-ITEM-001",
@@ -215,7 +214,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			patch("asn_module.handlers.purchase_receipt.make_purchase_receipt", return_value=pr) as make_pr,
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
 		):
-			result = create_from_asn("ASN", "ASN-UNIT-002", payload={})
+			result = create_gate_pass_from_asn("ASN", "ASN-UNIT-002", payload={})
 
 		self.assertEqual(result["name"], "PR-UNIT-002")
 		self.assertEqual(pr.supplier, "Supp-001")
@@ -314,7 +313,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		with _mock_asn_attachments():
 			asn.submit()
 
-		result = create_from_asn(
+		result = create_gate_pass_from_asn(
 			source_doctype="ASN",
 			source_name=asn.name,
 			payload={"action": "create_purchase_receipt"},
@@ -361,7 +360,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		with _mock_asn_attachments():
 			asn.submit()
 
-		result = create_from_asn(
+		result = create_gate_pass_from_asn(
 			source_doctype="ASN",
 			source_name=asn.name,
 			payload={"action": "create_purchase_receipt"},

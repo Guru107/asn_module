@@ -823,7 +823,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 					"expected_delivery_date": _test_dates()["expected_delivery_date"],
 				}.get(field, ""),
 			),
-			patch("asn_module.templates.pages.asn_new._request_supplier_invoice_amount", return_value=20),
 			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=rows),
 			patch(
 				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
@@ -1251,7 +1250,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 					field, ""
 				),
 			),
-			patch("asn_module.templates.pages.asn_new._request_supplier_invoice_amount", return_value=20),
 			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=rows),
 			patch(
 				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
@@ -1301,7 +1299,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				"asn_module.templates.pages.asn_new._request_value",
 				side_effect=lambda field: {"portal_action": "draft"}.get(field, ""),
 			),
-			patch("asn_module.templates.pages.asn_new._request_supplier_invoice_amount", return_value=20),
 			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=rows),
 			patch(
 				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
@@ -1342,7 +1339,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 					field, ""
 				),
 			),
-			patch("asn_module.templates.pages.asn_new._request_supplier_invoice_amount", return_value=20),
 			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=rows),
 			patch(
 				"asn_module.templates.pages.asn_new.fetch_purchase_order_items",
@@ -1429,30 +1425,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 		rollback.assert_called_once_with(save_point="asn_portal_submit")
 		log_error.assert_called_once()
 
-	def test_request_supplier_invoice_amount_valid(self):
-		with (
-			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace()),
-			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"supplier_invoice_amount": "100"}),
-		):
-			result = asn_new._request_supplier_invoice_amount()
-		self.assertEqual(result, 100.0)
-
-	def test_request_supplier_invoice_amount_negative_raises(self):
-		with (
-			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace()),
-			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"supplier_invoice_amount": "-10"}),
-			self.assertRaises(PortalValidationError),
-		):
-			asn_new._request_supplier_invoice_amount()
-
-	def test_request_supplier_invoice_amount_empty_raises(self):
-		with (
-			patch("asn_module.templates.pages.asn_new.frappe.request", SimpleNamespace()),
-			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"supplier_invoice_amount": ""}),
-			self.assertRaises(PortalValidationError),
-		):
-			asn_new._request_supplier_invoice_amount()
-
 	def test_default_asn_route_format(self):
 		route = asn_new._default_asn_route("ASN-001")
 		self.assertTrue(route.startswith("asn/"))
@@ -1522,10 +1494,6 @@ class TestSingleFormSavesDraft(FrappeTestCase):
 					"expected_delivery_date": _test_dates()["expected_delivery_date"],
 					"vehicle_number": "MH12AB1234",
 				}.get(field, ""),
-			),
-			patch(
-				"asn_module.templates.pages.asn_new._request_supplier_invoice_amount",
-				return_value=float(self.po_item.rate or 1),
 			),
 			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=self._rows()),
 		):

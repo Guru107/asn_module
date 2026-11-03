@@ -52,11 +52,6 @@ def create_gate_pass_from_asn(source_doctype: str, source_name: str, payload: di
 	return _open_gate_pass_from_asn(asn, source_name)
 
 
-def create_from_asn(source_doctype: str, source_name: str, payload: dict) -> dict:
-	"""Create a draft receipt from a submitted ASN (PR, SCR, or Gate Pass per site mode)."""
-	return create_gate_pass_from_asn(source_doctype, source_name, payload)
-
-
 def _open_existing_draft_purchase_receipt_for_asn(asn_name: str) -> dict | None:
 	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": asn_name, "docstatus": 0}, "name")
 	if not existing_pr:

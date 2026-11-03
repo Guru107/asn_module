@@ -50,7 +50,7 @@ class TestDispatch(FrappeTestCase):
 	def test_resolve_action_returns_the_code_defined_action(self):
 		action = _resolve_action("create_purchase_receipt")
 
-		self.assertEqual(action["handler"], "asn_module.handlers.purchase_receipt.create_from_asn")
+		self.assertEqual(action["handler"], "asn_module.handlers.purchase_receipt.create_gate_pass_from_asn")
 		self.assertEqual(action["source_doctype"], "ASN")
 		self.assertEqual(action["allowed_roles"], ["Stock User", "Stock Manager"])
 
@@ -63,7 +63,7 @@ class TestDispatch(FrappeTestCase):
 		frappe.local.flags.commit = False
 
 		def call_handler(handler_method, source_doctype, source_name, payload):
-			self.assertEqual(handler_method, "asn_module.handlers.purchase_receipt.create_from_asn")
+			self.assertEqual(handler_method, "asn_module.handlers.purchase_receipt.create_gate_pass_from_asn")
 			self.assertEqual(source_doctype, SOURCE_DOCTYPE)
 			self.assertEqual(source_name, SOURCE_NAME)
 			self.assertEqual(payload["action"], "create_purchase_receipt")
@@ -81,7 +81,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.handlers.purchase_receipt.create_from_asn",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=call_handler),
@@ -140,7 +140,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.handlers.purchase_receipt.create_from_asn",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 		):
@@ -220,7 +220,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.handlers.purchase_receipt.create_from_asn",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			self.assertRaises(frappe.ValidationError),
@@ -249,7 +249,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.handlers.purchase_receipt.create_from_asn",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			self.assertRaises(frappe.ValidationError),
@@ -329,7 +329,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt_partial_result",
-				"asn_module.handlers.purchase_receipt.create_from_asn",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch(
@@ -368,7 +368,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt_failure",
-				"asn_module.handlers.purchase_receipt.create_from_asn",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=ValueError("handler failed")),
@@ -397,7 +397,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"create_purchase_receipt",
-				"asn_module.handlers.purchase_receipt.create_from_asn",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
 				roles=["Stock User", "Stock Manager"],
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["Accounts User"]),
