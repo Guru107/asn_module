@@ -185,11 +185,18 @@ def claim_scan_code_for_single_use(doc_name: str) -> None:
 	inside the dispatch savepoint, so a failed handler rolls the claim back and
 	the code stays re-scannable.
 	"""
-	frappe.db.sql(
-		"UPDATE `tabScan Code` SET `status` = 'Used', `modified` = %s, `modified_by` = %s "
-		"WHERE `name` = %s AND `status` = 'Active'",
-		(now_datetime(), frappe.session.user, doc_name),
-	)
+	# Under REPEATABLE READ the loser can also lose as error 1020 ("record has
+	# changed since last read"): it read the row before the winner committed, so
+	# InnoDB refuses the UPDATE outright instead of matching zero rows. Same
+	# outcome either way: the race was lost, so report the code as used.
+	try:
+		frappe.db.sql(
+			"UPDATE `tabScan Code` SET `status` = 'Used', `modified` = %s, `modified_by` = %s "
+			"WHERE `name` = %s AND `status` = 'Active'",
+			(now_datetime(), frappe.session.user, doc_name),
+		)
+	except frappe.QueryDeadlockError:
+		_throw_already_used()
 	# frappe exposes no public affected-rows count; the cursor's rowcount reflects
 	# the UPDATE just executed on this connection (set by both supported drivers).
 	if frappe.db._cursor.rowcount != 1:

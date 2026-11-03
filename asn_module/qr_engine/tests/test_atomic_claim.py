@@ -75,6 +75,22 @@ class TestAtomicScanClaim(FrappeTestCase):
 			claim_scan_code_for_single_use(code)
 		self.assertIn("already been used", str(cm.exception))
 
+	def test_claim_snapshot_conflict_throws_already_used(self):
+		"""InnoDB 1020 (stale REPEATABLE READ snapshot on a raced row) is a lost race."""
+		code = _make_scan_code("claim_snapshot_conflict_probe")
+
+		with (
+			patch(
+				"asn_module.qr_engine.scan_codes.frappe.db.sql",
+				side_effect=frappe.QueryDeadlockError("1020"),
+			),
+			self.assertRaises(frappe.ValidationError) as cm,
+		):
+			claim_scan_code_for_single_use(code)
+
+		self.assertIn("already been used", str(cm.exception))
+		self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Active")
+
 	def test_concurrent_dispatch_on_two_connections_creates_exactly_one_draft(self):
 		"""Two stations on separate connections: the loser's claim UPDATE blocks on
 		the winner's row lock and changes zero rows once the winner commits."""
