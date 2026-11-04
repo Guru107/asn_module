@@ -4,7 +4,9 @@ from frappe.utils import cint
 
 from asn_module.qr_engine.scan_codes import (
 	RESCAN_SAFE_ACTIONS,
+	claim_scan_code_for_single_use,
 	get_scan_code_doc,
+	is_single_use_action,
 	normalize_scan_code,
 	record_successful_scan,
 	validate_scan_code_row,
@@ -112,19 +114,23 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 DISPATCH_SAVEPOINT = "qr_scan_dispatch"
 
 
-def _rollback_to_dispatch_savepoint() -> None:
+def _rollback_to_dispatch_savepoint() -> bool:
 	"""Undo a failed handler's partial writes so only the Failure Scan Log commits.
 
-	Best effort, mirroring ``insert_and_submit_asn``: if the rollback itself fails,
-	the failure log is still attempted and the original error propagates.
+	Returns False when the rollback itself fails: the except path must then NOT
+	commit, because committing would persist the partial writes and the stale
+	scan-code claim — the request's error handling rolls everything back instead,
+	leaving the code re-scannable.
 	"""
 	try:
 		frappe.db.rollback(save_point=DISPATCH_SAVEPOINT)
+		return True
 	except Exception:
 		frappe.log_error(
 			title="QR dispatch: failed to roll back partial handler writes",
 			message=frappe.get_traceback(),
 		)
+		return False
 
 
 def _latest_success_document(
@@ -279,6 +285,9 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		frappe.db.savepoint(DISPATCH_SAVEPOINT)
 		handler_savepoint_taken = True
 
+		if is_single_use_action(action_key, action["source_doctype"]):
+			claim_scan_code_for_single_use(scan_doc.name)
+
 		handler_result = _validate_handler_result(
 			_call_handler(action["handler"], source_doctype, source_name, payload)
 		)
@@ -307,8 +316,9 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			"message": handler_result.get("message", ""),
 		}
 	except Exception as exc:
+		rolled_back = True
 		if handler_savepoint_taken:
-			_rollback_to_dispatch_savepoint()
+			rolled_back = _rollback_to_dispatch_savepoint()
 		failure_source_doctype, failure_source_name = _get_failure_log_identity(source_doctype, source_name)
 		_log_scan(
 			action=action_key,
@@ -319,5 +329,8 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			scan_code=scan_code_name,
 			error_message=str(exc),
 		)
-		frappe.db.commit()
+		if rolled_back:
+			# Only the Failure Scan Log commits. On rollback failure, commit nothing:
+			# the request's error handling aborts the transaction, claim included.
+			frappe.db.commit()
 		raise
