@@ -17,9 +17,6 @@ from frappe.utils import cint, now_datetime
 SCAN_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SCAN_CODE_LENGTH = 16
 
-# Actions that may be executed when the registry row is already ``Used`` (re-scan).
-RESCAN_SAFE_ACTIONS = frozenset({"confirm_putaway"})
-
 _MAX_CREATE_ATTEMPTS = 64
 
 
@@ -143,10 +140,8 @@ def _throw_already_used() -> NoReturn:
 
 
 def validate_scan_code_row(doc: frappe.model.document.Document, action_key: str) -> None:
-	"""Validate status and re-scan rules."""
+	"""Validate status: a ``Used`` code cannot be scanned again."""
 	if doc.status == "Used":
-		if action_key in RESCAN_SAFE_ACTIONS:
-			return
 		_throw_already_used()
 
 	if doc.status != "Active":
@@ -154,7 +149,7 @@ def validate_scan_code_row(doc: frappe.model.document.Document, action_key: str)
 
 
 def record_successful_scan(doc_name: str, action_key: str) -> None:
-	"""Update scan metadata and mark ``Used`` when the action is not re-scan-safe."""
+	"""Update scan metadata and mark the code ``Used``."""
 	count = cint(frappe.db.get_value("Scan Code", doc_name, "scan_count"))
 	frappe.db.set_value(
 		"Scan Code",
@@ -166,15 +161,14 @@ def record_successful_scan(doc_name: str, action_key: str) -> None:
 		update_modified=True,
 	)
 
-	if action_key not in RESCAN_SAFE_ACTIONS:
-		frappe.db.set_value("Scan Code", doc_name, "status", "Used", update_modified=True)
+	frappe.db.set_value("Scan Code", doc_name, "status", "Used", update_modified=True)
 
 
 def is_single_use_action(action_key: str, source_doctype: str) -> bool:
 	"""True for the single-use chain (gate pass → receipt etc.): the code is claimed
 	atomically before the handler runs. ASN actions reopen their own drafts from
-	Used codes and re-scan-safe actions never flip status, so neither claims."""
-	return source_doctype != "ASN" and action_key not in RESCAN_SAFE_ACTIONS
+	Used codes, so they do not claim."""
+	return source_doctype != "ASN"
 
 
 def claim_scan_code_for_single_use(doc_name: str) -> None:
