@@ -135,11 +135,11 @@ class TestAttachScanCodesToDoc(FrappeTestCase):
 			patch("asn_module.qr_engine.generate.generate_qr", return_value=payload),
 			patch("asn_module.qr_engine.generate.generate_barcode", return_value=payload),
 		):
-			result = backfill_scan_code_attachments("ASN", self._asn.name, "confirm_putaway")
+			result = backfill_scan_code_attachments("ASN", self._asn.name, "create_purchase_invoice")
 
 		self.assertEqual(result["doctype"], "ASN")
 		self.assertEqual(result["name"], self._asn.name)
-		self.assertEqual(result["action"], "confirm_putaway")
+		self.assertEqual(result["action"], "create_purchase_invoice")
 		self.assertIn("ABCDEFGHJKLMNPQR-qr.png", result["files"])
 
 

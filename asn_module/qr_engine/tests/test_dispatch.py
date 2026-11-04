@@ -420,7 +420,7 @@ class TestDispatch(FrappeTestCase):
 		with (
 			patched_action(
 				"emit_scan_log_success",
-				"asn_module.handlers.putaway.confirm_putaway",
+				"asn_module.handlers.purchase_invoice.create_from_purchase_receipt",
 			),
 			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
 			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=call_handler),

@@ -248,8 +248,6 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			on_purchase_receipt_submit(doc, "on_submit")
 
 		get_doc.assert_not_called()
-		# Empty item list also doubles as the "no putaway code" edge: the
-		# guard requires at least one inspection-free item.
 		attach_scan_codes.assert_called_once_with(doc, "create_purchase_invoice")
 
 	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
@@ -306,7 +304,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(emit.call_args.kwargs["asn_item"], "ASN-ITEM-002")
 
 	@patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc")
-	def test_submit_updates_asn_and_attaches_follow_up_scan_codes(self, attach_scan_codes):
+	def test_submit_updates_asn_and_attaches_invoice_scan_code(self, attach_scan_codes):
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10)
 		asn = make_test_asn_with_two_items(purchase_order=purchase_order, qty=5)
 		asn.insert(ignore_permissions=True)
@@ -326,15 +324,14 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(asn.status, "Received")
 		self.assertEqual([row.received_qty for row in asn.items], [5, 5])
 		self.assertEqual([row.discrepancy_qty for row in asn.items], [0, 0])
-		self.assertEqual(attach_scan_codes.call_count, 2)
 		self.assertEqual(
 			[call.args[1] for call in attach_scan_codes.call_args_list],
-			["create_purchase_invoice", "confirm_putaway"],
+			["create_purchase_invoice"],
 		)
 
 	@patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc")
-	def test_mixed_inspection_receipt_gets_no_putaway_code(self, attach_scan_codes):
-		"""A real receipt with one inspection-required item gets no putaway code."""
+	def test_mixed_inspection_receipt_gets_only_invoice_code(self, attach_scan_codes):
+		"""An inspection-required item changes nothing: the receipt carries the invoice code only."""
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10, item_count=2, unique_items=True)
 		frappe.db.set_value(
 			"Item",
