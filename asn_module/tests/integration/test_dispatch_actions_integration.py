@@ -9,7 +9,7 @@ from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
 	patch_subcontracting_incoming_rate,
 )
-from asn_module.qr_engine.dispatch import dispatch
+from asn_module.qr_engine.dispatch import ActionNotFoundError, dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.tests.integration.dispatch_flow import (
 	run_asn_pr_pi_via_dispatch,
@@ -39,23 +39,15 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		)
 		self.assertTrue(out.pi.name)
 
-	def test_confirm_putaway_via_dispatch(self):
+	def test_confirm_putaway_is_refused_as_unknown(self):
 		out = run_asn_pr_submitted_via_dispatch(
 			supplier_invoice_no=f"PUT-{frappe.generate_hash(length=8)}",
 			qty=2,
 		)
 		with integration_user_context():
 			code = get_or_create_scan_code("confirm_putaway", "Purchase Receipt", out.pr.name)
-			result = dispatch(code=code, device_info="integration-putaway")
-		self.assertTrue(result.get("success"))
-		self.assertEqual(result.get("doctype"), "Scan Log")
-
-		states = frappe.get_all(
-			"ASN Transition Log",
-			filters={"asn": out.asn.name, "state": "PUTAWAY_CONFIRMED"},
-			pluck="name",
-		)
-		self.assertEqual(len(states), 1)
+			with self.assertRaises(ActionNotFoundError):
+				dispatch(code=code, device_info="integration-putaway")
 
 	def test_create_stock_transfer_via_dispatch(self):
 		fixture = TestCreateStockTransfer()

@@ -3,7 +3,6 @@ from frappe import _
 from frappe.utils import cint
 
 from asn_module.qr_engine.scan_codes import (
-	RESCAN_SAFE_ACTIONS,
 	claim_scan_code_for_single_use,
 	get_scan_code_doc,
 	is_single_use_action,
@@ -191,12 +190,6 @@ def _is_cancelled(doc) -> bool:
 	return cint(docstatus if docstatus is not None else getattr(doc, "docstatus", 0)) == 2
 
 
-def _can_open_existing_result(scan_doc: frappe.model.document.Document, action_key: str) -> bool:
-	if scan_doc.status != "Used" or action_key in RESCAN_SAFE_ACTIONS:
-		return False
-	return True
-
-
 def _payload_from_scan_code_registry(scan_doc: frappe.model.document.Document, device_info: str) -> dict:
 	return {
 		"action": scan_doc.action_key,
@@ -247,7 +240,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			# The ASN handler reopens its own draft. A Used code is not rejected here.
 			if scan_doc.status != "Used":
 				validate_scan_code_row(scan_doc, action_key)
-		elif _can_open_existing_result(scan_doc, action_key):
+		elif scan_doc.status == "Used":
 			logged = _latest_success_document(
 				action_key,
 				source_doctype,
