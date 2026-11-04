@@ -9,7 +9,7 @@
  "docstatus": 0,
  "doctype": "Print Format",
  "font": "Default",
- "html": "{% if doc.scan_code_label %}\n{% set base = frappe.utils.get_url() ~ \"/api/method/asn_module.qr_engine.generate.scan_image?code=\" ~ doc.scan_code_label %}\n<div>\n\t<img src=\"{{ base }}&kind=qr\" alt=\"{{ _('ASN QR') }}\" style=\"max-height: 200px;\">\n\t<img src=\"{{ base }}&kind=barcode\" alt=\"{{ _('ASN barcode') }}\" style=\"max-height: 120px;\">\n</div>\n{% endif %}\n",
+ "html": "{% if doc.scan_code_label %}\n{% set base = frappe.utils.get_url() ~ \"/api/method/asn_module.qr_engine.generate.scan_image?code=\" ~ (doc.scan_code_label | urlencode) %}\n<div>\n\t<img src=\"{{ base }}&kind=qr\" alt=\"{{ _('ASN QR') }}\" style=\"max-height: 200px;\">\n\t<img src=\"{{ base }}&kind=barcode\" alt=\"{{ _('ASN barcode') }}\" style=\"max-height: 120px;\">\n</div>\n{% endif %}\n",
  "idx": 0,
  "line_breaks": 0,
  "modified": "2026-11-04 00:00:00.000000",

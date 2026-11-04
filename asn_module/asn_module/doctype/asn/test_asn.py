@@ -1,5 +1,6 @@
 import json
 from contextlib import contextmanager
+from html import unescape
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -592,6 +593,19 @@ class TestASN(FrappeTestCase):
 		)
 		self.assertFalse(frappe.get_meta("ASN").has_field("qr_code"))
 		self.assertFalse(frappe.get_meta("ASN").has_field("barcode"))
+
+	def test_print_format_draws_both_images_from_the_scan_code_label(self):
+		frappe.reload_doc("asn_module", "print_format", "asn_scan_codes")
+		asn = make_test_asn()
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		asn.reload()
+
+		html = unescape(frappe.get_print("ASN", asn.name, print_format="ASN Scan Codes"))
+
+		url = f"/api/method/asn_module.qr_engine.generate.scan_image?code={asn.scan_code_label}"
+		self.assertIn(f"{url}&kind=qr", html)
+		self.assertIn(f"{url}&kind=barcode", html)
 
 	def test_cancel_sets_status_cancelled(self):
 		asn = make_test_asn()
