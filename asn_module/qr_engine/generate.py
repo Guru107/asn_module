@@ -61,7 +61,9 @@ class InvalidScanImageRequest(frappe.ValidationError):
 _IMAGE_RENDERERS = {"barcode": render_barcode_png, "qr": render_qr_png}
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(
+	allow_guest=True
+)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method -- public by design, ADR 0004
 @rate_limit(limit=120, seconds=60)
 def scan_image(code: str | None = None, kind: str | None = None) -> Response:
 	"""Draw the barcode or QR PNG for a canonical Scan Code; touches no database row."""
