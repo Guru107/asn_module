@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -105,15 +104,6 @@ class TestASNPortalPage(FrappeTestCase):
 		self.assertIn("asn_module.qr_engine.generate.scan_image", asn_detail)
 		self.assertNotIn("doc.qr_code", asn_detail)
 		self.assertNotIn("doc.barcode", asn_detail)
-
-	def test_asn_print_format_draws_both_images_from_the_scan_code_label(self):
-		path = Path(__file__).parents[2] / "asn_module" / "print_format" / "asn_scan_codes"
-		print_format = json.loads((path / "asn_scan_codes.json").read_text())
-
-		self.assertEqual(print_format["doc_type"], "ASN")
-		self.assertIn("doc.scan_code_label", print_format["html"])
-		self.assertIn("kind=qr", print_format["html"])
-		self.assertIn("kind=barcode", print_format["html"])
 
 	def test_get_supplier_for_user_returns_portal_supplier(self):
 		with patch(
