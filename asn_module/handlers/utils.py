@@ -124,5 +124,9 @@ def store_scan_code(doc, action: str) -> None:
 	"""
 	from asn_module.qr_engine.scan_codes import resolve_scan_code
 
+	# Gate Pass can be installed after this app with no migrate yet; a missing column
+	# must not block the submit.
+	if not frappe.get_meta(doc.doctype).has_field("scan_code"):
+		return
 	code = resolve_scan_code(action, doc.doctype, doc.name)
 	doc.db_set("scan_code", code, update_modified=False)

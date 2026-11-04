@@ -10,6 +10,7 @@ this module does not own; the submit hooks are exercised directly.
 """
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -191,6 +192,16 @@ class TestGatePassScanChain(FrappeTestCase):
 		self.assertTrue(code)
 		self.assertEqual(frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code"), code)
 		self.assertEqual(_attached_file_names("Gate Pass", gate_pass.name), [])
+
+	def test_a_doctype_without_the_scan_code_field_submits_without_a_code(self):
+		with with_gate_pass_mode(), integration_user_context():
+			_purchase_order, asn = _submitted_material_asn()
+			gate_pass = _gate_pass_opened_by_scan(asn)
+			meta = frappe.get_meta("Gate Pass")
+			with patch.object(meta, "has_field", return_value=False):
+				on_gate_pass_submit(gate_pass)
+
+		self.assertEqual(frappe.db.count("Scan Code", {"source_name": gate_pass.name}), 0)
 
 	def test_a_gate_pass_without_an_asn_gets_no_code(self):
 		with with_gate_pass_mode(), integration_user_context():
@@ -493,8 +504,10 @@ class TestSubcontractingOrderAndDispatchScanChain(FrappeTestCase):
 			subcontracting_order="SCO-1",
 		)
 
-		on_subcontracting_dispatch_submit(stock_entry, "on_submit")
+		with patch("asn_module.handlers.subcontracting.store_scan_code") as store:
+			on_subcontracting_dispatch_submit(stock_entry, "on_submit")
 
+		store.assert_not_called()
 		self.assertEqual(frappe.db.count("Scan Code", {"source_name": "STE-OTHER"}), 0)
 
 

@@ -1,5 +1,6 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import frappe
 from frappe.tests.utils import FrappeTestCase as UnitTestCase
 
 from asn_module.qr_engine.generate import (
@@ -33,13 +34,30 @@ class TestScanImageEndpoint(UnitTestCase):
 			self.assertEqual(ctx.exception.http_status_code, 400)
 
 	def test_endpoint_is_guest_whitelisted(self):
-		import frappe
-
 		self.assertIn(scan_image, frappe.guest_methods)
 
+	def test_endpoint_is_rate_limited_at_120_requests_per_minute_per_ip(self):
+		# rate_limit is a no-op without a request, so fake one; the cache is callable (v15) or not (v16).
+		cache = MagicMock()
+		cache.return_value = cache
+		cache.get.return_value = None
+		with (
+			patch.object(frappe, "request", MagicMock(), create=True),
+			patch.object(frappe.local, "request_ip", "10.0.0.1", create=True),
+			patch.object(frappe, "cache", cache),
+		):
+			cache.incrby.return_value = 120
+			self.assertEqual(scan_image(code=CODE, kind="qr").mimetype, "image/png")
+
+			cache.incrby.return_value = 121
+			with self.assertRaises(frappe.RateLimitExceededError):
+				scan_image(code=CODE, kind="qr")
+
+		self.assertEqual(cache.setex.call_args.args[1], 60)
+
 	def test_endpoint_does_no_database_access_and_needs_no_registry_row(self):
-		with patch("asn_module.qr_engine.generate.frappe.db", side_effect=AssertionError("db used")) as db:
-			db.sql.side_effect = db.get_value.side_effect = db.exists.side_effect = AssertionError("db used")
+		# spec=[] makes any frappe.db attribute access raise.
+		with patch("asn_module.qr_engine.generate.frappe.db", MagicMock(spec=[])):
 			response = scan_image(code=CODE, kind="barcode")
 			scan_image(code=CODE, kind="qr")
 
