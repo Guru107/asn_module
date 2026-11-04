@@ -260,15 +260,6 @@ def _over_receipt_allowance(*, item_code: str, item_allowance, stock_allowance, 
 		frappe.clear_cache(doctype="Item")
 
 
-@contextmanager
-def real_asn_attachment_context():
-	"""No-op kept so call sites need no churn: ASN submit no longer saves scan images (#102)."""
-	yield
-
-
-_mock_asn_attachments = real_asn_attachment_context
-
-
 def create_purchase_order(**kwargs):
 	company = kwargs.get("company") or _ensure_company()
 	supplier = kwargs.get("supplier") or _ensure_supplier()
@@ -395,8 +386,7 @@ class TestASN(FrappeTestCase):
 		doc = make_test_asn(supplier_invoice_no=invoice_no)
 		doc.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			doc.submit()
+		doc.submit()
 
 		doc.cancel()
 
@@ -597,8 +587,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		asn.cancel()
 		asn.reload()
@@ -612,8 +601,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with real_asn_attachment_context():
-			asn.submit()
+		asn.submit()
 
 		asn.reload()
 		linked = frappe.get_all(
@@ -636,8 +624,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		asn.cancel()
 		name = asn.name
@@ -686,8 +673,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		with (
 			patch(
@@ -738,8 +724,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn_with_two_items(qty=5)
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		asn.reload()
 		asn.items[0].received_qty = 2
@@ -761,8 +746,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		asn.cancel()
 
@@ -801,8 +785,7 @@ class TestASN(FrappeTestCase):
 		)
 		withdrawn = make_test_asn(purchase_order=po, qty=9)
 		withdrawn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			withdrawn.submit()
+		withdrawn.submit()
 		withdrawn.cancel()
 		shipped = make_test_asn(purchase_order=po, qty=4)
 		shipped.insert(ignore_permissions=True)
@@ -1022,8 +1005,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=100)
 		asn = make_test_asn(purchase_order=po, qty=100)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 		self._purchase_receipt(po, asn, qty=100)
 
 		self.assertEqual(get_purchase_order_items(po.name), [])
@@ -1065,8 +1047,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		open_po = self._submitted_purchase_order(qty=100)
 		shipment = make_test_asn(purchase_order=open_po, qty=100)
 		shipment.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			shipment.submit()
+		shipment.submit()
 		self._purchase_receipt(open_po, shipment, qty=80)
 
 		self.assertEqual(self._offered_qty(open_po), 0)
@@ -1113,8 +1094,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		other = self._submitted_purchase_order(qty=10)
 		submitted = make_test_asn(purchase_order=other, qty=6)
 		submitted.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			submitted.submit()
+		submitted.submit()
 		self.assertEqual(self._portal_search_qty(other, asn_name=submitted.name), 4)
 		self.assertEqual(self._portal_page_asn_name(other.supplier, submitted.name), "")
 		with self.assertRaises(PortalValidationError) as raised:
@@ -1221,8 +1201,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=100)
 		shipment = make_test_asn(purchase_order=po, qty=100)
 		shipment.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			shipment.submit()
+		shipment.submit()
 		self._purchase_receipt(po, shipment, qty=80)
 		frappe.db.set_value("ASN", shipment.name, "status", "Closed", update_modified=False)
 
@@ -1234,8 +1213,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		open_po = self._submitted_purchase_order(qty=100)
 		closed = make_test_asn(purchase_order=open_po, qty=100)
 		closed.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			closed.submit()
+		closed.submit()
 		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
 
 		self.assertEqual(self._offered_qty(open_po), 100)
@@ -1293,8 +1271,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=100)
 		shipment = make_test_asn(purchase_order=po, qty=40)
 		shipment.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			shipment.submit()
+		shipment.submit()
 
 		invoice = make_purchase_invoice(po.name)
 		invoice.update_stock = 1
@@ -1330,8 +1307,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._purchase_order_in_boxes(qty=10, conversion_factor=12)
 		shipment = make_test_asn(purchase_order=po, qty=10)
 		shipment.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			shipment.submit()
+		shipment.submit()
 
 		class _Invoice:
 			def __init__(self):
@@ -1418,8 +1394,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=ordered, item_code=item_code)
 		asn = make_test_asn(purchase_order=po, qty=accepted)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		receipt = self._purchase_receipt(po, asn, qty=accepted)
 		purchase_return = self._purchase_return(receipt, qty=returned)
@@ -1474,8 +1449,6 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 
 	def _submit_purchase_receipt(self, receipt):
 		with (
-			_mock_asn_attachments(),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			receipt.submit()

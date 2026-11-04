@@ -14,4 +14,4 @@ The endpoint is public by design. Its output reveals nothing the code does not a
 
 ## Consequences
 
-The old attachment generators stay until a later ticket removes them, so existing flows keep working while the endpoint is adopted. Documents and files created before the change are not migrated.
+The attachment helpers, the backfill API and the registry-resolving generators are deleted, so nothing saves a scan image any more. Documents and files created before the change are not migrated.

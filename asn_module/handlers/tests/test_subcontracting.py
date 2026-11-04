@@ -256,18 +256,18 @@ class TestSubcontractingHandlers(FrappeTestCase):
 	def test_on_subcontracting_order_submit_stores_dispatch_code(self):
 		doc = frappe._dict(doctype="Subcontracting Order", name="SCO-0001")
 
-		with patch("asn_module.handlers.subcontracting.store_scan_code") as attach:
+		with patch("asn_module.handlers.subcontracting.store_scan_code") as store:
 			on_subcontracting_order_submit(doc, "on_submit")
 
-		attach.assert_called_once_with(doc, "create_subcontracting_dispatch")
+		store.assert_called_once_with(doc, "create_subcontracting_dispatch")
 
 	def test_on_subcontracting_receipt_submit_skips_returns(self):
 		doc = frappe._dict(doctype="Subcontracting Receipt", name="SCR-0001", is_return=1)
 
-		with patch("asn_module.handlers.subcontracting.store_scan_code") as attach:
+		with patch("asn_module.handlers.subcontracting.store_scan_code") as store:
 			on_subcontracting_receipt_submit(doc, "on_submit")
 
-		attach.assert_not_called()
+		store.assert_not_called()
 
 	def test_on_subcontracting_dispatch_submit_stores_receipt_code(self):
 		doc = frappe._dict(
@@ -277,10 +277,10 @@ class TestSubcontractingHandlers(FrappeTestCase):
 			subcontracting_order="SCO-0001",
 		)
 
-		with patch("asn_module.handlers.subcontracting.store_scan_code") as attach:
+		with patch("asn_module.handlers.subcontracting.store_scan_code") as store:
 			on_subcontracting_dispatch_submit(doc, "on_submit")
 
-		attach.assert_called_once_with(doc, "create_subcontracting_receipt_from_dispatch")
+		store.assert_called_once_with(doc, "create_subcontracting_receipt_from_dispatch")
 
 	def test_on_subcontracting_dispatch_submit_ignores_non_dispatch_stock_entry(self):
 		doc = frappe._dict(
@@ -290,10 +290,10 @@ class TestSubcontractingHandlers(FrappeTestCase):
 			subcontracting_order="SCO-0001",
 		)
 
-		with patch("asn_module.handlers.subcontracting.store_scan_code") as attach:
+		with patch("asn_module.handlers.subcontracting.store_scan_code") as store:
 			on_subcontracting_dispatch_submit(doc, "on_submit")
 
-		attach.assert_not_called()
+		store.assert_not_called()
 
 	def test_on_subcontracting_dispatch_submit_ignores_missing_subcontracting_order(self):
 		doc = frappe._dict(
@@ -303,10 +303,10 @@ class TestSubcontractingHandlers(FrappeTestCase):
 			subcontracting_order="",
 		)
 
-		with patch("asn_module.handlers.subcontracting.store_scan_code") as attach:
+		with patch("asn_module.handlers.subcontracting.store_scan_code") as store:
 			on_subcontracting_dispatch_submit(doc, "on_submit")
 
-		attach.assert_not_called()
+		store.assert_not_called()
 
 	def test_incoming_rate_patch_follows_the_private_name_when_that_is_what_erpnext_calls(self):
 		import erpnext.controllers.subcontracting_controller as controller

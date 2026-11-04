@@ -1,4 +1,3 @@
-import base64
 import io
 from urllib.parse import quote
 
@@ -10,11 +9,7 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 from werkzeug.wrappers import Response
 
-from asn_module.qr_engine.scan_codes import (
-	format_scan_code_for_display,
-	normalize_scan_code,
-	resolve_scan_code_for_attachment,
-)
+from asn_module.qr_engine.scan_codes import normalize_scan_code
 
 # Printability: compact QR modules, barcode tuned for narrow invoice columns.
 # ImageWriter paints text with anchor="md" (vertical center on ypos), so roughly half the
@@ -78,24 +73,3 @@ def scan_image(code: str | None = None, kind: str | None = None) -> Response:
 		mimetype="image/png",
 		headers={"Cache-Control": "public, max-age=31536000, immutable"},
 	)
-
-
-def generate_qr(action: str, source_doctype: str, source_name: str) -> dict:
-	code = resolve_scan_code_for_attachment(action, source_doctype, source_name)
-
-	return {
-		"url": _build_dispatch_url(code),
-		"scan_code": code,
-		"human_readable": format_scan_code_for_display(code),
-		"image_base64": base64.b64encode(render_qr_png(code)).decode(),
-	}
-
-
-def generate_barcode(action: str, source_doctype: str, source_name: str) -> dict:
-	code = resolve_scan_code_for_attachment(action, source_doctype, source_name)
-
-	return {
-		"scan_code": code,
-		"human_readable": format_scan_code_for_display(code),
-		"image_base64": base64.b64encode(render_barcode_png(code)).decode(),
-	}
