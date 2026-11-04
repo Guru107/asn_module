@@ -44,8 +44,8 @@ from asn_module.templates.pages.asn_new_services import create_job_asn_for_suppl
 from asn_module.tests.integration.fixtures import (
 	block_commits_for_tests,
 	ensure_integration_user,
-	gate_pass_mode,
 	integration_user_context,
+	with_gate_pass_mode,
 )
 from asn_module.tests.test_job_asn_and_material_gate_pass import ensure_gate_pass_for_tests
 from asn_module.utils.test_setup import apply_receipt_site_requirements, before_tests
@@ -159,7 +159,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		block_commits_for_tests(cls)
 
 	def test_submitting_a_gate_pass_attaches_the_receipt_qr_and_barcode(self):
-		with gate_pass_mode(), integration_user_context():
+		with with_gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			self.assertFalse(
@@ -182,7 +182,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		self.assertEqual(frappe.db.count("Scan Code", {"source_name": "GP-NO-ASN"}), 0)
 
 	def test_a_draft_gate_pass_with_a_scan_code_can_be_deleted(self):
-		with gate_pass_mode(), integration_user_context():
+		with with_gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			code = get_or_create_scan_code(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name)
@@ -194,7 +194,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		self.assertFalse(frappe.db.exists("Scan Code", code))
 
 	def test_a_cancelled_gate_pass_with_voided_scan_codes_can_be_deleted(self):
-		with gate_pass_mode(), integration_user_context():
+		with with_gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			on_gate_pass_submit(gate_pass)
@@ -211,7 +211,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		self.assertFalse(frappe.db.exists("Scan Code", code))
 
 	def test_the_material_chain_creates_a_purchase_receipt_by_scan(self):
-		with gate_pass_mode(), integration_user_context():
+		with with_gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			_submit_by_flag("Gate Pass", gate_pass.name)
@@ -229,7 +229,7 @@ class TestGatePassScanChain(FrappeTestCase):
 
 	def test_the_job_chain_creates_a_subcontracting_receipt_by_scan(self):
 		with (
-			gate_pass_mode(),
+			with_gate_pass_mode(),
 			integration_user_context(),
 			patch_subcontracting_incoming_rate(5),
 		):
@@ -245,7 +245,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name}), 0)
 
 	def test_scanning_before_the_gate_pass_is_submitted_is_refused(self):
-		with gate_pass_mode(), integration_user_context():
+		with with_gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			code = get_or_create_scan_code(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name)
@@ -261,7 +261,7 @@ class TestGatePassScanChain(FrappeTestCase):
 
 	def test_the_gate_pass_scan_requires_a_stock_role(self):
 		email = ensure_integration_user("asn.chain.accounts@asn-module.test", roles=("Accounts User",))
-		with gate_pass_mode(), integration_user_context():
+		with with_gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			_submit_by_flag("Gate Pass", gate_pass.name)
@@ -271,7 +271,7 @@ class TestGatePassScanChain(FrappeTestCase):
 			dispatch(code=code, device_info="gate-pass-no-stock")
 
 	def test_cancelling_a_gate_pass_voids_its_code(self):
-		with gate_pass_mode(), integration_user_context():
+		with with_gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			_submit_by_flag("Gate Pass", gate_pass.name)

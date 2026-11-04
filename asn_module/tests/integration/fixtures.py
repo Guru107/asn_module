@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -67,15 +68,19 @@ def integration_user_context(email: str = INTEGRATION_USER_EMAIL) -> Generator[N
 		frappe.set_user(previous)
 
 
+def _patch_gate_pass_mode(enabled: bool):
+	return patch("asn_module.handlers.purchase_receipt._gate_pass_mode_on", return_value=enabled)
+
+
 @contextmanager
-def gate_pass_mode(enabled=1):
+def with_gate_pass_mode(enabled: bool = True) -> Generator[SimpleNamespace, None, None]:
 	"""Run a block with gate-pass mode ``enabled``, without writing the site's setting.
 
 	Patched rather than written, so a failing dispatch's commit cannot persist it.
-	Yields the patch: set ``.return_value`` to flip the mode mid-block.
+	Yields a switch: ``switch.set(False)`` flips the mode mid-block.
 	"""
-	with patch("asn_module.handlers.purchase_receipt._gate_pass_mode_on", return_value=bool(enabled)) as mode:
-		yield mode
+	with _patch_gate_pass_mode(enabled) as mode:
+		yield SimpleNamespace(set=lambda on: setattr(mode, "return_value", on))
 
 
 def pin_gate_pass_mode_for_tests(cls) -> None:
@@ -85,7 +90,7 @@ def pin_gate_pass_mode_for_tests(cls) -> None:
 	configured production-clone sites run it ON. Patched rather than written, so
 	dispatch's mid-test commit cannot persist it and a killed run cannot leave it.
 	"""
-	patcher = patch("asn_module.handlers.purchase_receipt._gate_pass_mode_on", return_value=False)
+	patcher = _patch_gate_pass_mode(False)
 	patcher.start()
 	cls.addClassCleanup(patcher.stop)
 

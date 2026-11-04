@@ -20,7 +20,7 @@ from asn_module.handlers.purchase_receipt import (
 	stamp_asn_item_mapping,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
-from asn_module.tests.integration.fixtures import gate_pass_mode, pin_gate_pass_mode_for_tests
+from asn_module.tests.integration.fixtures import pin_gate_pass_mode_for_tests, with_gate_pass_mode
 from asn_module.utils.test_setup import make_test_breach
 
 
@@ -33,15 +33,13 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		pin_gate_pass_mode_for_tests(cls)
 
 	def test_asn_dispatch_action_key_follows_gate_pass_mode(self):
-		with gate_pass_mode(0):
-			self.assertEqual(asn_dispatch_action_key(), "create_purchase_receipt")
-		with gate_pass_mode(1):
+		self.assertEqual(asn_dispatch_action_key(), "create_purchase_receipt")
+		with with_gate_pass_mode(True):
 			self.assertEqual(asn_dispatch_action_key(), "create_gate_pass_from_asn")
 
 	def test_create_gate_pass_from_asn_follows_receipt_path_when_gate_pass_mode_is_off(self):
 		asn = self._make_submitted_asn()
-		with gate_pass_mode(0):
-			result = create_gate_pass_from_asn("ASN", asn.name, {})
+		result = create_gate_pass_from_asn("ASN", asn.name, {})
 		self.assertEqual(result["doctype"], "Purchase Receipt")
 		self.assertTrue(frappe.db.exists("Purchase Receipt", result["name"]))
 
