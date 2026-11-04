@@ -41,6 +41,11 @@ ACTIONS = {
 		"source_doctype": "Subcontracting Order",
 		"roles": ["Stock User", "Stock Manager"],
 	},
+	"create_subcontracting_receipt_from_dispatch": {
+		"handler": "asn_module.handlers.subcontracting.create_receipt_from_subcontracting_dispatch",
+		"source_doctype": "Stock Entry",
+		"roles": ["Stock User", "Stock Manager"],
+	},
 	"create_purchase_receipt_from_subcontracting_receipt": {
 		"handler": "asn_module.handlers.subcontracting.create_receipt_from_subcontracting_receipt",
 		"source_doctype": "Subcontracting Receipt",
