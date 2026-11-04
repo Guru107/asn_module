@@ -1,5 +1,7 @@
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+from asn_module.custom_fields.scan_code import scan_code_field
+
 
 def setup():
 	"""Link a Subcontracting Receipt back to the Job ASN that opened it."""
@@ -14,6 +16,7 @@ def setup():
 				"read_only": 1,
 				"in_standard_filter": 1,
 			},
+			scan_code_field("asn"),
 		]
 	}
 
