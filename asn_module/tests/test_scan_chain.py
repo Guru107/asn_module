@@ -9,12 +9,11 @@ does (``db.set_value``), because their ERPNext submit paths carry stock rules
 this module does not own; the submit hooks are exercised directly.
 """
 
-from contextlib import contextmanager
 from types import SimpleNamespace
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import cint, flt, today
+from frappe.utils import flt, today
 
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
@@ -43,21 +42,13 @@ from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import get_action
 from asn_module.templates.pages.asn_new_services import create_job_asn_for_supplier
 from asn_module.tests.integration.fixtures import (
+	block_commits_for_tests,
 	ensure_integration_user,
+	gate_pass_mode,
 	integration_user_context,
 )
 from asn_module.tests.test_job_asn_and_material_gate_pass import ensure_gate_pass_for_tests
 from asn_module.utils.test_setup import apply_receipt_site_requirements, before_tests
-
-
-@contextmanager
-def gate_pass_mode(enabled=1):
-	previous = cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode"))
-	frappe.db.set_single_value("ASN Settings", "gate_pass_mode", enabled)
-	try:
-		yield
-	finally:
-		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", previous)
 
 
 def _submitted_material_asn(qty=2):
@@ -165,6 +156,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		before_tests()
 		ensure_integration_user()
 		ensure_gate_pass_for_tests()
+		block_commits_for_tests(cls)
 
 	def test_submitting_a_gate_pass_attaches_the_receipt_qr_and_barcode(self):
 		with gate_pass_mode(), integration_user_context():
@@ -301,6 +293,7 @@ class TestSubcontractingReceiptScanChain(FrappeTestCase):
 		super().setUpClass()
 		before_tests()
 		ensure_integration_user()
+		block_commits_for_tests(cls)
 
 	def _draft_subcontracting_receipt(self):
 		handlers = TestSubcontractingHandlers()
