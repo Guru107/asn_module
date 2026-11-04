@@ -54,7 +54,7 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		with (
 			_mock_asn_attachments(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			pr.submit()
 		return pr
@@ -82,7 +82,7 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		with (
 			_mock_asn_attachments(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			return_pr.submit()
 
@@ -99,7 +99,7 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		with (
 			_mock_asn_attachments(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			asn.submit()
 		pr = self._make_submitted_purchase_receipt(asn=asn)

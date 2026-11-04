@@ -6,8 +6,8 @@ from frappe import _
 from frappe.utils import cint, flt
 
 from asn_module.handlers.utils import (
-	attach_scan_codes_to_doc,
 	fill_custom_fiscal_year,
+	store_scan_code,
 )
 from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
@@ -548,23 +548,23 @@ def create_receipt_from_gate_pass_scan(source_doctype: str, source_name: str, pa
 	"""Dispatch adapter: scan the Gate Pass's own code to open its receipt.
 
 	The gate scans the ASN barcode to raise the draft Gate Pass; this action
-	is the next link, run from the code attached to the Gate Pass on submit.
+	is the next link, run from the code stored on the Gate Pass on submit.
 	"""
 	del source_doctype, payload
 	return create_receipt_from_gate_pass(source_name)
 
 
 def on_gate_pass_submit(doc, method=None):
-	"""Attach the receipt scan code when a Gate Pass is submitted.
+	"""Store the receipt scan code on a Gate Pass when it is submitted.
 
 	Only a Gate Pass linked to an ASN gets a code: the receipt action refuses
 	the others, so their codes would never dispatch. Drafts carry no code; the
-	code is attached when the pass is submitted and printed at the gate.
+	code is stored when the pass is submitted and drawn on the printed pass.
 	"""
 	del method
 	if not (getattr(doc, "asn", None) or "").strip():
 		return
-	attach_scan_codes_to_doc(doc, GATE_PASS_RECEIPT_ACTION)
+	store_scan_code(doc, GATE_PASS_RECEIPT_ACTION)
 
 
 def on_gate_pass_cancel(doc, method=None):
@@ -959,7 +959,7 @@ def on_purchase_receipt_submit(doc, method):
 	if getattr(doc, "is_return", 0):
 		return
 
-	_attach_followup_codes(doc)
+	_store_invoice_code(doc)
 
 	if doc.asn:
 		mapped_names, _updated = _record_linked_received_qty(doc, sign=1)
@@ -995,10 +995,10 @@ def on_purchase_receipt_submit(doc, method):
 		)
 
 
-def _attach_followup_codes(doc) -> None:
-	"""Attach the code that creates this receipt's Purchase Invoice.
+def _store_invoice_code(doc) -> None:
+	"""Store the code that creates this receipt's Purchase Invoice.
 
 	Runs before the ASN bookkeeping so an unlinked receipt (one born from a
 	Subcontracting Receipt) is not skipped.
 	"""
-	attach_scan_codes_to_doc(doc, "create_purchase_invoice")
+	store_scan_code(doc, "create_purchase_invoice")
