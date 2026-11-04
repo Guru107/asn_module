@@ -37,7 +37,7 @@ class TestEndToEndFlow(FrappeTestCase):
 		pi = out.pi
 		purchase_order = out.purchase_order
 
-		self.assertTrue(asn.qr_code)
+		self.assertTrue(asn.scan_code_label)
 		self.assertEqual(pr.docstatus, 1)
 		self.assertEqual(pr.supplier, asn.supplier)
 		self.assertEqual(pr.asn, asn.name)

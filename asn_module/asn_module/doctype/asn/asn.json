@@ -30,9 +30,6 @@
 		"draft_purchase_order",
 		"qr_section",
 		"scan_code_label",
-		"qr_code",
-		"column_break_4",
-		"barcode",
 		"traceability_section",
 		"asn_trace_summary",
 		"remarks_section",
@@ -176,24 +173,6 @@
 			"fieldtype": "Data",
 			"label": "Scan Code (manual entry)",
 			"description": "Plain uppercase scan code with no separators; barcode encodes the same raw code.",
-			"no_copy": 1,
-			"read_only": 1
-		},
-		{
-			"fieldname": "qr_code",
-			"fieldtype": "Attach Image",
-			"label": "QR Code",
-			"no_copy": 1,
-			"read_only": 1
-		},
-		{
-			"fieldname": "column_break_4",
-			"fieldtype": "Column Break"
-		},
-		{
-			"fieldname": "barcode",
-			"fieldtype": "Attach Image",
-			"label": "Barcode",
 			"no_copy": 1,
 			"read_only": 1
 		},
