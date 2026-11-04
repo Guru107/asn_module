@@ -104,7 +104,7 @@ def _no_followup_codes():
 	"""
 	with (
 		patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-		patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+		patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 	):
 		yield
 
@@ -596,7 +596,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(pr_doc, "on_submit")
@@ -844,7 +844,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(
@@ -892,7 +892,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(pr_doc, "on_submit")
@@ -944,7 +944,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(receipt, "on_submit")
@@ -1011,7 +1011,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(receipt, "on_submit")

@@ -12,6 +12,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn,
 	real_asn_attachment_context,
 )
+from asn_module.custom_fields.gate_pass import setup as setup_gate_pass_fields
 from asn_module.handlers.purchase_invoice import create_from_purchase_receipt
 from asn_module.handlers.purchase_receipt import (
 	ASN_GATE_PASS_SCAN_ACTION,
@@ -614,7 +615,6 @@ def ensure_gate_pass_for_tests() -> None:
 				],
 			}
 		).insert(ignore_permissions=True)
-		return
 
 	meta = frappe.get_meta("Gate Pass")
 	custom_fields = []
@@ -697,6 +697,9 @@ def ensure_gate_pass_for_tests() -> None:
 	if custom_fields:
 		create_custom_fields({"Gate Pass": custom_fields})
 		frappe.clear_cache(doctype="Gate Pass")
+	# The module's own Scan Code field, as after_migrate adds it on a real site.
+	setup_gate_pass_fields()
+	frappe.clear_cache(doctype="Gate Pass")
 
 
 class TestMaterialGatePassScan(FrappeTestCase):
@@ -831,7 +834,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		with (
 			real_asn_attachment_context(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			receipt.submit()
 
@@ -1040,7 +1043,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		with (
 			real_asn_attachment_context(),
 			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			receipt.submit()
 		invoice = create_from_purchase_receipt("Purchase Receipt", receipt.name, {})

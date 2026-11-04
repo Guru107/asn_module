@@ -43,7 +43,8 @@ def run_asn_pr_pi_via_dispatch(*, supplier_invoice_no: str, qty: float = 10) -> 
 
 		asn.reload()
 
-		pi_code = get_or_create_scan_code("create_purchase_invoice", "Purchase Receipt", pr.name)
+		# The receipt prints the code it stored on submit; scan that one.
+		pi_code = frappe.db.get_value("Purchase Receipt", pr.name, "scan_code")
 		pi_result = dispatch(code=pi_code, device_info="integration")
 		if not pi_result.get("success"):
 			raise AssertionError(f"dispatch PI failed: {pi_result}")
