@@ -7,6 +7,7 @@ from frappe.utils import nowdate
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 from asn_module.handlers.subcontracting import (
 	create_dispatch_from_subcontracting_order,
+	create_receipt_from_subcontracting_dispatch,
 	create_receipt_from_subcontracting_order,
 	on_subcontracting_dispatch_submit,
 	on_subcontracting_order_submit,
@@ -252,6 +253,61 @@ class TestSubcontractingHandlers(FrappeTestCase):
 					source_name=sco.name,
 					payload={"action": "create_subcontracting_receipt"},
 				)
+
+	def test_create_receipt_from_dispatch_rejects_unsubmitted_stock_entry(self):
+		entry = frappe._dict(
+			name="STE-0001",
+			docstatus=0,
+			stock_entry_type="Send to Subcontractor",
+			subcontracting_order="SCO-0001",
+		)
+
+		with patch("asn_module.handlers.subcontracting.frappe.get_doc", return_value=entry):
+			with self.assertRaises(frappe.ValidationError) as raised:
+				create_receipt_from_subcontracting_dispatch("Stock Entry", entry.name, {})
+
+		self.assertIn("must be submitted", str(raised.exception))
+
+	def test_create_receipt_from_dispatch_rejects_a_non_dispatch_stock_entry(self):
+		for entry in (
+			frappe._dict(
+				name="STE-0002",
+				docstatus=1,
+				stock_entry_type="Material Transfer",
+				subcontracting_order="SCO-0001",
+			),
+			frappe._dict(
+				name="STE-0003",
+				docstatus=1,
+				stock_entry_type="Send to Subcontractor",
+				subcontracting_order="",
+			),
+		):
+			with patch("asn_module.handlers.subcontracting.frappe.get_doc", return_value=entry):
+				with self.assertRaises(frappe.ValidationError) as raised:
+					create_receipt_from_subcontracting_dispatch("Stock Entry", entry.name, {})
+
+			self.assertIn("not a Send to Subcontractor entry", str(raised.exception))
+
+	def test_create_receipt_from_dispatch_opens_the_receipt_of_its_order(self):
+		entry = frappe._dict(
+			name="STE-0004",
+			docstatus=1,
+			stock_entry_type="Send to Subcontractor",
+			subcontracting_order="SCO-0001",
+		)
+
+		with (
+			patch("asn_module.handlers.subcontracting.frappe.get_doc", return_value=entry),
+			patch(
+				"asn_module.handlers.subcontracting.create_receipt_from_subcontracting_order",
+				return_value={"name": "SCR-0001"},
+			) as create,
+		):
+			result = create_receipt_from_subcontracting_dispatch("Stock Entry", entry.name, {"k": 1})
+
+		create.assert_called_once_with("Subcontracting Order", "SCO-0001", {"k": 1})
+		self.assertEqual(result, {"name": "SCR-0001"})
 
 	def test_on_subcontracting_order_submit_stores_dispatch_code(self):
 		doc = frappe._dict(doctype="Subcontracting Order", name="SCO-0001")

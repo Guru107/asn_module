@@ -507,8 +507,10 @@ class TestSubcontractingOrderAndDispatchScanChain(FrappeTestCase):
 			subcontracting_order="SCO-1",
 		)
 
-		on_subcontracting_dispatch_submit(stock_entry, "on_submit")
+		with patch("asn_module.handlers.subcontracting.store_scan_code") as store:
+			on_subcontracting_dispatch_submit(stock_entry, "on_submit")
 
+		store.assert_not_called()
 		self.assertEqual(frappe.db.count("Scan Code", {"source_name": "STE-OTHER"}), 0)
 
 
