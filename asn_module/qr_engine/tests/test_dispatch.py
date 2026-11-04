@@ -39,6 +39,15 @@ def patched_action(action_key, handler, *, source_doctype=SOURCE_DOCTYPE, roles=
 
 
 class TestDispatch(FrappeTestCase):
+	def setUp(self):
+		super().setUp()
+		# dispatch commits on failure; a real commit would persist these tests' Scan
+		# Codes past the class rollback. The real commit is covered by
+		# TestDispatchFailureCommit below.
+		patcher = patch.object(frappe.db, "commit")
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	def _make_scan_code(
 		self,
 		action_key="create_purchase_receipt",
@@ -319,78 +328,6 @@ class TestDispatch(FrappeTestCase):
 		self.assertEqual(log["source_name"], "Administrator")
 		self.assertIn("source doctype", log["error_message"].lower())
 
-	def test_dispatch_rejects_partial_handler_result_and_logs_failure(self):
-		code = self._make_scan_code(
-			action_key="create_purchase_receipt_partial_result",
-			source_doctype=SOURCE_DOCTYPE,
-			source_name=SOURCE_NAME,
-		)
-
-		with (
-			patched_action(
-				"create_purchase_receipt_partial_result",
-				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
-			),
-			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch(
-				"asn_module.qr_engine.dispatch._call_handler",
-				return_value={"doctype": "ToDo", "name": "TODO-001"},
-			),
-		):
-			with self.assertRaises(frappe.ValidationError):
-				dispatch(code=code, device_info="Desktop")
-
-		frappe.db.rollback()
-		success_logs = frappe.get_all(
-			"Scan Log",
-			filters={"action": "create_purchase_receipt_partial_result", "result": "Success"},
-			pluck="name",
-		)
-		self.assertFalse(success_logs)
-
-		failure_logs = frappe.get_all(
-			"Scan Log",
-			filters={"action": "create_purchase_receipt_partial_result", "result": "Failure"},
-			fields=["error_message"],
-			order_by="creation desc",
-			limit=1,
-		)
-		self.assertTrue(failure_logs)
-		self.assertIn("handler result", failure_logs[0]["error_message"].lower())
-
-	def test_dispatch_logs_failure_when_handler_raises(self):
-		code = self._make_scan_code(
-			action_key="create_purchase_receipt_failure",
-			source_doctype=SOURCE_DOCTYPE,
-			source_name=SOURCE_NAME,
-		)
-
-		with (
-			patched_action(
-				"create_purchase_receipt_failure",
-				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
-			),
-			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=ValueError("handler failed")),
-		):
-			with self.assertRaises(ValueError):
-				dispatch(code=code, device_info="Desktop")
-
-		frappe.db.rollback()
-		log = frappe.get_all(
-			"Scan Log",
-			filters={
-				"action": "create_purchase_receipt_failure",
-				"source_name": SOURCE_NAME,
-				"result": "Failure",
-			},
-			fields=["name", "device_info", "error_message"],
-			order_by="creation desc",
-			limit=1,
-		)[0]
-		self.assertEqual(log["device_info"], "Desktop")
-		self.assertIn("handler failed", log["error_message"])
-
 	def test_dispatch_handler_failure_rolls_back_partial_writes(self):
 		code = self._make_scan_code(
 			action_key="create_purchase_receipt_partial_writes",
@@ -495,3 +432,79 @@ class TestDispatch(FrappeTestCase):
 		log = frappe.get_doc("Scan Log", result["name"])
 		self.assertEqual(log.device_info, "Handheld-Scanner-X")
 		self.assertTrue(frappe.local.flags.commit)
+
+
+class TestDispatchFailureCommit(FrappeTestCase):
+	"""A failing dispatch commits so its Scan Log survives a rollback. Commits for real."""
+
+	def setUp(self):
+		super().setUp()
+		self.codes = []
+		self.addCleanup(self._purge_committed_rows)
+
+	def _purge_committed_rows(self):
+		frappe.db.rollback()
+		frappe.db.delete("Scan Log", {"scan_code": ("in", self.codes)})
+		frappe.db.delete("Scan Code", {"name": ("in", self.codes)})
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit - purge what this class really committed
+
+	def _make_scan_code(self, action_key):
+		code = get_or_create_scan_code(action_key, SOURCE_DOCTYPE, SOURCE_NAME)
+		self.codes.append(code)
+		return code
+
+	def test_dispatch_rejects_partial_handler_result_and_logs_failure(self):
+		code = self._make_scan_code("create_purchase_receipt_partial_result")
+
+		with (
+			patched_action(
+				"create_purchase_receipt_partial_result",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
+			),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch(
+				"asn_module.qr_engine.dispatch._call_handler",
+				return_value={"doctype": "ToDo", "name": "TODO-001"},
+			),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				dispatch(code=code, device_info="Desktop")
+
+		frappe.db.rollback()
+		success_logs = frappe.get_all(
+			"Scan Log",
+			filters={"scan_code": code, "result": "Success"},
+			pluck="name",
+		)
+		self.assertFalse(success_logs)
+
+		failure_logs = frappe.get_all(
+			"Scan Log",
+			filters={"scan_code": code, "result": "Failure"},
+			fields=["error_message"],
+		)
+		self.assertEqual(len(failure_logs), 1)
+		self.assertIn("handler result", failure_logs[0]["error_message"].lower())
+
+	def test_dispatch_logs_failure_when_handler_raises(self):
+		code = self._make_scan_code("create_purchase_receipt_failure")
+
+		with (
+			patched_action(
+				"create_purchase_receipt_failure",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
+			),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=ValueError("handler failed")),
+		):
+			with self.assertRaises(ValueError):
+				dispatch(code=code, device_info="Desktop")
+
+		frappe.db.rollback()
+		log = frappe.get_all(
+			"Scan Log",
+			filters={"scan_code": code, "result": "Failure"},
+			fields=["device_info", "error_message"],
+		)[0]
+		self.assertEqual(log["device_info"], "Desktop")
+		self.assertIn("handler failed", log["error_message"])

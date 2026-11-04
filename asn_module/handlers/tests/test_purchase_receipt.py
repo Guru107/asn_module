@@ -20,6 +20,7 @@ from asn_module.handlers.purchase_receipt import (
 	stamp_asn_item_mapping,
 )
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
+from asn_module.tests.integration.fixtures import pin_gate_pass_mode_for_tests, with_gate_pass_mode
 from asn_module.utils.test_setup import make_test_breach
 
 
@@ -28,16 +29,15 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 	def setUpClass(cls):
 		before_tests()
 		super().setUpClass()
+		# Receipt-opening tests assume the fresh-site default (off); configured sites run it ON.
+		pin_gate_pass_mode_for_tests(cls)
 
 	def test_asn_dispatch_action_key_follows_gate_pass_mode(self):
-		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
 		self.assertEqual(asn_dispatch_action_key(), "create_purchase_receipt")
-		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 1)
-		self.assertEqual(asn_dispatch_action_key(), "create_gate_pass_from_asn")
-		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		with with_gate_pass_mode(True):
+			self.assertEqual(asn_dispatch_action_key(), "create_gate_pass_from_asn")
 
 	def test_create_gate_pass_from_asn_follows_receipt_path_when_gate_pass_mode_is_off(self):
-		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
 		asn = self._make_submitted_asn()
 		result = create_gate_pass_from_asn("ASN", asn.name, {})
 		self.assertEqual(result["doctype"], "Purchase Receipt")

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -67,6 +68,21 @@ def integration_user_context(email: str = INTEGRATION_USER_EMAIL) -> Generator[N
 		frappe.set_user(previous)
 
 
+def _patch_gate_pass_mode(enabled: bool):
+	return patch("asn_module.handlers.purchase_receipt._gate_pass_mode_on", return_value=enabled)
+
+
+@contextmanager
+def with_gate_pass_mode(enabled: bool = True) -> Generator[SimpleNamespace, None, None]:
+	"""Run a block with gate-pass mode ``enabled``, without writing the site's setting.
+
+	Patched rather than written, so a failing dispatch's commit cannot persist it.
+	Yields a switch: ``switch.set(False)`` flips the mode mid-block.
+	"""
+	with _patch_gate_pass_mode(enabled) as mode:
+		yield SimpleNamespace(set=lambda on: setattr(mode, "return_value", on))
+
+
 def pin_gate_pass_mode_for_tests(cls) -> None:
 	"""Run a test class with gate-pass mode off, without touching the site's setting.
 
@@ -74,6 +90,19 @@ def pin_gate_pass_mode_for_tests(cls) -> None:
 	configured production-clone sites run it ON. Patched rather than written, so
 	dispatch's mid-test commit cannot persist it and a killed run cannot leave it.
 	"""
-	patcher = patch("asn_module.handlers.purchase_receipt._gate_pass_mode_on", return_value=False)
+	patcher = _patch_gate_pass_mode(False)
+	patcher.start()
+	cls.addClassCleanup(patcher.stop)
+
+
+def block_commits_for_tests(cls) -> None:
+	"""Stop a class's deliberately failing dispatches from committing its fixtures.
+
+	``dispatch`` commits on failure so the failure Scan Log survives. In a test that
+	commit would outlive the class-level rollback. Call this last in ``setUpClass``,
+	after ``before_tests()``, whose own commit must stay real. The real failure-path
+	commit is covered in ``qr_engine/tests/test_dispatch.py``.
+	"""
+	patcher = patch.object(frappe.db, "commit")
 	patcher.start()
 	cls.addClassCleanup(patcher.stop)

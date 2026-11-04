@@ -9,7 +9,11 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 )
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
-from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
+from asn_module.tests.integration.fixtures import (
+	ensure_integration_user,
+	integration_user_context,
+	pin_gate_pass_mode_for_tests,
+)
 from asn_module.utils.test_setup import before_tests
 
 
@@ -24,10 +28,6 @@ class TestGatePassMode(FrappeTestCase):
 
 		settings = frappe.new_doc("ASN Settings")
 		self.assertEqual(cint(settings.gate_pass_mode), 0)
-		# Configured sites run gate-pass mode ON; this test asserts the fresh-site
-		# default, so set it back before reading the stored value.
-		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
-		self.assertEqual(cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode")), 0)
 
 		self.assertFalse(frappe.get_meta("ASN").has_field("gate_pass_mode"))
 		self.assertFalse(frappe.db.has_column("ASN", "gate_pass_mode"))
@@ -40,11 +40,9 @@ class TestMaterialAsnScanWhenGatePassModeIsOff(FrappeTestCase):
 		before_tests()
 		ensure_integration_user()
 		# This class scans with the mode OFF; configured sites run it ON.
-		frappe.db.set_single_value("ASN Settings", "gate_pass_mode", 0)
+		pin_gate_pass_mode_for_tests(cls)
 
 	def test_scanning_a_material_asn_twice_opens_the_same_draft_purchase_receipt(self):
-		self.assertEqual(cint(frappe.db.get_single_value("ASN Settings", "gate_pass_mode")), 0)
-
 		with integration_user_context():
 			purchase_order = create_purchase_order(qty=2)
 			asn = make_test_asn(
