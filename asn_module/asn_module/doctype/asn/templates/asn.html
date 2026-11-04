@@ -255,22 +255,18 @@
 			</table>
 		</div>
 
-		{% if doc.qr_code or doc.barcode %}
+		{% if doc.scan_code_label %}
+		{% set scan_image_url = "/api/method/asn_module.qr_engine.generate.scan_image?code=" ~ (doc.scan_code_label | urlencode) %}
 		<h3 class="asn-section-title">{{ _("Scan codes") }}</h3>
 		<div class="row">
-			{% if doc.qr_code %}
 			<div class="col-md-6 mb-3">
 				<div class="asn-ro-label">{{ _("QR code") }}</div>
-				<img src="{{ doc.qr_code }}" alt="{{ _('ASN QR') }}" class="img-fluid border rounded" style="max-height: 200px;">
+				<img src="{{ scan_image_url }}&kind=qr" alt="{{ _('ASN QR') }}" class="img-fluid border rounded" style="max-height: 200px;">
 			</div>
-			{% endif %}
-			{% if doc.barcode %}
 			<div class="col-md-6 mb-3">
 				<div class="asn-ro-label">{{ _("Barcode") }}</div>
-				<img src="{{ doc.barcode }}" alt="{{ _('ASN barcode') }}" class="img-fluid border rounded" style="max-height: 120px;">
+				<img src="{{ scan_image_url }}&kind=barcode" alt="{{ _('ASN barcode') }}" class="img-fluid border rounded" style="max-height: 120px;">
 			</div>
-			{% endif %}
-			{% if doc.scan_code_label %}
 			<div class="col-12">
 				<div class="asn-ro-label">{{ _("Scan code label") }}</div>
 				<div class="asn-scan-code-value" id="asn-scan-code-label">{{ doc.scan_code_label }}</div>
@@ -286,7 +282,6 @@
 					<span class="text-success d-none" id="asn-copy-scan-code-feedback">{{ _("Copied") }}</span>
 				</div>
 			</div>
-			{% endif %}
 		</div>
 		{% endif %}
 
