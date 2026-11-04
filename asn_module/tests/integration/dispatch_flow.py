@@ -16,7 +16,7 @@ from asn_module.tests.integration.fixtures import integration_user_context
 
 
 def run_asn_pr_pi_via_dispatch(*, supplier_invoice_no: str, qty: float = 10) -> SimpleNamespace:
-	"""Full happy path under ``integration_user_context`` with real ASN attachments and no PR submit mocks."""
+	"""Full happy path under ``integration_user_context`` with no PR submit mocks."""
 	with integration_user_context():
 		purchase_order = create_purchase_order(qty=qty)
 		asn = make_test_asn(

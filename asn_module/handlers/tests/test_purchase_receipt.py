@@ -301,7 +301,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(emit.call_args.kwargs["asn_item"], "ASN-ITEM-002")
 
 	@patch("asn_module.handlers.purchase_receipt.store_scan_code")
-	def test_submit_updates_asn_and_attaches_invoice_scan_code(self, store_scan_code_mock):
+	def test_submit_updates_asn_and_stores_invoice_scan_code(self, store_scan_code_mock):
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10)
 		asn = make_test_asn_with_two_items(purchase_order=purchase_order, qty=5)
 		asn.insert(ignore_permissions=True)

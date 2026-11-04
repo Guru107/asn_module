@@ -75,6 +75,29 @@ class TestScanImageEndpoint(UnitTestCase):
 			f"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code={CODE}"
 		)
 
+	def test_qr_trims_a_trailing_slash_from_the_site_url(self):
+		with (
+			patch("asn_module.qr_engine.generate.frappe.utils.get_url", return_value="https://example.com/"),
+			patch("asn_module.qr_engine.generate.pyqrcode.create") as create_qr,
+		):
+			create_qr.return_value.png.side_effect = lambda buffer, scale: buffer.write(PNG_MAGIC)
+			scan_image(code=CODE, kind="qr")
+
+		create_qr.assert_called_once_with(
+			f"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code={CODE}"
+		)
+
+	def test_barcode_falls_back_to_default_options_on_type_error(self):
+		writer = MagicMock()
+		writer.write.side_effect = [TypeError("options unsupported"), None]
+		with patch("asn_module.qr_engine.generate.barcode") as mock_barcode:
+			mock_barcode.get.return_value = writer
+			response = scan_image(code=CODE, kind="barcode")
+
+		self.assertEqual(writer.write.call_count, 2)
+		self.assertNotIn("options", writer.write.call_args_list[1].kwargs)
+		self.assertEqual(response.mimetype, "image/png")
+
 	def test_barcode_keeps_its_human_readable_label(self):
 		with patch("asn_module.qr_engine.generate.barcode") as mock_barcode:
 			mock_barcode.get.return_value.write.side_effect = lambda buffer, options=None: buffer.write(

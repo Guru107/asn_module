@@ -95,14 +95,6 @@ def _submit_by_flag(doctype, name):
 	frappe.db.set_value(doctype, name, "docstatus", 1, update_modified=False)
 
 
-from asn_module.qr_engine.scan_codes import format_scan_code_for_display
-
-
-def _scan_code_attachment_names(code: str) -> tuple[str, str]:
-	label = format_scan_code_for_display(code)
-	return f"{label}-qr.png", f"{label}-barcode.png"
-
-
 def _attached_file_names(doctype, name):
 	return frappe.get_all(
 		"File",
