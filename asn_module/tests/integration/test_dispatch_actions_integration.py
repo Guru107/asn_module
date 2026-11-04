@@ -3,8 +3,6 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from asn_module.handlers.tests.test_purchase_return import TestCreatePurchaseReturn
-from asn_module.handlers.tests.test_stock_transfer import TestCreateStockTransfer
 from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
 	patch_subcontracting_incoming_rate,
@@ -48,31 +46,6 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 			code = get_or_create_scan_code("confirm_putaway", "Purchase Receipt", out.pr.name)
 			with self.assertRaises(ActionNotFoundError):
 				dispatch(code=code, device_info="integration-putaway")
-
-	def test_create_stock_transfer_via_dispatch(self):
-		fixture = TestCreateStockTransfer()
-		_pr, qi = fixture._make_purchase_receipt_with_qi("Accepted")
-		with integration_user_context():
-			code = get_or_create_scan_code("create_stock_transfer", "Quality Inspection", qi.name)
-			result = dispatch(code=code, device_info="integration-st")
-		self.assertTrue(result.get("success"))
-		self.assertEqual(result.get("doctype"), "Stock Entry")
-		se = frappe.get_doc("Stock Entry", result["name"])
-		self.assertEqual(se.docstatus, 0)
-		self.assertEqual(se.stock_entry_type, "Material Transfer")
-
-	def test_create_purchase_return_via_dispatch(self):
-		fixture = TestCreatePurchaseReturn()
-		pr, qi = fixture._make_rejected_purchase_receipt_with_qi()
-		with integration_user_context():
-			code = get_or_create_scan_code("create_purchase_return", "Quality Inspection", qi.name)
-			result = dispatch(code=code, device_info="integration-prret")
-		self.assertTrue(result.get("success"))
-		self.assertEqual(result.get("doctype"), "Purchase Receipt")
-		ret = frappe.get_doc("Purchase Receipt", result["name"])
-		self.assertEqual(ret.docstatus, 0)
-		self.assertEqual(ret.is_return, 1)
-		self.assertEqual(ret.return_against, pr.name)
 
 	def test_subcontracting_dispatches_via_scan_code(self):
 		helper = TestSubcontractingHandlers()

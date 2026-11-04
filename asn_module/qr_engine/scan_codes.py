@@ -317,7 +317,6 @@ _SCAN_CHAIN_TRASH_DOCTYPES = frozenset(
 		"Subcontracting Receipt",
 		"Subcontracting Order",
 		"Stock Entry",
-		"Quality Inspection",
 	}
 )
 
