@@ -3,7 +3,7 @@
 Material:  ASN → Gate Pass → Purchase Receipt → Purchase Invoice
 Job:       ASN → Gate Pass → Subcontracting Receipt → Purchase Receipt → Purchase Invoice
 
-Every arrow dispatches the code attached to the previous document. Gate Pass
+Every arrow dispatches the code stored on the previous document. Gate Pass
 and Subcontracting Receipt reach docstatus 1 the way the rest of this suite
 does (``db.set_value``), because their ERPNext submit paths carry stock rules
 this module does not own; the submit hooks are exercised directly.
@@ -30,6 +30,8 @@ from asn_module.handlers.purchase_receipt import (
 from asn_module.handlers.subcontracting import (
 	SUBCONTRACTING_RECEIPT_PR_ACTION,
 	create_receipt_from_subcontracting_receipt,
+	on_subcontracting_dispatch_submit,
+	on_subcontracting_order_submit,
 	on_subcontracting_receipt_cancel,
 	on_subcontracting_receipt_submit,
 )
@@ -133,7 +135,13 @@ class TestScanChainWiring(FrappeTestCase):
 	def test_the_scan_code_field_is_read_only_and_not_copied(self):
 		before_tests()
 		ensure_gate_pass_for_tests()
-		for doctype, after in (("Gate Pass", "asn"), ("Purchase Receipt", "asn_items")):
+		for doctype, after in (
+			("Gate Pass", "asn"),
+			("Purchase Receipt", "asn_items"),
+			("Subcontracting Receipt", "asn"),
+			("Subcontracting Order", "supplier"),
+			("Stock Entry", "subcontracting_order"),
+		):
 			meta = frappe.get_meta(doctype)
 			field = meta.get_field("scan_code")
 			self.assertIsNotNone(field, f"{doctype} has the Scan Code field")
@@ -357,25 +365,32 @@ class TestSubcontractingReceiptScanChain(FrappeTestCase):
 		scr.insert(ignore_permissions=True)
 		return scr
 
-	def test_submitting_a_subcontracting_receipt_attaches_the_purchase_receipt_codes(self):
+	def test_submitting_a_subcontracting_receipt_stores_the_purchase_receipt_code(self):
 		with patch_subcontracting_incoming_rate(5):
 			scr = self._draft_subcontracting_receipt()
+			self.assertFalse(frappe.db.get_value("Subcontracting Receipt", scr.name, "scan_code"))
 			on_subcontracting_receipt_submit(scr)
 
 		code = _scan_code_for(SUBCONTRACTING_RECEIPT_PR_ACTION, "Subcontracting Receipt", scr.name)
 		self.assertTrue(code)
-		qr_name, barcode_name = _scan_code_attachment_names(code)
-		files = _attached_file_names("Subcontracting Receipt", scr.name)
-		self.assertIn(qr_name, files)
-		self.assertIn(barcode_name, files)
+		self.assertEqual(frappe.db.get_value("Subcontracting Receipt", scr.name, "scan_code"), code)
+		self.assertEqual(_attached_file_names("Subcontracting Receipt", scr.name), [])
+
+	def test_a_return_subcontracting_receipt_stores_no_code(self):
+		with patch_subcontracting_incoming_rate(5):
+			scr = self._draft_subcontracting_receipt()
+			scr.is_return = 1
+			on_subcontracting_receipt_submit(scr)
+
+		self.assertFalse(frappe.db.get_value("Subcontracting Receipt", scr.name, "scan_code"))
+		self.assertEqual(frappe.db.count("Scan Code", {"source_name": scr.name}), 0)
 
 	def test_scanning_a_subcontracting_receipt_opens_a_draft_purchase_receipt(self):
 		with integration_user_context(), patch_subcontracting_incoming_rate(5):
 			scr = self._draft_subcontracting_receipt()
 			_submit_by_flag("Subcontracting Receipt", scr.name)
-			code = get_or_create_scan_code(
-				SUBCONTRACTING_RECEIPT_PR_ACTION, "Subcontracting Receipt", scr.name
-			)
+			on_subcontracting_receipt_submit(scr)
+			code = frappe.db.get_value("Subcontracting Receipt", scr.name, "scan_code")
 
 			result = dispatch(code=code, device_info="subcontracting-receipt-scan")
 			again = dispatch(code=code, device_info="subcontracting-receipt-scan-again")
@@ -406,14 +421,18 @@ class TestSubcontractingReceiptScanChain(FrappeTestCase):
 		with integration_user_context(), patch_subcontracting_incoming_rate(5):
 			scr = self._draft_subcontracting_receipt()
 			_submit_by_flag("Subcontracting Receipt", scr.name)
-			code = get_or_create_scan_code(
-				SUBCONTRACTING_RECEIPT_PR_ACTION, "Subcontracting Receipt", scr.name
-			)
+			on_subcontracting_receipt_submit(scr)
+			code = frappe.db.get_value("Subcontracting Receipt", scr.name, "scan_code")
 			frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
 
 			on_subcontracting_receipt_cancel(SimpleNamespace(name=scr.name))
 
 			self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Voided")
+			self.assertEqual(
+				frappe.db.get_value("Subcontracting Receipt", scr.name, "scan_code"),
+				code,
+				"a cancelled receipt keeps its value",
+			)
 			with self.assertRaises(frappe.ValidationError):
 				dispatch(code=code, device_info="subcontracting-receipt-cancelled")
 
@@ -426,6 +445,73 @@ class TestSubcontractingReceiptScanChain(FrappeTestCase):
 			second = create_receipt_from_subcontracting_receipt("Subcontracting Receipt", scr.name, {})
 
 		self.assertEqual(second["name"], first["name"])
+
+
+class TestSubcontractingOrderAndDispatchScanChain(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		ensure_integration_user()
+		block_commits_for_tests(cls)
+
+	def test_a_subcontracting_order_stores_the_dispatch_code_and_the_scan_opens_the_dispatch(self):
+		sco = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		self.assertFalse(frappe.db.get_value("Subcontracting Order", sco.name, "scan_code"))
+		on_subcontracting_order_submit(sco, "on_submit")
+
+		code = frappe.db.get_value("Subcontracting Order", sco.name, "scan_code")
+		self.assertEqual(
+			code, _scan_code_for("create_subcontracting_dispatch", "Subcontracting Order", sco.name)
+		)
+		self.assertEqual(_attached_file_names("Subcontracting Order", sco.name), [])
+		with integration_user_context():
+			result = dispatch(code=code, device_info="sco-dispatch-scan")
+		self.assertEqual(result["doctype"], "Stock Entry")
+		self.assertEqual(
+			frappe.db.get_value("Stock Entry", result["name"], "stock_entry_type"), "Send to Subcontractor"
+		)
+
+	def test_the_send_to_subcontractor_entry_stores_the_receipt_code_and_the_scan_opens_the_receipt(self):
+		sco = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		with integration_user_context():
+			dispatched = dispatch(
+				code=get_or_create_scan_code(
+					"create_subcontracting_dispatch", "Subcontracting Order", sco.name
+				),
+				device_info="sco-dispatch-scan",
+			)
+		stock_entry = frappe.get_doc("Stock Entry", dispatched["name"])
+		self.assertFalse(stock_entry.get("scan_code"))
+		on_subcontracting_dispatch_submit(stock_entry, "on_submit")
+		_submit_by_flag("Stock Entry", stock_entry.name)
+
+		code = frappe.db.get_value("Stock Entry", stock_entry.name, "scan_code")
+		self.assertTrue(code)
+		self.assertEqual(_attached_file_names("Stock Entry", stock_entry.name), [])
+		with integration_user_context(), patch_subcontracting_incoming_rate(5):
+			result = dispatch(code=code, device_info="ste-receipt-scan")
+		self.assertEqual(result["doctype"], "Subcontracting Receipt")
+		self.assertEqual(
+			frappe.db.get_value(
+				"Subcontracting Receipt Item", {"parent": result["name"]}, "subcontracting_order"
+			),
+			sco.name,
+		)
+
+	def test_a_stock_entry_of_another_type_stores_no_code(self):
+		stock_entry = SimpleNamespace(
+			doctype="Stock Entry",
+			name="STE-OTHER",
+			stock_entry_type="Material Transfer",
+			subcontracting_order="SCO-1",
+		)
+
+		with patch("asn_module.handlers.subcontracting.store_scan_code") as store:
+			on_subcontracting_dispatch_submit(stock_entry, "on_submit")
+
+		store.assert_not_called()
+		self.assertEqual(frappe.db.count("Scan Code", {"source_name": "STE-OTHER"}), 0)
 
 
 class TestUnlinkedReceiptGetsInvoiceCode(FrappeTestCase):
