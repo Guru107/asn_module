@@ -1000,8 +1000,7 @@ def _attach_followup_codes(doc) -> None:
 
 	Runs before the ASN bookkeeping so an unlinked receipt (one born from a
 	Subcontracting Receipt) is not skipped. The putaway code is attached only
-	when no item calls for inspection first; a mixed receipt takes the
-	Quality Inspection → stock-transfer/reject path instead.
+	when no item calls for inspection first.
 	"""
 	attach_scan_codes_to_doc(doc, "create_purchase_invoice")
 
