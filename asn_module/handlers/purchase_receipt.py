@@ -996,18 +996,9 @@ def on_purchase_receipt_submit(doc, method):
 
 
 def _attach_followup_codes(doc) -> None:
-	"""Attach the codes that create this receipt's follow-up documents.
+	"""Attach the code that creates this receipt's Purchase Invoice.
 
 	Runs before the ASN bookkeeping so an unlinked receipt (one born from a
-	Subcontracting Receipt) is not skipped. The putaway code is attached only
-	when no item calls for inspection first.
+	Subcontracting Receipt) is not skipped.
 	"""
 	attach_scan_codes_to_doc(doc, "create_purchase_invoice")
-
-	no_item_needs_inspection = bool(doc.items) and all(
-		not frappe.get_cached_value("Item", pr_item.item_code, "inspection_required_before_purchase")
-		for pr_item in doc.items
-	)
-
-	if no_item_needs_inspection:
-		attach_scan_codes_to_doc(doc, "confirm_putaway")

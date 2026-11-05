@@ -21,11 +21,6 @@ ACTIONS = {
 		"source_doctype": "Purchase Receipt",
 		"roles": ["Accounts User", "Accounts Manager"],
 	},
-	"confirm_putaway": {
-		"handler": "asn_module.handlers.putaway.confirm_putaway",
-		"source_doctype": "Purchase Receipt",
-		"roles": ["Stock User", "Stock Manager"],
-	},
 	"create_subcontracting_dispatch": {
 		"handler": "asn_module.handlers.subcontracting.create_dispatch_from_subcontracting_order",
 		"source_doctype": "Subcontracting Order",

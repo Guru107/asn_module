@@ -181,17 +181,11 @@ class TestRecordSuccessfulScan(FrappeTestCase, _ScanCodeTestMixin):
 		count = frappe.db.get_value("Scan Code", name, "scan_count")
 		self.assertEqual(count, 1)
 
-	def test_sets_used_for_non_rescan_safe(self):
+	def test_sets_used_after_scan(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
 		record_successful_scan(name, "create_purchase_receipt")
 		status = frappe.db.get_value("Scan Code", name, "status")
 		self.assertEqual(status, "Used")
-
-	def test_stays_active_for_rescan_safe(self):
-		name = get_or_create_scan_code("confirm_putaway", "ASN", self._asn_name)
-		record_successful_scan(name, "confirm_putaway")
-		status = frappe.db.get_value("Scan Code", name, "status")
-		self.assertEqual(status, "Active")
 
 
 class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
@@ -211,12 +205,6 @@ class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 		doc = frappe.get_doc("Scan Code", name)
 		with self.assertRaises(frappe.ValidationError):
 			validate_scan_code_row(doc, "create_purchase_receipt")
-
-	def test_used_rescan_safe_ok(self):
-		name = get_or_create_scan_code("confirm_putaway", "ASN", self._asn_name)
-		frappe.db.set_value("Scan Code", name, "status", "Used", update_modified=False)
-		doc = frappe.get_doc("Scan Code", name)
-		validate_scan_code_row(doc, "confirm_putaway")
 
 	def test_unknown_status_blocked(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
