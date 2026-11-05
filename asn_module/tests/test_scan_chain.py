@@ -19,7 +19,6 @@ from frappe.utils import flt, today
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
-	real_asn_attachment_context,
 )
 from asn_module.handlers.purchase_receipt import (
 	ASN_GATE_PASS_SCAN_ACTION,
@@ -62,8 +61,7 @@ def _submitted_material_asn(qty=2):
 		qty=qty,
 	)
 	asn.insert(ignore_permissions=True)
-	with real_asn_attachment_context():
-		asn.submit()
+	asn.submit()
 	return purchase_order, asn
 
 
@@ -81,8 +79,7 @@ def _submitted_job_asn(shipped_qty=1):
 		},
 		lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
 	)
-	with real_asn_attachment_context():
-		asn.submit()
+	asn.submit()
 	return subcontracting_order, asn
 
 
@@ -96,14 +93,6 @@ def _gate_pass_opened_by_scan(asn):
 
 def _submit_by_flag(doctype, name):
 	frappe.db.set_value(doctype, name, "docstatus", 1, update_modified=False)
-
-
-from asn_module.qr_engine.scan_codes import format_scan_code_for_display
-
-
-def _scan_code_attachment_names(code: str) -> tuple[str, str]:
-	label = format_scan_code_for_display(code)
-	return f"{label}-qr.png", f"{label}-barcode.png"
 
 
 def _attached_file_names(doctype, name):

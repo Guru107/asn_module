@@ -67,6 +67,12 @@ class TestDispatch(FrappeTestCase):
 		with self.assertRaises(ActionNotFoundError):
 			_resolve_action("unknown_action")
 
+	def test_dispatch_refuses_retired_quality_inspection_actions(self):
+		for action_key in ("create_stock_transfer", "create_purchase_return"):
+			code = self._make_scan_code(action_key=action_key)
+			with self.assertRaises(ActionNotFoundError):
+				dispatch(code=code, device_info="test")
+
 	def test_dispatch_returns_success_payload_and_logs_success(self):
 		code = self._make_scan_code()
 		frappe.local.flags.commit = False

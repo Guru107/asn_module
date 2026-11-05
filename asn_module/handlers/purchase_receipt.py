@@ -947,7 +947,7 @@ def on_purchase_receipt_trash(doc, method):
 
 
 def on_purchase_receipt_submit(doc, method):
-	"""Update ASN receipt tracking and attach follow-up QR codes on submit.
+	"""Update ASN receipt tracking and store the follow-up Scan Code on submit.
 
 	Every non-return receipt carries its next step's code, including a
 	receipt raised from a Subcontracting Receipt, which has no ASN.

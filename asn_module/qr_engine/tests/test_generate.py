@@ -5,87 +5,11 @@ from frappe.tests.utils import FrappeTestCase as UnitTestCase
 
 from asn_module.qr_engine.generate import (
 	InvalidScanImageRequest,
-	generate_barcode,
-	generate_qr,
 	scan_image,
 )
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 CODE = "ABCDEFGH23456789"
-
-
-class TestGenerate(UnitTestCase):
-	def _generate_qr(self, site_url):
-		def write_png(buffer, scale):
-			buffer.write(b"fake-qr-image")
-
-		with (
-			patch(
-				"asn_module.qr_engine.generate.resolve_scan_code_for_attachment", return_value="FIXEDCODE123"
-			),
-			patch("asn_module.qr_engine.generate.frappe.utils.get_url", return_value=site_url),
-			patch("asn_module.qr_engine.generate.pyqrcode.create") as create_qr,
-		):
-			create_qr.return_value.png.side_effect = write_png
-			return generate_qr(
-				action="create_purchase_receipt",
-				source_doctype="ASN",
-				source_name="ASN-00001",
-			)
-
-	def test_generate_qr_returns_expected_contract(self):
-		result = self._generate_qr("https://example.com")
-
-		self.assertEqual(result["scan_code"], "FIXEDCODE123")
-		self.assertIn("human_readable", result)
-		self.assertIn("url", result)
-		self.assertIn("image_base64", result)
-		self.assertEqual(
-			result["url"],
-			"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code=FIXEDCODE123",
-		)
-		self.assertTrue(result["image_base64"])
-
-	def test_generate_qr_trims_trailing_slash_from_site_url(self):
-		result = self._generate_qr("https://example.com/")
-
-		self.assertEqual(
-			result["url"],
-			"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code=FIXEDCODE123",
-		)
-
-	def test_generate_barcode_returns_expected_contract(self):
-		with patch(
-			"asn_module.qr_engine.generate.resolve_scan_code_for_attachment", return_value="FIXEDCODE123"
-		):
-			result = generate_barcode(
-				action="create_purchase_receipt",
-				source_doctype="ASN",
-				source_name="ASN-00001",
-			)
-
-		self.assertEqual(result["scan_code"], "FIXEDCODE123")
-		self.assertIn("human_readable", result)
-		self.assertIn("image_base64", result)
-		self.assertTrue(result["image_base64"])
-
-	def test_generate_barcode_falls_back_on_type_error(self):
-		"""If barcode writer raises TypeError on options, try without options."""
-		import io
-
-		with patch(
-			"asn_module.qr_engine.generate.resolve_scan_code_for_attachment", return_value="FIXEDCODE123"
-		):
-			with patch("asn_module.qr_engine.generate.barcode") as mock_barcode:
-				mock_code = mock_barcode.get.return_value
-				mock_code.writer.return_value = mock_barcode.get.return_value.writer.return_value
-				mock_code.write.side_effect = [TypeError("bad options"), None]
-				result = generate_barcode(
-					action="create_purchase_receipt",
-					source_doctype="ASN",
-					source_name="ASN-00001",
-				)
-			self.assertEqual(result["scan_code"], "FIXEDCODE123")
 
 
 class TestScanImageEndpoint(UnitTestCase):
@@ -150,6 +74,29 @@ class TestScanImageEndpoint(UnitTestCase):
 		create_qr.assert_called_once_with(
 			f"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code={CODE}"
 		)
+
+	def test_qr_trims_a_trailing_slash_from_the_site_url(self):
+		with (
+			patch("asn_module.qr_engine.generate.frappe.utils.get_url", return_value="https://example.com/"),
+			patch("asn_module.qr_engine.generate.pyqrcode.create") as create_qr,
+		):
+			create_qr.return_value.png.side_effect = lambda buffer, scale: buffer.write(PNG_MAGIC)
+			scan_image(code=CODE, kind="qr")
+
+		create_qr.assert_called_once_with(
+			f"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code={CODE}"
+		)
+
+	def test_barcode_falls_back_to_default_options_on_type_error(self):
+		writer = MagicMock()
+		writer.write.side_effect = [TypeError("options unsupported"), None]
+		with patch("asn_module.qr_engine.generate.barcode") as mock_barcode:
+			mock_barcode.get.return_value = writer
+			response = scan_image(code=CODE, kind="barcode")
+
+		self.assertEqual(writer.write.call_count, 2)
+		self.assertNotIn("options", writer.write.call_args_list[1].kwargs)
+		self.assertEqual(response.mimetype, "image/png")
 
 	def test_barcode_keeps_its_human_readable_label(self):
 		with patch("asn_module.qr_engine.generate.barcode") as mock_barcode:

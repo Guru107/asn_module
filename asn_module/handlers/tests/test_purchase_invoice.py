@@ -5,7 +5,6 @@ from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchas
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
-	_mock_asn_attachments,
 	before_tests,
 	create_purchase_order_with_fiscal_dates,
 	make_test_asn,
@@ -25,8 +24,7 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		if asn is None:
 			asn = make_test_asn(purchase_order=purchase_order)
 			asn.insert(ignore_permissions=True)
-			with _mock_asn_attachments():
-				asn.submit()
+			asn.submit()
 
 		pr = frappe.get_doc(
 			{
@@ -52,8 +50,6 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 			frappe.db.set_value("Purchase Receipt", pr.name, "per_billed", per_billed, update_modified=False)
 			pr.reload()
 		with (
-			_mock_asn_attachments(),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			pr.submit()
@@ -80,8 +76,6 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		return_pr = make_purchase_return(pr.name)
 		return_pr.asn = pr.asn
 		with (
-			_mock_asn_attachments(),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			return_pr.submit()
@@ -97,8 +91,6 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 		asn = make_test_asn(supplier_invoice_no=f"INV-{frappe.generate_hash(length=8)}")
 		asn.insert(ignore_permissions=True)
 		with (
-			_mock_asn_attachments(),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			asn.submit()

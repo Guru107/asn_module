@@ -8,7 +8,6 @@ from frappe.permissions import add_permission
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
-	_mock_asn_attachments,
 	create_purchase_order,
 	make_test_asn,
 )
@@ -97,13 +96,12 @@ def _ensure_user(email: str, roles: tuple[str, ...]) -> str:
 
 @contextmanager
 def _no_followup_codes():
-	"""Keep scan-code attachment out of these bookkeeping tests.
+	"""Keep scan-code storage out of these bookkeeping tests.
 
 	Their receipts carry fake names, so a real Scan Code row would fail
-	dynamic-link validation. The attachment itself has its own tests.
+	dynamic-link validation. Storing the code has its own tests.
 	"""
 	with (
-		patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
 		patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 	):
 		yield
@@ -346,8 +344,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		previous = frappe.db.get_value("ASN Item Branch Cap", cap_name, "max_qty")
 		frappe.db.set_value("ASN Item Branch Cap", cap_name, "max_qty", 100000, update_modified=False)
 		try:
-			with _mock_asn_attachments():
-				asn.submit()
+			asn.submit()
 		finally:
 			frappe.db.set_value("ASN Item Branch Cap", cap_name, "max_qty", previous, update_modified=False)
 
@@ -465,8 +462,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		doc = SimpleNamespace(
 			branch=PR_BRANCH,
@@ -595,7 +591,6 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -662,8 +657,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		po_item_b = po_b.items[0]
 		asn_b = make_test_asn(purchase_order=po_b, qty=PR_MAX_STOCK)
 		asn_b.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn_b.submit()
+		asn_b.submit()
 
 		doc = SimpleNamespace(
 			branch=PR_BRANCH,
@@ -689,8 +683,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		po_item = po.items[0]
 		asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		with _no_followup_codes():
 			on_purchase_receipt_submit(
@@ -795,8 +788,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		po_item = po.items[0]
 		open_asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
 		open_asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			open_asn.submit()
+		open_asn.submit()
 
 		closed = make_test_asn(purchase_order=po, qty=10)
 		closed.insert(ignore_permissions=True)
@@ -843,7 +835,6 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -891,7 +882,6 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -943,7 +933,6 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -991,8 +980,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		asn = make_test_asn(purchase_order=po, qty=qty)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		receipt = SimpleNamespace(
 			asn=asn.name,
@@ -1010,7 +998,6 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		)
 		with (
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -1049,17 +1036,15 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		return po, asn
 
 	def _submit_refused_at_maximum_stock(self, asn) -> str:
-		with _mock_asn_attachments():
-			with self.assertRaises(frappe.ValidationError) as raised:
-				asn.submit()
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.submit()
 		self.assertEqual(frappe.db.get_value("ASN", asn.name, "docstatus"), 0)
 		return str(raised.exception)
 
 	def _submit_once_on_hand_falls(self, asn) -> None:
 		self._set_on_hand(90)
 		asn.reload()
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 		asn.reload()
 		self.assertEqual(asn.docstatus, 1)
 

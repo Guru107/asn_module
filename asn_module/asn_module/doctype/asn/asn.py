@@ -11,7 +11,7 @@ from frappe.utils import cint, flt, today
 from frappe.website.website_generator import WebsiteGenerator
 
 from asn_module.handlers.purchase_receipt import asn_dispatch_action_key
-from asn_module.qr_engine.scan_codes import resolve_scan_code_for_attachment
+from asn_module.qr_engine.scan_codes import resolve_scan_code
 from asn_module.stock_cap.api import breaches_for_asn_doc
 from asn_module.stock_cap.fetch import cap_branch_by_warehouse, fetch_cap_context
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures, throw_stock_cap_exceeded
@@ -63,7 +63,7 @@ class ASN(WebsiteGenerator):
 
 	def on_submit(self):
 		asn_date = today()
-		scan_label = resolve_scan_code_for_attachment(asn_dispatch_action_key(), "ASN", self.name)
+		scan_label = resolve_scan_code(asn_dispatch_action_key(), "ASN", self.name)
 		frappe.db.set_value(
 			self.doctype,
 			self.name,

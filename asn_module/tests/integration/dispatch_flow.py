@@ -9,7 +9,6 @@ import frappe
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
-	real_asn_attachment_context,
 )
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
@@ -17,7 +16,7 @@ from asn_module.tests.integration.fixtures import integration_user_context
 
 
 def run_asn_pr_pi_via_dispatch(*, supplier_invoice_no: str, qty: float = 10) -> SimpleNamespace:
-	"""Full happy path under ``integration_user_context`` with real ASN attachments and no PR submit mocks."""
+	"""Full happy path under ``integration_user_context`` with no PR submit mocks."""
 	with integration_user_context():
 		purchase_order = create_purchase_order(qty=qty)
 		asn = make_test_asn(
@@ -26,8 +25,7 @@ def run_asn_pr_pi_via_dispatch(*, supplier_invoice_no: str, qty: float = 10) -> 
 			qty=qty,
 		)
 		asn.insert(ignore_permissions=True)
-		with real_asn_attachment_context():
-			asn.submit()
+		asn.submit()
 		asn.reload()
 
 		pr_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
@@ -70,8 +68,7 @@ def run_asn_pr_submitted_via_dispatch(*, supplier_invoice_no: str, qty: float = 
 			qty=qty,
 		)
 		asn.insert(ignore_permissions=True)
-		with real_asn_attachment_context():
-			asn.submit()
+		asn.submit()
 		asn.reload()
 
 		pr_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)

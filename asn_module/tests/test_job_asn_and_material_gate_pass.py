@@ -10,7 +10,6 @@ from frappe.utils import flt, today
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
-	real_asn_attachment_context,
 )
 from asn_module.custom_fields.gate_pass import setup as setup_gate_pass_fields
 from asn_module.handlers.purchase_invoice import create_from_purchase_receipt
@@ -371,8 +370,7 @@ class TestJobAsnScan(FrappeTestCase):
 				},
 				lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
 			)
-			with real_asn_attachment_context():
-				asn.submit()
+			asn.submit()
 
 			code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
 			with integration_user_context(), patch_subcontracting_incoming_rate(5):
@@ -455,8 +453,7 @@ class TestJobAsnScanWithMandatoryFiscalYear(FrappeTestCase):
 				},
 				lines=[{"subcontracting_order_item": finished_good.name, "qty": 1}],
 			)
-			with real_asn_attachment_context():
-				asn.submit()
+			asn.submit()
 
 			code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
 			with integration_user_context(), patch_subcontracting_incoming_rate(5):
@@ -720,8 +717,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				qty=2,
 			)
 			asn.insert(ignore_permissions=True)
-			with real_asn_attachment_context():
-				asn.submit()
+			asn.submit()
 
 		action_key = frappe.db.get_value(
 			"Scan Code",
@@ -741,8 +737,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 					qty=shipped_qty,
 				)
 				asn.insert(ignore_permissions=True)
-				with real_asn_attachment_context():
-					asn.submit()
+				asn.submit()
 				code = get_or_create_scan_code(ASN_GATE_PASS_SCAN_ACTION, "ASN", asn.name)
 				result = dispatch(code=code, device_info="gate-pass-on")
 
@@ -781,8 +776,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 			qty=2,
 		)
 		asn.insert(ignore_permissions=True)
-		with real_asn_attachment_context():
-			asn.submit()
+		asn.submit()
 		return purchase_order, asn
 
 	def test_deleting_a_draft_row_before_submit_credits_each_asn_line_its_own_qty(self):
@@ -815,8 +809,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				}
 			)
 			asn.insert(ignore_permissions=True)
-			with real_asn_attachment_context():
-				asn.submit()
+			asn.submit()
 			with integration_user_context():
 				created = create_gate_pass_from_asn("ASN", asn.name, {})
 
@@ -832,8 +825,6 @@ class TestMaterialGatePassScan(FrappeTestCase):
 			row.idx = pos
 		receipt.save(ignore_permissions=True)
 		with (
-			real_asn_attachment_context(),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			receipt.submit()
@@ -898,8 +889,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 			},
 			lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
 		)
-		with real_asn_attachment_context():
-			asn.submit()
+		asn.submit()
 		return subcontracting_order, asn
 
 	def test_scanning_a_job_asn_with_gate_pass_mode_on_opens_a_draft_job_gate_pass(self):
@@ -1012,8 +1002,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				serial_no = f"SER-{frappe.generate_hash(length=8)}"
 				asn.items[0].serial_nos = serial_no
 				asn.insert(ignore_permissions=True)
-				with real_asn_attachment_context():
-					asn.submit()
+				asn.submit()
 				code = get_or_create_scan_code(ASN_GATE_PASS_SCAN_ACTION, "ASN", asn.name)
 				opened = dispatch(code=code, device_info="gate-pass-before-create")
 				self.assertEqual(frappe.db.get_value("Gate Pass", opened["name"], "docstatus"), 0)
@@ -1041,8 +1030,6 @@ class TestMaterialGatePassScan(FrappeTestCase):
 			self.assertTrue(receipt.items[0].custom_gate_pass_item)
 
 		with (
-			real_asn_attachment_context(),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			receipt.submit()

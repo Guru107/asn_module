@@ -6,8 +6,12 @@ from asn_module.setup_actions import ACTIONS, get_action
 
 
 class TestActionsMap(FrappeTestCase):
-	def test_map_defines_ten_actions(self):
-		self.assertEqual(len(ACTIONS), 10)
+	def test_map_defines_eight_actions(self):
+		self.assertEqual(len(ACTIONS), 8)
+
+	def test_quality_inspection_actions_are_unknown(self):
+		for key in ("create_stock_transfer", "create_purchase_return"):
+			self.assertIsNone(get_action(key))
 
 	def test_get_action_create_gate_pass_from_asn(self):
 		action = get_action("create_gate_pass_from_asn")
