@@ -16,16 +16,6 @@ ACTIONS = {
 		"source_doctype": "Gate Pass",
 		"roles": ["Stock User", "Stock Manager"],
 	},
-	"create_stock_transfer": {
-		"handler": "asn_module.handlers.stock_transfer.create_from_quality_inspection",
-		"source_doctype": "Quality Inspection",
-		"roles": ["Stock User", "Stock Manager"],
-	},
-	"create_purchase_return": {
-		"handler": "asn_module.handlers.purchase_return.create_from_quality_inspection",
-		"source_doctype": "Quality Inspection",
-		"roles": ["Stock User", "Stock Manager"],
-	},
 	"create_purchase_invoice": {
 		"handler": "asn_module.handlers.purchase_invoice.create_from_purchase_receipt",
 		"source_doctype": "Purchase Receipt",

@@ -173,9 +173,6 @@ doc_events = {
 		"on_submit": "asn_module.handlers.purchase_invoice.on_purchase_invoice_submit",
 		"on_cancel": "asn_module.handlers.purchase_invoice.on_purchase_invoice_cancel",
 	},
-	"Quality Inspection": {
-		"on_submit": "asn_module.handlers.quality_inspection.on_quality_inspection_submit",
-	},
 	"Stock Entry": {
 		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_dispatch_submit",
 	},
