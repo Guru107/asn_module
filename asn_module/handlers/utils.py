@@ -157,6 +157,23 @@ def _scan_attachment_exists(doc, file_name: str) -> bool:
 	)
 
 
+def store_scan_code(doc, action: str) -> None:
+	"""Store on ``doc`` the code that creates its successor; no image is saved.
+
+	The registry row stays the source of truth that a code is valid. The field is a
+	copy for printing, written straight to the database because the document is
+	already submitted when the hook runs.
+	"""
+	from asn_module.qr_engine.scan_codes import resolve_scan_code_for_attachment
+
+	# Gate Pass can be installed after this app with no migrate yet; a missing column
+	# must not block the submit.
+	if not frappe.get_meta(doc.doctype).has_field("scan_code"):
+		return
+	code = resolve_scan_code_for_attachment(action, doc.doctype, doc.name)
+	doc.db_set("scan_code", code, update_modified=False)
+
+
 def attach_scan_codes_to_doc(doc, action: str) -> None:
 	"""Attach the QR and barcode that create this document's successor.
 

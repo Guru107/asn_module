@@ -10,6 +10,7 @@ this module does not own; the submit hooks are exercised directly.
 """
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -129,6 +130,19 @@ class TestScanChainWiring(FrappeTestCase):
 		self.assertEqual(scr["source_doctype"], "Subcontracting Receipt")
 		self.assertEqual(scr["allowed_roles"], ["Stock User", "Stock Manager"])
 
+	def test_the_scan_code_field_is_read_only_and_not_copied(self):
+		before_tests()
+		ensure_gate_pass_for_tests()
+		for doctype, after in (("Gate Pass", "asn"), ("Purchase Receipt", "asn_items")):
+			meta = frappe.get_meta(doctype)
+			field = meta.get_field("scan_code")
+			self.assertIsNotNone(field, f"{doctype} has the Scan Code field")
+			self.assertTrue(field.read_only)
+			self.assertTrue(field.no_copy, "a duplicate must not inherit another document's code")
+			fieldnames = [df.fieldname for df in meta.fields]
+			self.assertEqual(fieldnames.index("scan_code"), fieldnames.index(after) + 1)
+		self.assertIsNone(frappe.get_meta("Purchase Invoice").get_field("scan_code"))
+
 	def test_doc_events_wire_the_chain_handlers(self):
 		events = frappe.get_hooks("doc_events")
 		self.assertIn(
@@ -158,12 +172,12 @@ class TestGatePassScanChain(FrappeTestCase):
 		ensure_gate_pass_for_tests()
 		block_commits_for_tests(cls)
 
-	def test_submitting_a_gate_pass_attaches_the_receipt_qr_and_barcode(self):
+	def test_submitting_a_gate_pass_stores_the_receipt_code(self):
 		with with_gate_pass_mode(), integration_user_context():
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			self.assertFalse(
-				_scan_code_for(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name),
+				frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code"),
 				"a draft Gate Pass carries no code",
 			)
 
@@ -171,15 +185,29 @@ class TestGatePassScanChain(FrappeTestCase):
 
 		code = _scan_code_for(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name)
 		self.assertTrue(code)
-		qr_name, barcode_name = _scan_code_attachment_names(code)
-		files = _attached_file_names("Gate Pass", gate_pass.name)
-		self.assertIn(qr_name, files)
-		self.assertIn(barcode_name, files)
+		self.assertEqual(frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code"), code)
+		self.assertEqual(_attached_file_names("Gate Pass", gate_pass.name), [])
+
+	def test_a_doctype_without_the_scan_code_field_submits_without_a_code(self):
+		with with_gate_pass_mode(), integration_user_context():
+			_purchase_order, asn = _submitted_material_asn()
+			gate_pass = _gate_pass_opened_by_scan(asn)
+			meta = frappe.get_meta("Gate Pass")
+			with patch.object(meta, "has_field", return_value=False):
+				on_gate_pass_submit(gate_pass)
+
+		self.assertEqual(frappe.db.count("Scan Code", {"source_name": gate_pass.name}), 0)
 
 	def test_a_gate_pass_without_an_asn_gets_no_code(self):
-		on_gate_pass_submit(SimpleNamespace(asn="", name="GP-NO-ASN"))
+		with with_gate_pass_mode(), integration_user_context():
+			_purchase_order, asn = _submitted_material_asn()
+			gate_pass = _gate_pass_opened_by_scan(asn)
+			frappe.db.set_value("Gate Pass", gate_pass.name, "asn", "", update_modified=False)
 
-		self.assertEqual(frappe.db.count("Scan Code", {"source_name": "GP-NO-ASN"}), 0)
+			on_gate_pass_submit(frappe.get_doc("Gate Pass", gate_pass.name))
+
+		self.assertEqual(frappe.db.count("Scan Code", {"source_name": gate_pass.name}), 0)
+		self.assertFalse(frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code"))
 
 	def test_a_draft_gate_pass_with_a_scan_code_can_be_deleted(self):
 		with with_gate_pass_mode(), integration_user_context():
@@ -215,7 +243,8 @@ class TestGatePassScanChain(FrappeTestCase):
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			_submit_by_flag("Gate Pass", gate_pass.name)
-			code = get_or_create_scan_code(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name)
+			on_gate_pass_submit(gate_pass)
+			code = frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code")
 
 			result = dispatch(code=code, device_info="gate-pass-scan")
 			again = dispatch(code=code, device_info="gate-pass-scan-again")
@@ -275,12 +304,18 @@ class TestGatePassScanChain(FrappeTestCase):
 			_purchase_order, asn = _submitted_material_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			_submit_by_flag("Gate Pass", gate_pass.name)
-			code = get_or_create_scan_code(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name)
+			on_gate_pass_submit(gate_pass)
+			code = frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code")
 			frappe.db.set_value("Scan Code", code, "status", "Used", update_modified=False)
 
 			on_gate_pass_cancel(SimpleNamespace(name=gate_pass.name))
 
 			self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Voided")
+			self.assertEqual(
+				frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code"),
+				code,
+				"a cancelled pass keeps its value",
+			)
 			with self.assertRaises(frappe.ValidationError) as raised:
 				dispatch(code=code, device_info="gate-pass-cancelled")
 
@@ -400,7 +435,7 @@ class TestUnlinkedReceiptGetsInvoiceCode(FrappeTestCase):
 		before_tests()
 		ensure_integration_user()
 
-	def test_a_receipt_without_an_asn_still_gets_the_purchase_invoice_code(self):
+	def test_a_receipt_without_an_asn_still_stores_the_purchase_invoice_code(self):
 		from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_receipt
 
 		with integration_user_context():
@@ -410,11 +445,10 @@ class TestUnlinkedReceiptGetsInvoiceCode(FrappeTestCase):
 				row.warehouse = purchase_order.items[0].warehouse
 			apply_receipt_site_requirements(pr)
 			pr.insert(ignore_permissions=True)
+			self.assertFalse(frappe.db.get_value("Purchase Receipt", pr.name, "scan_code"))
 			pr.submit()
 
 		code = _scan_code_for("create_purchase_invoice", "Purchase Receipt", pr.name)
 		self.assertTrue(code, "an unlinked receipt carries the invoice code")
-		qr_name, barcode_name = _scan_code_attachment_names(code)
-		files = _attached_file_names("Purchase Receipt", pr.name)
-		self.assertIn(qr_name, files)
-		self.assertIn(barcode_name, files)
+		self.assertEqual(frappe.db.get_value("Purchase Receipt", pr.name, "scan_code"), code)
+		self.assertEqual(_attached_file_names("Purchase Receipt", pr.name), [])
