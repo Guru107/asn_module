@@ -1,5 +1,6 @@
 import json
 from contextlib import contextmanager
+from html import unescape
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from asn_module.asn_module.doctype.asn.asn import (
 	get_purchase_order_items,
 )
 from asn_module.handlers.utils import fill_custom_fiscal_year
+from asn_module.qr_engine.scan_codes import normalize_scan_code
 from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	PortalValidationError,
@@ -259,34 +261,13 @@ def _over_receipt_allowance(*, item_code: str, item_allowance, stock_allowance, 
 		frappe.clear_cache(doctype="Item")
 
 
-_MOCK_ASN_SCAN_CODE = "TESTSCANCODE1234"
-
-
-@contextmanager
-def _mock_asn_attachments():
-	def fake_save_file(filename, *_args, **_kwargs):
-		return SimpleNamespace(file_url=f"/files/{filename}")
-
-	qr_payload = {
-		"image_base64": "ZmFrZS1xcg==",
-		"scan_code": _MOCK_ASN_SCAN_CODE,
-		"human_readable": _MOCK_ASN_SCAN_CODE,
-	}
-	with (
-		patch("asn_module.asn_module.doctype.asn.asn.generate_qr", return_value=qr_payload),
-		patch(
-			"asn_module.asn_module.doctype.asn.asn.generate_barcode",
-			return_value={"image_base64": "ZmFrZS1iYXI=", "scan_code": _MOCK_ASN_SCAN_CODE},
-		),
-		patch("asn_module.asn_module.doctype.asn.asn.save_file", side_effect=fake_save_file),
-	):
-		yield
-
-
 @contextmanager
 def real_asn_attachment_context():
-	"""Use real ``generate_qr`` / ``generate_barcode`` / ``save_file`` on ASN submit (no mocks)."""
+	"""No-op kept so call sites need no churn: ASN submit no longer saves scan images (#102)."""
 	yield
+
+
+_mock_asn_attachments = real_asn_attachment_context
 
 
 def create_purchase_order(**kwargs):
@@ -597,34 +578,34 @@ class TestASN(FrappeTestCase):
 
 		self.assertIn("Shipped qty 1.0 exceeds remaining PO qty 0", str(raised.exception))
 
-	def test_submit_sets_status_date_and_attachments(self):
+	def test_submit_sets_status_date_and_scan_code_label_without_image_files(self):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
-
-		with _mock_asn_attachments():
-			asn.submit()
-
+		asn.submit()
 		asn.reload()
 
 		self.assertEqual(asn.status, "Submitted")
 		self.assertEqual(str(asn.asn_date), today())
-		self.assertEqual(asn.qr_code, f"/files/{_MOCK_ASN_SCAN_CODE}-qr.png")
-		self.assertEqual(asn.barcode, f"/files/{_MOCK_ASN_SCAN_CODE}-barcode.png")
+		self.assertEqual(normalize_scan_code(asn.scan_code_label), asn.scan_code_label)
+		self.assertTrue(frappe.db.exists("Scan Code", asn.scan_code_label))
+		self.assertFalse(
+			frappe.db.exists("File", {"attached_to_doctype": "ASN", "attached_to_name": asn.name})
+		)
+		self.assertFalse(frappe.get_meta("ASN").has_field("qr_code"))
+		self.assertFalse(frappe.get_meta("ASN").has_field("barcode"))
 
-	def test_submit_with_real_qr_and_barcode_attachments(self):
+	def test_print_format_draws_both_images_from_the_scan_code_label(self):
+		frappe.reload_doc("asn_module", "print_format", "asn_scan_codes")
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
-
-		with real_asn_attachment_context():
-			asn.submit()
-
+		asn.submit()
 		asn.reload()
-		self.assertEqual(asn.status, "Submitted")
-		self.assertEqual(str(asn.asn_date), today())
-		self.assertTrue(asn.qr_code)
-		self.assertTrue(asn.barcode)
-		self.assertIn("/files/", asn.qr_code)
-		self.assertIn("/files/", asn.barcode)
+
+		html = unescape(frappe.get_print("ASN", asn.name, print_format="ASN Scan Codes"))
+
+		url = f"/api/method/asn_module.qr_engine.generate.scan_image?code={asn.scan_code_label}"
+		self.assertIn(f"{url}&kind=qr", html)
+		self.assertIn(f"{url}&kind=barcode", html)
 
 	def test_cancel_sets_status_cancelled(self):
 		asn = make_test_asn()
@@ -805,8 +786,7 @@ class TestASN(FrappeTestCase):
 
 		self.assertIsNone(amended.status)
 		self.assertIsNone(amended.asn_date)
-		self.assertIsNone(amended.qr_code)
-		self.assertIsNone(amended.barcode)
+		self.assertIsNone(amended.scan_code_label)
 
 		amended.insert(ignore_permissions=True)
 
