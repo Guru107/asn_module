@@ -15,11 +15,28 @@ from asn_module.qr_engine.dispatch import (
 from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_ALPHABET,
 	SCAN_CODE_LENGTH,
-	get_or_create_scan_code,
+	_random_scan_code_value,
 )
 
 SOURCE_DOCTYPE = "DocType"
 SOURCE_NAME = "User"
+
+
+def _fresh_scan_code(action_key, source_doctype=SOURCE_DOCTYPE, source_name=SOURCE_NAME):
+	# Never reuse an Active row a past run left behind: its Scan Logs would count here.
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Scan Code",
+				"scan_code": _random_scan_code_value(),
+				"action_key": action_key,
+				"source_doctype": source_doctype,
+				"source_name": source_name,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 @contextmanager
@@ -54,7 +71,7 @@ class TestDispatch(FrappeTestCase):
 		source_doctype=SOURCE_DOCTYPE,
 		source_name=SOURCE_NAME,
 	):
-		return get_or_create_scan_code(action_key, source_doctype, source_name)
+		return _fresh_scan_code(action_key, source_doctype, source_name)
 
 	def test_resolve_action_returns_the_code_defined_action(self):
 		action = _resolve_action("create_purchase_receipt")
@@ -210,7 +227,7 @@ class TestDispatch(FrappeTestCase):
 	def test_dispatch_used_scan_code_does_not_reopen_other_barcode_result(self):
 		other_code = self._make_scan_code()
 		frappe.db.set_value("Scan Code", other_code, "status", "Used", update_modified=False)
-		current_code = get_or_create_scan_code("create_purchase_receipt", SOURCE_DOCTYPE, SOURCE_NAME)
+		current_code = self._make_scan_code()
 		todo = frappe.get_doc(
 			{
 				"doctype": "ToDo",
@@ -455,7 +472,7 @@ class TestDispatchFailureCommit(FrappeTestCase):
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit - purge what this class really committed
 
 	def _make_scan_code(self, action_key):
-		code = get_or_create_scan_code(action_key, SOURCE_DOCTYPE, SOURCE_NAME)
+		code = _fresh_scan_code(action_key)
 		self.codes.append(code)
 		return code
 

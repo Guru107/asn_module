@@ -25,14 +25,21 @@ class TestRegistryCommandIntegration(FrappeTestCase):
 		pin_gate_pass_mode_for_tests(cls)
 
 	def test_verify_registry_ok_after_dispatch_flow(self):
-		run_asn_pr_pi_via_dispatch(
+		flow = run_asn_pr_pi_via_dispatch(
 			supplier_invoice_no=f"REG-OK-{frappe.generate_hash(length=8)}",
 			qty=3,
 		)
+		flow_codes = frappe.get_all(
+			"Scan Code",
+			filters={"source_name": ("in", [flow.asn.name, flow.pr.name, flow.pi.name])},
+			pluck="name",
+		)
+		self.assertIn(flow.pr_code, flow_codes)
+		self.assertIn(flow.pi_code, flow_codes)
 		with integration_user_context():
 			result = verify_scan_code_registry()
-		self.assertTrue(result["ok"])
-		self.assertEqual(result["orphan_count"], 0)
+		# Asserts on this flow's codes only: the dev site may hold unrelated orphans.
+		self.assertFalse(set(flow_codes) & {o["name"] for o in result["orphans"]})
 
 	def test_verify_registry_lists_orphan_scan_code(self):
 		orphan_name = None

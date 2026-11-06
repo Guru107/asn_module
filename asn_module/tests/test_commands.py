@@ -25,10 +25,25 @@ class TestVerifyScanCodeRegistry(FrappeTestCase):
 		)
 		return doc.name
 
-	def test_all_valid_returns_ok(self):
-		result = verify_scan_code_registry()
-		self.assertTrue(result["ok"])
-		self.assertEqual(result["orphan_count"], 0)
+	def test_valid_scan_code_is_not_reported(self):
+		# Asserts on this fixture only: the dev site may hold unrelated orphans.
+		with patch.dict(ACTIONS, {"registry_probe": {"source_doctype": "User"}}):
+			doc = frappe.get_doc(
+				{
+					"doctype": "Scan Code",
+					"scan_code": _random_scan_code_value(),
+					"action_key": "registry_probe",
+					"source_doctype": "User",
+					"source_name": "Administrator",
+				}
+			).insert(ignore_permissions=True)
+			result = verify_scan_code_registry()
+		self.assertNotIn(doc.name, [o["name"] for o in result["orphans"]])
+
+	def test_no_orphans_returns_ok(self):
+		with patch("asn_module.commands._orphan_scan_code_rows", return_value=[]):
+			result = verify_scan_code_registry()
+		self.assertEqual(result, {"ok": True, "orphan_count": 0, "orphans": []})
 
 	def test_orphan_scan_code_returns_not_ok(self):
 		orphan_name = self._make_orphan_scan_code()
