@@ -107,9 +107,7 @@ def _attached_file_names(doctype, name):
 def _assert_print_draws_barcode(test, doctype, name, print_format, code):
 	frappe.reload_doc("asn_module", "print_format", frappe.scrub(print_format))
 	html = unescape(frappe.get_print(doctype, name, print_format=print_format))
-	test.assertIn(
-		f"/api/method/asn_module.qr_engine.generate.scan_image?code={code}&kind=barcode", html
-	)
+	test.assertIn(f"/api/method/asn_module.qr_engine.generate.scan_image?code={code}&kind=barcode", html)
 
 
 def _scan_code_for(action, doctype, name):
@@ -272,7 +270,8 @@ class TestGatePassScanChain(FrappeTestCase):
 			_order, asn = _submitted_job_asn()
 			gate_pass = _gate_pass_opened_by_scan(asn)
 			_submit_by_flag("Gate Pass", gate_pass.name)
-			code = get_or_create_scan_code(GATE_PASS_RECEIPT_ACTION, "Gate Pass", gate_pass.name)
+			on_gate_pass_submit(gate_pass)
+			code = frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code")
 
 			result = dispatch(code=code, device_info="job-gate-pass-scan")
 
