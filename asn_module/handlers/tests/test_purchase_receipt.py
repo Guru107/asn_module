@@ -5,7 +5,6 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
-	_mock_asn_attachments,
 	before_tests,
 	create_purchase_order_with_fiscal_dates,
 	make_test_asn,
@@ -56,8 +55,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		asn.lr_no = "LR-0001"
 		asn.lr_date = dates["lr_date"]
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 		return asn
 
 	def test_creates_draft_purchase_receipt_from_asn(self):
@@ -243,12 +241,12 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.get_doc") as get_doc,
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc") as attach_scan_codes,
+			patch("asn_module.handlers.purchase_receipt.store_scan_code") as store_scan_code_mock,
 		):
 			on_purchase_receipt_submit(doc, "on_submit")
 
 		get_doc.assert_not_called()
-		attach_scan_codes.assert_called_once_with(doc, "create_purchase_invoice")
+		store_scan_code_mock.assert_called_once_with(doc, "create_purchase_invoice")
 
 	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
 		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0, asn="ASN-UNIT-004")
@@ -293,8 +291,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				return_value=[SimpleNamespace(name="ASN-ITEM-002", item_code="ITEM-002")],
 			),
 			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZQ=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(doc, "on_submit")
@@ -303,13 +300,12 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		emit.assert_called_once()
 		self.assertEqual(emit.call_args.kwargs["asn_item"], "ASN-ITEM-002")
 
-	@patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc")
-	def test_submit_updates_asn_and_attaches_invoice_scan_code(self, attach_scan_codes):
+	@patch("asn_module.handlers.purchase_receipt.store_scan_code")
+	def test_submit_updates_asn_and_stores_invoice_scan_code(self, store_scan_code_mock):
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10)
 		asn = make_test_asn_with_two_items(purchase_order=purchase_order, qty=5)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		result = create_gate_pass_from_asn(
 			source_doctype="ASN",
@@ -325,12 +321,12 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual([row.received_qty for row in asn.items], [5, 5])
 		self.assertEqual([row.discrepancy_qty for row in asn.items], [0, 0])
 		self.assertEqual(
-			[call.args[1] for call in attach_scan_codes.call_args_list],
+			[call.args[1] for call in store_scan_code_mock.call_args_list],
 			["create_purchase_invoice"],
 		)
 
-	@patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc")
-	def test_mixed_inspection_receipt_gets_only_invoice_code(self, attach_scan_codes):
+	@patch("asn_module.handlers.purchase_receipt.store_scan_code")
+	def test_mixed_inspection_receipt_gets_only_invoice_code(self, store_scan_code_mock):
 		"""An inspection-required item changes nothing: the receipt carries the invoice code only."""
 		purchase_order = create_purchase_order_with_fiscal_dates(qty=10, item_count=2, unique_items=True)
 		frappe.db.set_value(
@@ -354,8 +350,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 			},
 		)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		result = create_gate_pass_from_asn(
 			source_doctype="ASN",
@@ -387,7 +382,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		pr.submit()
 
 		self.assertEqual(
-			[call.args[1] for call in attach_scan_codes.call_args_list],
+			[call.args[1] for call in store_scan_code_mock.call_args_list],
 			["create_purchase_invoice"],
 		)
 

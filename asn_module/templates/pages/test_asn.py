@@ -101,6 +101,9 @@ class TestASNPortalPage(FrappeTestCase):
 		self.assertIn("asn-portal-delete-btn", asn_row)
 		self.assertNotIn("/app/asn/{{ asn.name }}", asn_row)
 		self.assertIn("asn-copy-scan-code-btn", asn_detail)
+		self.assertIn("asn_module.qr_engine.generate.scan_image", asn_detail)
+		self.assertNotIn("doc.qr_code", asn_detail)
+		self.assertNotIn("doc.barcode", asn_detail)
 
 	def test_get_supplier_for_user_returns_portal_supplier(self):
 		with patch(

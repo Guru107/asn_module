@@ -79,7 +79,6 @@ def seed_minimal_asn():
 	from asn_module.asn_module.doctype.asn.test_asn import (
 		create_purchase_order,
 		make_test_asn,
-		real_asn_attachment_context,
 	)
 
 	po = create_purchase_order(qty=10)
@@ -89,8 +88,7 @@ def seed_minimal_asn():
 		qty=10,
 	)
 	asn.insert(ignore_permissions=True)
-	with real_asn_attachment_context():
-		asn.submit()
+	asn.submit()
 
 	return {"asn_name": asn.name, "asn_status": asn.status, "supplier": asn.supplier}
 
@@ -104,7 +102,6 @@ def seed_scan_station_context():
 	from asn_module.asn_module.doctype.asn.test_asn import (
 		create_purchase_order,
 		make_test_asn,
-		real_asn_attachment_context,
 	)
 	from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 
@@ -115,8 +112,7 @@ def seed_scan_station_context():
 		qty=10,
 	)
 	asn.insert(ignore_permissions=True)
-	with real_asn_attachment_context():
-		asn.submit()
+	asn.submit()
 
 	scan_code_name = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
 	scan_code_value = frappe.db.get_value("Scan Code", scan_code_name, "scan_code")
@@ -216,7 +212,6 @@ def seed_asn_with_items():
 	from asn_module.asn_module.doctype.asn.test_asn import (
 		create_purchase_order,
 		make_test_asn,
-		real_asn_attachment_context,
 	)
 
 	po = create_purchase_order(qty=10)
@@ -236,8 +231,7 @@ def seed_asn_with_items():
 		},
 	)
 	asn.save(ignore_permissions=True)
-	with real_asn_attachment_context():
-		asn.submit()
+	asn.submit()
 
 	return {
 		"asn_name": asn.name,
@@ -510,8 +504,6 @@ def _portal_e2e_supplier():
 def _insert_cypress_asn(*, supplier: str, purchase_order, qty: float, submit: bool = False):
 	from frappe.utils import add_days, today
 
-	from asn_module.asn_module.doctype.asn.test_asn import real_asn_attachment_context
-
 	po_item = purchase_order.items[0]
 	asn = frappe.get_doc(
 		{
@@ -537,8 +529,7 @@ def _insert_cypress_asn(*, supplier: str, purchase_order, qty: float, submit: bo
 	asn.flags.ignore_permissions = True
 	asn.insert()
 	if submit:
-		with real_asn_attachment_context():
-			asn.submit()
+		asn.submit()
 	return asn
 
 

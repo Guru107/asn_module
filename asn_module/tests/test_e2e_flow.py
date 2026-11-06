@@ -4,7 +4,6 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
-	real_asn_attachment_context,
 )
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
@@ -37,7 +36,7 @@ class TestEndToEndFlow(FrappeTestCase):
 		pi = out.pi
 		purchase_order = out.purchase_order
 
-		self.assertTrue(asn.qr_code)
+		self.assertTrue(asn.scan_code_label)
 		self.assertEqual(pr.docstatus, 1)
 		self.assertEqual(pr.supplier, asn.supplier)
 		self.assertEqual(pr.asn, asn.name)
@@ -62,8 +61,7 @@ class TestEndToEndFlow(FrappeTestCase):
 				qty=10,
 			)
 			asn.insert(ignore_permissions=True)
-			with real_asn_attachment_context():
-				asn.submit()
+			asn.submit()
 
 			pr_code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
 			pr_result = dispatch(code=pr_code, device_info="E2E-Integration")

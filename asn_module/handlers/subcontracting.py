@@ -1,9 +1,10 @@
 import frappe
 from frappe import _
 
-from asn_module.handlers.utils import attach_scan_codes_to_doc, fill_custom_fiscal_year
+from asn_module.handlers.utils import fill_custom_fiscal_year, store_scan_code
 from asn_module.qr_engine.scan_codes import void_scan_codes
 
+SUBCONTRACTING_RECEIPT_ACTION_FROM_DISPATCH = "create_subcontracting_receipt_from_dispatch"
 SUBCONTRACTING_RECEIPT_PR_ACTION = "create_purchase_receipt_from_subcontracting_receipt"
 
 
@@ -59,6 +60,24 @@ def create_receipt_from_subcontracting_order(source_doctype: str, source_name: s
 	}
 
 
+def create_receipt_from_subcontracting_dispatch(source_doctype: str, source_name: str, payload: dict) -> dict:
+	"""Create a draft Subcontracting Receipt from a submitted Send to Subcontractor entry.
+
+	The entry's own code names the entry, not its order, so resolve the order here.
+	"""
+	del source_doctype
+
+	stock_entry = frappe.get_doc("Stock Entry", source_name)
+	if stock_entry.docstatus != 1:
+		frappe.throw(_("Stock Entry {0} must be submitted").format(source_name))
+	if stock_entry.stock_entry_type != "Send to Subcontractor" or not stock_entry.subcontracting_order:
+		frappe.throw(_("Stock Entry {0} is not a Send to Subcontractor entry").format(source_name))
+
+	return create_receipt_from_subcontracting_order(
+		"Subcontracting Order", stock_entry.subcontracting_order, payload
+	)
+
+
 def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name: str, payload: dict) -> dict:
 	"""Create a draft Purchase Receipt from a submitted Subcontracting Receipt.
 
@@ -106,11 +125,11 @@ def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name:
 
 
 def on_subcontracting_receipt_submit(doc, method=None):
-	"""Attach the Purchase Receipt scan code when a Subcontracting Receipt is submitted."""
+	"""Store the Purchase Receipt scan code when a Subcontracting Receipt is submitted."""
 	del method
 	if getattr(doc, "is_return", 0):
 		return
-	attach_scan_codes_to_doc(doc, SUBCONTRACTING_RECEIPT_PR_ACTION)
+	store_scan_code(doc, SUBCONTRACTING_RECEIPT_PR_ACTION)
 
 
 def on_subcontracting_receipt_cancel(doc, method=None):
@@ -120,17 +139,17 @@ def on_subcontracting_receipt_cancel(doc, method=None):
 
 
 def on_subcontracting_order_submit(doc, method):
-	"""Generate dispatch QR when a Subcontracting Order is submitted."""
+	"""Store the dispatch scan code when a Subcontracting Order is submitted."""
 	del method
 
-	attach_scan_codes_to_doc(doc, "create_subcontracting_dispatch")
+	store_scan_code(doc, "create_subcontracting_dispatch")
 
 
 def on_subcontracting_dispatch_submit(doc, method):
-	"""Generate receipt QR when Send to Subcontractor Stock Entry is submitted."""
+	"""Store the receipt scan code when a Send to Subcontractor Stock Entry is submitted."""
 	del method
 
 	if doc.stock_entry_type != "Send to Subcontractor" or not doc.subcontracting_order:
 		return
 
-	attach_scan_codes_to_doc(doc, "create_subcontracting_receipt")
+	store_scan_code(doc, SUBCONTRACTING_RECEIPT_ACTION_FROM_DISPATCH)

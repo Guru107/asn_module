@@ -1,5 +1,6 @@
 import json
 from contextlib import contextmanager
+from html import unescape
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from asn_module.asn_module.doctype.asn.asn import (
 	get_purchase_order_items,
 )
 from asn_module.handlers.utils import fill_custom_fiscal_year
+from asn_module.qr_engine.scan_codes import normalize_scan_code
 from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	PortalValidationError,
@@ -259,36 +261,6 @@ def _over_receipt_allowance(*, item_code: str, item_allowance, stock_allowance, 
 		frappe.clear_cache(doctype="Item")
 
 
-_MOCK_ASN_SCAN_CODE = "TESTSCANCODE1234"
-
-
-@contextmanager
-def _mock_asn_attachments():
-	def fake_save_file(filename, *_args, **_kwargs):
-		return SimpleNamespace(file_url=f"/files/{filename}")
-
-	qr_payload = {
-		"image_base64": "ZmFrZS1xcg==",
-		"scan_code": _MOCK_ASN_SCAN_CODE,
-		"human_readable": _MOCK_ASN_SCAN_CODE,
-	}
-	with (
-		patch("asn_module.asn_module.doctype.asn.asn.generate_qr", return_value=qr_payload),
-		patch(
-			"asn_module.asn_module.doctype.asn.asn.generate_barcode",
-			return_value={"image_base64": "ZmFrZS1iYXI=", "scan_code": _MOCK_ASN_SCAN_CODE},
-		),
-		patch("asn_module.asn_module.doctype.asn.asn.save_file", side_effect=fake_save_file),
-	):
-		yield
-
-
-@contextmanager
-def real_asn_attachment_context():
-	"""Use real ``generate_qr`` / ``generate_barcode`` / ``save_file`` on ASN submit (no mocks)."""
-	yield
-
-
 def create_purchase_order(**kwargs):
 	company = kwargs.get("company") or _ensure_company()
 	supplier = kwargs.get("supplier") or _ensure_supplier()
@@ -415,8 +387,7 @@ class TestASN(FrappeTestCase):
 		doc = make_test_asn(supplier_invoice_no=invoice_no)
 		doc.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			doc.submit()
+		doc.submit()
 
 		doc.cancel()
 
@@ -597,41 +568,40 @@ class TestASN(FrappeTestCase):
 
 		self.assertIn("Shipped qty 1.0 exceeds remaining PO qty 0", str(raised.exception))
 
-	def test_submit_sets_status_date_and_attachments(self):
+	def test_submit_sets_status_date_and_scan_code_label_without_image_files(self):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
-
-		with _mock_asn_attachments():
-			asn.submit()
-
+		asn.submit()
 		asn.reload()
 
 		self.assertEqual(asn.status, "Submitted")
 		self.assertEqual(str(asn.asn_date), today())
-		self.assertEqual(asn.qr_code, f"/files/{_MOCK_ASN_SCAN_CODE}-qr.png")
-		self.assertEqual(asn.barcode, f"/files/{_MOCK_ASN_SCAN_CODE}-barcode.png")
+		self.assertEqual(normalize_scan_code(asn.scan_code_label), asn.scan_code_label)
+		self.assertTrue(frappe.db.exists("Scan Code", asn.scan_code_label))
+		self.assertFalse(
+			frappe.db.exists("File", {"attached_to_doctype": "ASN", "attached_to_name": asn.name})
+		)
+		self.assertFalse(frappe.get_meta("ASN").has_field("qr_code"))
+		self.assertFalse(frappe.get_meta("ASN").has_field("barcode"))
 
-	def test_submit_with_real_qr_and_barcode_attachments(self):
+	def test_print_format_draws_both_images_from_the_scan_code_label(self):
+		frappe.reload_doc("asn_module", "print_format", "asn_scan_codes")
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
-
-		with real_asn_attachment_context():
-			asn.submit()
-
+		asn.submit()
 		asn.reload()
-		self.assertEqual(asn.status, "Submitted")
-		self.assertEqual(str(asn.asn_date), today())
-		self.assertTrue(asn.qr_code)
-		self.assertTrue(asn.barcode)
-		self.assertIn("/files/", asn.qr_code)
-		self.assertIn("/files/", asn.barcode)
+
+		html = unescape(frappe.get_print("ASN", asn.name, print_format="ASN Scan Codes"))
+
+		url = f"/api/method/asn_module.qr_engine.generate.scan_image?code={asn.scan_code_label}"
+		self.assertIn(f"{url}&kind=qr", html)
+		self.assertIn(f"{url}&kind=barcode", html)
 
 	def test_cancel_sets_status_cancelled(self):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		asn.cancel()
 		asn.reload()
@@ -645,8 +615,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with real_asn_attachment_context():
-			asn.submit()
+		asn.submit()
 
 		asn.reload()
 		linked = frappe.get_all(
@@ -669,8 +638,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		asn.cancel()
 		name = asn.name
@@ -719,8 +687,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		with (
 			patch(
@@ -771,8 +738,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn_with_two_items(qty=5)
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		asn.reload()
 		asn.items[0].received_qty = 2
@@ -794,8 +760,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn()
 		asn.insert(ignore_permissions=True)
 
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		asn.cancel()
 
@@ -805,8 +770,7 @@ class TestASN(FrappeTestCase):
 
 		self.assertIsNone(amended.status)
 		self.assertIsNone(amended.asn_date)
-		self.assertIsNone(amended.qr_code)
-		self.assertIsNone(amended.barcode)
+		self.assertIsNone(amended.scan_code_label)
 
 		amended.insert(ignore_permissions=True)
 
@@ -835,8 +799,7 @@ class TestASN(FrappeTestCase):
 		)
 		withdrawn = make_test_asn(purchase_order=po, qty=9)
 		withdrawn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			withdrawn.submit()
+		withdrawn.submit()
 		withdrawn.cancel()
 		shipped = make_test_asn(purchase_order=po, qty=4)
 		shipped.insert(ignore_permissions=True)
@@ -1056,8 +1019,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=100)
 		asn = make_test_asn(purchase_order=po, qty=100)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 		self._purchase_receipt(po, asn, qty=100)
 
 		self.assertEqual(get_purchase_order_items(po.name), [])
@@ -1099,8 +1061,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		open_po = self._submitted_purchase_order(qty=100)
 		shipment = make_test_asn(purchase_order=open_po, qty=100)
 		shipment.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			shipment.submit()
+		shipment.submit()
 		self._purchase_receipt(open_po, shipment, qty=80)
 
 		self.assertEqual(self._offered_qty(open_po), 0)
@@ -1147,8 +1108,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		other = self._submitted_purchase_order(qty=10)
 		submitted = make_test_asn(purchase_order=other, qty=6)
 		submitted.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			submitted.submit()
+		submitted.submit()
 		self.assertEqual(self._portal_search_qty(other, asn_name=submitted.name), 4)
 		self.assertEqual(self._portal_page_asn_name(other.supplier, submitted.name), "")
 		with self.assertRaises(PortalValidationError) as raised:
@@ -1255,8 +1215,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=100)
 		shipment = make_test_asn(purchase_order=po, qty=100)
 		shipment.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			shipment.submit()
+		shipment.submit()
 		self._purchase_receipt(po, shipment, qty=80)
 		frappe.db.set_value("ASN", shipment.name, "status", "Closed", update_modified=False)
 
@@ -1268,8 +1227,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		open_po = self._submitted_purchase_order(qty=100)
 		closed = make_test_asn(purchase_order=open_po, qty=100)
 		closed.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			closed.submit()
+		closed.submit()
 		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
 
 		self.assertEqual(self._offered_qty(open_po), 100)
@@ -1327,8 +1285,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=100)
 		shipment = make_test_asn(purchase_order=po, qty=40)
 		shipment.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			shipment.submit()
+		shipment.submit()
 
 		invoice = make_purchase_invoice(po.name)
 		invoice.update_stock = 1
@@ -1364,8 +1321,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._purchase_order_in_boxes(qty=10, conversion_factor=12)
 		shipment = make_test_asn(purchase_order=po, qty=10)
 		shipment.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			shipment.submit()
+		shipment.submit()
 
 		class _Invoice:
 			def __init__(self):
@@ -1452,8 +1408,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		po = self._submitted_purchase_order(qty=ordered, item_code=item_code)
 		asn = make_test_asn(purchase_order=po, qty=accepted)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		receipt = self._purchase_receipt(po, asn, qty=accepted)
 		purchase_return = self._purchase_return(receipt, qty=returned)
@@ -1508,9 +1463,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 
 	def _submit_purchase_receipt(self, receipt):
 		with (
-			_mock_asn_attachments(),
-			patch("asn_module.qr_engine.generate.generate_qr", return_value={"image_base64": "ZmFrZS1xcg=="}),
-			patch("asn_module.handlers.purchase_receipt.attach_scan_codes_to_doc"),
+			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 		):
 			receipt.submit()
 

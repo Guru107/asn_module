@@ -5,7 +5,6 @@ from frappe.utils import cint
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
-	real_asn_attachment_context,
 )
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
@@ -51,8 +50,7 @@ class TestMaterialAsnScanWhenGatePassModeIsOff(FrappeTestCase):
 				qty=2,
 			)
 			asn.insert(ignore_permissions=True)
-			with real_asn_attachment_context():
-				asn.submit()
+			asn.submit()
 			self.assertEqual({row.purchase_order for row in asn.items}, {purchase_order.name})
 
 			code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)

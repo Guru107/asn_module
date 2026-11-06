@@ -13,7 +13,6 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.asn_module.doctype.asn.asn import get_purchase_order_items
 from asn_module.asn_module.doctype.asn.test_asn import (
 	_ensure_item,
-	_mock_asn_attachments,
 	create_purchase_order,
 	make_test_asn,
 )
@@ -120,8 +119,7 @@ class TestUnitPricePurchaseOrderAsn(FrappeTestCase):
 
 		asn = make_test_asn(purchase_order=self.po, qty=MAX_STOCK)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 
 		self.assertEqual(asn.docstatus, 1)
 		self.assertEqual(asn.items[0].qty, MAX_STOCK)
@@ -141,7 +139,7 @@ class TestUnitPricePurchaseOrderAsn(FrappeTestCase):
 
 		asn = make_test_asn(purchase_order=self.po, qty=MAX_STOCK + 1)
 		asn.insert(ignore_permissions=True)
-		with self.assertRaises(frappe.ValidationError) as submit_error, _mock_asn_attachments():
+		with self.assertRaises(frappe.ValidationError) as submit_error:
 			asn.submit()
 		self.assertIn("exceeds maximum", str(submit_error.exception))
 
@@ -160,8 +158,7 @@ class TestUnitPricePurchaseOrderAsn(FrappeTestCase):
 
 		asn = make_test_asn(purchase_order=self.po, qty=25)
 		asn.insert(ignore_permissions=True)
-		with _mock_asn_attachments():
-			asn.submit()
+		asn.submit()
 		self.assertEqual(asn.docstatus, 1)
 
 	def test_portal_search_offers_a_capped_unit_price_line(self):

@@ -6,8 +6,8 @@ from asn_module.setup_actions import ACTIONS, get_action
 
 
 class TestActionsMap(FrappeTestCase):
-	def test_map_defines_seven_actions(self):
-		self.assertEqual(len(ACTIONS), 7)
+	def test_map_defines_eight_actions(self):
+		self.assertEqual(len(ACTIONS), 8)
 
 	def test_quality_inspection_actions_are_unknown(self):
 		for key in ("create_stock_transfer", "create_purchase_return"):

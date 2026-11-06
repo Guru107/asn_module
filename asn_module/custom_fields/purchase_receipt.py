@@ -1,5 +1,7 @@
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+from asn_module.custom_fields.scan_code import scan_code_field
+
 
 def setup():
 	"""Create custom fields on Purchase Receipt for ASN integration."""
@@ -24,6 +26,8 @@ def setup():
 				# must not carry a map that matches none of its new rows.
 				"no_copy": 1,
 			},
+			# After the hidden mapping so it reads directly below the ASN link.
+			scan_code_field("asn_items"),
 		]
 	}
 

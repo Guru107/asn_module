@@ -19,7 +19,7 @@ from asn_module.qr_engine.scan_codes import (
 	reactivate_scan_code,
 	reactivate_upstream_scan_codes_for_trashed_document,
 	record_successful_scan,
-	resolve_scan_code_for_attachment,
+	resolve_scan_code,
 	validate_scan_code_row,
 	verify_registry_row_points_to_existing_source,
 )
@@ -124,22 +124,22 @@ class TestGetOrCreateScanCode(FrappeTestCase, _ScanCodeTestMixin):
 		second = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
 		self.assertEqual(first, second)
 
-	def test_resolve_reuses_used_row_for_attachment(self):
+	def test_resolve_reuses_used_row(self):
 		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
 		frappe.db.set_value("Scan Code", name, "status", "Used", update_modified=False)
 		self.assertEqual(
-			resolve_scan_code_for_attachment("create_purchase_receipt", "ASN", self._asn_name),
+			resolve_scan_code("create_purchase_receipt", "ASN", self._asn_name),
 			name,
 		)
 
 	def test_resolve_creates_when_no_registry_row(self):
-		code = resolve_scan_code_for_attachment("create_purchase_invoice", "ASN", self._asn_name)
+		code = resolve_scan_code("create_purchase_invoice", "ASN", self._asn_name)
 		self.assertEqual(len(code), SCAN_CODE_LENGTH)
 		self.assertTrue(frappe.db.exists("Scan Code", code))
 
 	def test_resolve_rejects_missing_registration_fields(self):
 		with self.assertRaises(frappe.ValidationError):
-			resolve_scan_code_for_attachment("", "ASN", self._asn_name)
+			resolve_scan_code("", "ASN", self._asn_name)
 
 
 class TestGetScanCodeDoc(FrappeTestCase, _ScanCodeTestMixin):

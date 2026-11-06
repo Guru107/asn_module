@@ -164,7 +164,6 @@ class TestMapPurchaseReceiptDraft(FrappeTestCase):
 			before_tests,
 			create_purchase_order,
 			make_test_asn,
-			real_asn_attachment_context,
 		)
 		from asn_module.handlers.gate_pass_create import create_from_gate_pass
 		from asn_module.handlers.purchase_receipt import _open_or_create_material_gate_pass
@@ -179,8 +178,7 @@ class TestMapPurchaseReceiptDraft(FrappeTestCase):
 				qty=3,
 			)
 			asn.insert(ignore_permissions=True)
-			with real_asn_attachment_context():
-				asn.submit()
+			asn.submit()
 			opened = _open_or_create_material_gate_pass(asn)
 			gate_pass = frappe.get_doc("Gate Pass", opened["name"])
 			overlay_branch = "Overlay Branch"

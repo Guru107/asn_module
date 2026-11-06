@@ -85,10 +85,10 @@ def get_or_create_scan_code(action_key: str, source_doctype: str, source_name: s
 	frappe.throw(_("Could not allocate a unique scan code; try again."))
 
 
-def resolve_scan_code_for_attachment(action_key: str, source_doctype: str, source_name: str) -> str:
+def resolve_scan_code(action_key: str, source_doctype: str, source_name: str) -> str:
 	"""Return the registry code for labels on a source document.
 
-	Reuses Active or Used rows so QR/barcode backfill matches the code already
+	Reuses Active or Used rows so a document stores the code already
 	scanned. Only creates a new row when none exists yet.
 	"""
 	action_key = (action_key or "").strip()
