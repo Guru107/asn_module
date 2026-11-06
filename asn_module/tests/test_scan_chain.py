@@ -9,6 +9,7 @@ does (``db.set_value``), because their ERPNext submit paths carry stock rules
 this module does not own; the submit hooks are exercised directly.
 """
 
+from html import unescape
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -103,6 +104,14 @@ def _attached_file_names(doctype, name):
 	)
 
 
+def _assert_print_draws_barcode(test, doctype, name, print_format, code):
+	frappe.reload_doc("asn_module", "print_format", frappe.scrub(print_format))
+	html = unescape(frappe.get_print(doctype, name, print_format=print_format))
+	test.assertIn(
+		f"/api/method/asn_module.qr_engine.generate.scan_image?code={code}&kind=barcode", html
+	)
+
+
 def _scan_code_for(action, doctype, name):
 	return frappe.db.get_value(
 		"Scan Code",
@@ -184,6 +193,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		self.assertTrue(code)
 		self.assertEqual(frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code"), code)
 		self.assertEqual(_attached_file_names("Gate Pass", gate_pass.name), [])
+		_assert_print_draws_barcode(self, "Gate Pass", gate_pass.name, "Gate Pass Scan Code", code)
 
 	def test_a_doctype_without_the_scan_code_field_submits_without_a_code(self):
 		with with_gate_pass_mode(), integration_user_context():
@@ -527,3 +537,4 @@ class TestUnlinkedReceiptGetsInvoiceCode(FrappeTestCase):
 		self.assertTrue(code, "an unlinked receipt carries the invoice code")
 		self.assertEqual(frappe.db.get_value("Purchase Receipt", pr.name, "scan_code"), code)
 		self.assertEqual(_attached_file_names("Purchase Receipt", pr.name), [])
+		_assert_print_draws_barcode(self, "Purchase Receipt", pr.name, "Purchase Receipt Scan Code", code)
