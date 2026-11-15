@@ -33,14 +33,14 @@ def collect_lines_from_asn_rows(rows: list[dict]) -> list[Line]:
 	if not usable:
 		return []
 
-	if not frappe.db.has_column("Purchase Order", "branch"):
-		return []
+	# branch is a custom field; without it the cap still applies, resolved from warehouse ownership.
+	has_branch = frappe.db.has_column("Purchase Order", "branch")
 
 	purchase_orders = sorted({row["purchase_order"] for row in usable})
 	po_rows = frappe.get_all(
 		"Purchase Order",
 		filters={"name": ["in", purchase_orders]},
-		fields=["name", "branch", "set_warehouse"],
+		fields=["name", "set_warehouse", *(["branch"] if has_branch else [])],
 		limit_page_length=0,
 	)
 	po_by_name = {row.name: row for row in po_rows}
@@ -68,7 +68,7 @@ def collect_lines_from_asn_rows(rows: list[dict]) -> list[Line]:
 		factor = _conversion_factor(po_item.conversion_factor)
 		lines.append(
 			Line(
-				branch=purchase_order.branch or "",
+				branch=(purchase_order.get("branch") or "") if has_branch else "",
 				item_code=po_item.item_code or row["item_code"],
 				warehouse=warehouse,
 				stock_qty=flt(row["qty"]) * factor,
