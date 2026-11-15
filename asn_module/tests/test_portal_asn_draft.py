@@ -27,7 +27,6 @@ class TestPortalAsnDraft(FrappeTestCase):
 			create_purchase_order,
 			tax_description="_Test Portal Draft Tax",
 			qty=10,
-			do_not_submit=True,
 		)
 		asn = make_test_asn(purchase_order=po, qty=2)
 		asn.insert(ignore_permissions=True)
