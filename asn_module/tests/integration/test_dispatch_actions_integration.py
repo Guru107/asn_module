@@ -14,10 +14,10 @@ from asn_module.tests.integration.dispatch_flow import (
 	run_asn_pr_submitted_via_dispatch,
 )
 from asn_module.tests.integration.fixtures import (
-	block_commits_for_tests,
 	ensure_integration_user,
 	integration_user_context,
 	pin_gate_pass_mode_for_tests,
+	run_failure_logs_inline_for_tests,
 )
 from asn_module.utils.test_setup import before_tests
 
@@ -29,7 +29,7 @@ class TestDispatchActionsIntegration(FrappeTestCase):
 		super().setUpClass()
 		ensure_integration_user()
 		pin_gate_pass_mode_for_tests(cls)
-		block_commits_for_tests(cls)
+		run_failure_logs_inline_for_tests(cls)
 
 	def test_create_purchase_receipt_and_purchase_invoice_via_dispatch(self):
 		"""Covered in depth by ``test_e2e_flow``; smoke that shared flow still succeeds."""

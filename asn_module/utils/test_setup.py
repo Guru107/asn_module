@@ -2,15 +2,29 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from importlib import import_module
+from unittest.mock import patch
 
 import frappe
 
+from asn_module.qr_engine.dispatch import FAILURE_LOG_JOB
 from asn_module.qr_engine.scan_codes import purge_scan_codes_for_source
 from asn_module.stock_cap.models import Breach
 
 TEST_COMPANY_NAME = "_Test Company"
 TEST_COMPANY_ABBR = "_TC"
 TEST_SUPPLIER_GROUP = "_Test ASN Supplier Group"
+
+
+def inline_enqueue_patcher():
+	"""Run dispatch's failure-log job in the test transaction (a worker would commit); other jobs enqueue as usual."""
+	real_enqueue = frappe.enqueue
+
+	def run_job(method, *args, queue=None, **kwargs):
+		if method != FAILURE_LOG_JOB:
+			return real_enqueue(method, *args, queue=queue, **kwargs)
+		frappe.get_attr(method)(**kwargs)
+
+	return patch("frappe.enqueue", side_effect=run_job)
 
 
 def ensure_leaf_supplier_group() -> str:

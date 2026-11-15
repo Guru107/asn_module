@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils import cint
 
 from asn_module.qr_engine.scan_codes import (
@@ -113,23 +114,45 @@ def _call_handler(handler_method: str, source_doctype: str, source_name: str, pa
 DISPATCH_SAVEPOINT = "qr_scan_dispatch"
 
 
-def _rollback_to_dispatch_savepoint() -> bool:
-	"""Undo a failed handler's partial writes so only the Failure Scan Log commits.
+def _rollback_to_dispatch_savepoint() -> None:
+	"""Undo a failed handler's partial writes and the scan-code claim.
 
-	Returns False when the rollback itself fails: the except path must then NOT
-	commit, because committing would persist the partial writes and the stale
-	scan-code claim — the request's error handling rolls everything back instead,
-	leaving the code re-scannable.
+	Dispatch never commits, so the request's own rollback is the backstop if this fails.
 	"""
 	try:
 		frappe.db.rollback(save_point=DISPATCH_SAVEPOINT)
-		return True
 	except Exception:
 		frappe.log_error(
 			title="QR dispatch: failed to roll back partial handler writes",
 			message=frappe.get_traceback(),
 		)
-		return False
+
+
+FAILURE_LOG_JOB = "asn_module.qr_engine.dispatch.record_failed_scan"
+
+
+def record_failed_scan(
+	action: str,
+	source_doctype: str | None,
+	source_name: str | None,
+	device_info: str,
+	scan_code: str | None,
+	error_message: str,
+) -> None:
+	"""Background job: write the Failure Scan Log in its own transaction.
+
+	The failed request rolls back, so the log cannot be written inside it.
+	"""
+	failure_source_doctype, failure_source_name = _get_failure_log_identity(source_doctype, source_name)
+	_log_scan(
+		action=action,
+		source_doctype=failure_source_doctype,
+		source_name=failure_source_name,
+		result="Failure",
+		device_info=device_info,
+		scan_code=scan_code,
+		error_message=error_message,
+	)
 
 
 def _latest_success_document(
@@ -182,7 +205,6 @@ def _record_reopened_scan(scan_doc, action_key, source_doctype, source_name, dev
 		result_doctype=result["doctype"],
 		result_name=result["name"],
 	)
-	frappe.local.flags.commit = True
 
 
 def _is_cancelled(doc) -> bool:
@@ -202,9 +224,19 @@ def _payload_from_scan_code_registry(scan_doc: frappe.model.document.Document, d
 	}
 
 
-@frappe.whitelist(allow_guest=False)
+# 120/min per IP: far above a station's scan rate, low enough to stop a failure-log flood.
+DISPATCH_RATE_LIMIT = 120
+DISPATCH_RATE_WINDOW_SECONDS = 60
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+@rate_limit(limit=DISPATCH_RATE_LIMIT, seconds=DISPATCH_RATE_WINDOW_SECONDS)
 def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 	"""Resolve a short scan ``code`` (URL param or raw) and run the registered handler."""
+	# Before any Scan Log: portal users must not be able to write rows.
+	if frappe.get_cached_value("User", frappe.session.user, "user_type") != "System User":
+		frappe.throw(_("Only desk users can scan codes."), frappe.PermissionError)
+
 	if not code:
 		code = frappe.form_dict.get("code")
 
@@ -273,8 +305,8 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 
 		payload = _payload_from_scan_code_registry(scan_doc, device_info)
 
-		# On handler error the except path rolls back to this savepoint, so partial
-		# handler writes never commit; only the Failure Scan Log does.
+		# On handler error the except path rolls back to this savepoint, undoing the
+		# handler's partial writes and the scan-code claim.
 		frappe.db.savepoint(DISPATCH_SAVEPOINT)
 		handler_savepoint_taken = True
 
@@ -298,7 +330,6 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 				result_doctype=handler_result.get("doctype"),
 				result_name=handler_result.get("name"),
 			)
-		frappe.local.flags.commit = True
 
 		return {
 			"success": True,
@@ -309,21 +340,17 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			"message": handler_result.get("message", ""),
 		}
 	except Exception as exc:
-		rolled_back = True
 		if handler_savepoint_taken:
-			rolled_back = _rollback_to_dispatch_savepoint()
-		failure_source_doctype, failure_source_name = _get_failure_log_identity(source_doctype, source_name)
-		_log_scan(
+			_rollback_to_dispatch_savepoint()
+		# Not enqueue_after_commit: the request rolls back, which would drop the job.
+		frappe.enqueue(
+			FAILURE_LOG_JOB,
+			queue="short",
 			action=action_key,
-			source_doctype=failure_source_doctype,
-			source_name=failure_source_name,
-			result="Failure",
+			source_doctype=source_doctype,
+			source_name=source_name,
 			device_info=device_info,
 			scan_code=scan_code_name,
 			error_message=str(exc),
 		)
-		if rolled_back:
-			# Only the Failure Scan Log commits. On rollback failure, commit nothing:
-			# the request's error handling aborts the transaction, claim included.
-			frappe.db.commit()
 		raise

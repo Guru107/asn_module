@@ -45,9 +45,9 @@ from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import get_action
 from asn_module.templates.pages.asn_new_services import create_job_asn_for_supplier
 from asn_module.tests.integration.fixtures import (
-	block_commits_for_tests,
 	ensure_integration_user,
 	integration_user_context,
+	run_failure_logs_inline_for_tests,
 	with_gate_pass_mode,
 )
 from asn_module.tests.test_job_asn_and_material_gate_pass import ensure_gate_pass_for_tests
@@ -174,7 +174,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		before_tests()
 		ensure_integration_user()
 		ensure_gate_pass_for_tests()
-		block_commits_for_tests(cls)
+		run_failure_logs_inline_for_tests(cls)
 
 	def test_submitting_a_gate_pass_stores_the_receipt_code(self):
 		with with_gate_pass_mode(), integration_user_context():
@@ -334,7 +334,7 @@ class TestSubcontractingReceiptScanChain(FrappeTestCase):
 		super().setUpClass()
 		before_tests()
 		ensure_integration_user()
-		block_commits_for_tests(cls)
+		run_failure_logs_inline_for_tests(cls)
 
 	def _draft_subcontracting_receipt(self):
 		handlers = TestSubcontractingHandlers()
@@ -451,7 +451,7 @@ class TestSubcontractingOrderAndDispatchScanChain(FrappeTestCase):
 		super().setUpClass()
 		before_tests()
 		ensure_integration_user()
-		block_commits_for_tests(cls)
+		run_failure_logs_inline_for_tests(cls)
 
 	def test_a_subcontracting_order_stores_the_dispatch_code_and_the_scan_opens_the_dispatch(self):
 		sco = TestSubcontractingHandlers()._make_integration_subcontracting_order()

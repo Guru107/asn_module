@@ -20,6 +20,17 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 		scan_code_length = length;
 	});
 
+	// A printed QR opens this page with ?code=. Fill the code in but let the user confirm:
+	// dispatching on page load would let any link do it under their name.
+	function prefill_from_url() {
+		const code = frappe.route_options && frappe.route_options.code;
+		if (!code) return;
+		delete frappe.route_options.code;
+		$input.val(code).focus();
+	}
+
+	page.set_primary_action(__("Process Scan"), () => process_scan($input.val()));
+
 	function process_scan(value) {
 		if (!value || !value.trim()) return;
 
@@ -28,7 +39,7 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 				"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or dispatch URL."
 			),
 			missing_code: __(
-				"Scanned URL is missing the code query parameter. Expected ...dispatch?code=..."
+				"Scanned URL is missing the code query parameter. Expected ...scan-station?code=..."
 			),
 		});
 		if (parsed.error) {
@@ -169,6 +180,11 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 	load_scan_history();
 
+	prefill_from_url();
+
 	// Refocus input when page becomes visible
-	$(wrapper).on("show", () => $input.focus());
+	$(wrapper).on("show", () => {
+		prefill_from_url();
+		$input.focus();
+	});
 };

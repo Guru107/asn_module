@@ -63,7 +63,7 @@ class TestScanImageEndpoint(UnitTestCase):
 
 		self.assertTrue(response.data.startswith(PNG_MAGIC))
 
-	def test_qr_encodes_the_dispatch_url_for_the_code(self):
+	def test_qr_encodes_the_scan_station_url_for_the_code(self):
 		with (
 			patch("asn_module.qr_engine.generate.frappe.utils.get_url", return_value="https://example.com"),
 			patch("asn_module.qr_engine.generate.pyqrcode.create") as create_qr,
@@ -71,9 +71,7 @@ class TestScanImageEndpoint(UnitTestCase):
 			create_qr.return_value.png.side_effect = lambda buffer, scale: buffer.write(PNG_MAGIC)
 			scan_image(code=CODE, kind="qr")
 
-		create_qr.assert_called_once_with(
-			f"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code={CODE}"
-		)
+		create_qr.assert_called_once_with(f"https://example.com/app/scan-station?code={CODE}")
 
 	def test_qr_trims_a_trailing_slash_from_the_site_url(self):
 		with (
@@ -83,9 +81,7 @@ class TestScanImageEndpoint(UnitTestCase):
 			create_qr.return_value.png.side_effect = lambda buffer, scale: buffer.write(PNG_MAGIC)
 			scan_image(code=CODE, kind="qr")
 
-		create_qr.assert_called_once_with(
-			f"https://example.com/api/method/asn_module.qr_engine.dispatch.dispatch?code={CODE}"
-		)
+		create_qr.assert_called_once_with(f"https://example.com/app/scan-station?code={CODE}")
 
 	def test_barcode_falls_back_to_default_options_on_type_error(self):
 		writer = MagicMock()

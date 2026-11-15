@@ -25,16 +25,17 @@ _BARCODE_OPTIONS = {
 }
 
 
-def _build_dispatch_url(code: str) -> str:
+def _build_scan_station_url(code: str) -> str:
+	# A desk route, not the dispatch API: dispatch is POST-only, and the page asks before posting.
 	site_url = frappe.utils.get_url().rstrip("/")
 	safe_code = quote(code, safe="")
-	return f"{site_url}/api/method/asn_module.qr_engine.dispatch.dispatch?code={safe_code}"
+	return f"{site_url}/app/scan-station?code={safe_code}"
 
 
 def render_qr_png(code: str) -> bytes:
-	"""PNG of the QR that encodes the site dispatch URL for ``code``. No registry access."""
+	"""PNG of the QR that encodes the Scan Station URL for ``code``. No registry access."""
 	buffer = io.BytesIO()
-	pyqrcode.create(_build_dispatch_url(code)).png(buffer, scale=_QR_SCALE)
+	pyqrcode.create(_build_scan_station_url(code)).png(buffer, scale=_QR_SCALE)
 	return buffer.getvalue()
 
 
