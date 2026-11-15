@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
+from frappe.permissions import add_permission, update_permission_property
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
 
@@ -804,6 +805,12 @@ def ensure_gate_pass_for_tests() -> None:
 	if custom_fields:
 		create_custom_fields({"Gate Pass": custom_fields})
 		frappe.clear_cache(doctype="Gate Pass")
+	# The scan inserts the Gate Pass as the scanning user. Production grants Stock User via Custom DocPerm.
+	for role in ("Stock User", "Stock Manager"):
+		if not any(perm.role == role and perm.create for perm in meta.permissions):
+			add_permission("Gate Pass", role)
+			for ptype in ("write", "create"):
+				update_permission_property("Gate Pass", role, 0, ptype, 1)
 	# The module's own Scan Code field, as after_migrate adds it on a real site.
 	setup_gate_pass_fields()
 	frappe.clear_cache(doctype="Gate Pass")

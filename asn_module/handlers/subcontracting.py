@@ -24,7 +24,7 @@ def create_dispatch_from_subcontracting_order(source_doctype: str, source_name: 
 		order_doctype="Subcontracting Order",
 		target_doc=stock_entry,
 	)
-	stock_entry.insert(ignore_permissions=True)
+	stock_entry.insert()
 
 	return {
 		"doctype": "Stock Entry",
@@ -50,7 +50,7 @@ def create_receipt_from_subcontracting_order(source_doctype: str, source_name: s
 
 	scr = make_subcontracting_receipt(sco.name)
 	fill_custom_fiscal_year(scr)
-	scr.insert(ignore_permissions=True)
+	scr.insert()
 
 	return {
 		"doctype": "Subcontracting Receipt",
@@ -112,7 +112,7 @@ def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name:
 
 	pr = make_purchase_receipt(scr.name)
 	fill_custom_fiscal_year(pr)
-	pr.insert(ignore_permissions=True)
+	pr.insert()
 
 	return {
 		"doctype": "Purchase Receipt",
