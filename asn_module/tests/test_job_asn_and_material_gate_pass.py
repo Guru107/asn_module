@@ -20,7 +20,6 @@ from asn_module.handlers.purchase_receipt import (
 	ASN_GATE_PASS_SCAN_ACTION,
 	_apply_gate_pass_qty_to_subcontracting_receipt,
 	_apply_shipped_qty_to_subcontracting_receipt,
-	_ensure_gate_pass_asn_link,
 	_get_single_purchase_order,
 	_set_if_present,
 	asn_dispatch_action_key,
@@ -1255,25 +1254,14 @@ class TestMaterialGatePassScan(FrappeTestCase):
 
 		self.assertIn("not set up", str(raised.exception).lower())
 
-	def test_a_missing_asn_link_on_gate_pass_is_added_before_save(self):
-		real_has_column = frappe.db.has_column
-
-		def has_column(doctype, fieldname):
-			if doctype == "Gate Pass" and fieldname == "asn":
-				return False
-			return real_has_column(doctype, fieldname)
-
-		with (
-			patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", side_effect=has_column),
-			patch(
-				"frappe.custom.doctype.custom_field.custom_field.create_custom_fields"
-			) as create_custom_fields,
-		):
-			_ensure_gate_pass_asn_link()
+	def test_gate_pass_setup_adds_the_asn_link_before_scan_code(self):
+		with patch("asn_module.custom_fields.gate_pass.create_custom_fields") as create_custom_fields:
+			setup_gate_pass_fields()
 
 		fields = create_custom_fields.call_args.args[0]["Gate Pass"]
 		self.assertEqual(fields[0]["fieldname"], "asn")
 		self.assertEqual(fields[0]["options"], "ASN")
+		self.assertEqual(fields[1]["insert_after"], "asn")
 
 	def test_optional_gate_pass_fields_are_left_unset(self):
 		gate_pass = frappe.new_doc("Gate Pass")

@@ -387,27 +387,6 @@ def _set_asn_invoice_on_gate_pass(gate_pass, asn) -> None:
 	_set_if_present(gate_pass, "challan_date", asn.supplier_invoice_date)
 
 
-def _ensure_gate_pass_asn_link() -> None:
-	if frappe.db.has_column("Gate Pass", "asn"):
-		return
-	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
-
-	create_custom_fields(
-		{
-			"Gate Pass": [
-				{
-					"fieldname": "asn",
-					"fieldtype": "Link",
-					"label": "ASN",
-					"options": "ASN",
-					"insert_after": "supplier",
-				}
-			]
-		}
-	)
-	frappe.clear_cache(doctype="Gate Pass")
-
-
 def _open_or_create_material_gate_pass(asn) -> dict:
 	"""Save a draft Gate Pass for a Material ASN and open it.
 
@@ -542,7 +521,6 @@ def _reopen_uncancelled_gate_pass(asn) -> dict | None:
 	if not frappe.db.exists("DocType", "Gate Pass"):
 		frappe.throw(_("Gate Pass is not set up on this site."))
 
-	_ensure_gate_pass_asn_link()
 	existing = frappe.get_all(
 		"Gate Pass",
 		filters={"asn": asn.name, "docstatus": ["!=", 2]},
@@ -751,7 +729,6 @@ def stamp_receipt_built_by_gate_pass(doc, method=None) -> None:
 		# Keep that quantity. The ASN still supplies the link, invoice, batch, and serial.
 		_apply_asn_fields(doc, asn, gate_pass=frappe.get_doc("Gate Pass", gate_pass_name))
 		return
-	_ensure_subcontracting_receipt_asn_link()
 	doc.meta = frappe.get_meta(doc.doctype)
 	if not doc.meta.has_field("asn"):
 		return
@@ -785,8 +762,6 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 	Used when Gate Pass Mode is off, and when Create runs on a submitted Job Gate Pass.
 	A later call opens the same draft.
 	"""
-	_ensure_subcontracting_receipt_asn_link()
-
 	existing = frappe.db.get_value(
 		"Subcontracting Receipt",
 		{"asn": asn.name, "docstatus": 0},
@@ -870,15 +845,6 @@ def _get_single_purchase_order(asn) -> tuple[str, list[str]]:
 
 def _unique(values: list[str]) -> list[str]:
 	return list(dict.fromkeys(values))
-
-
-def _ensure_subcontracting_receipt_asn_link() -> None:
-	if frappe.db.has_column("Subcontracting Receipt", "asn"):
-		return
-	from asn_module.custom_fields.subcontracting_receipt import setup as setup_scr_asn_link
-
-	setup_scr_asn_link()
-	frappe.clear_cache(doctype="Subcontracting Receipt")
 
 
 def _apply_asn_fields(pr, asn, *, gate_pass=None) -> None:
