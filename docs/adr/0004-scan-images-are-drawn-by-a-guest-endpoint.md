@@ -14,6 +14,8 @@ The endpoint is public by design. Its output reveals nothing the code does not a
 
 ## Consequences
 
-The attachment helpers, the backfill API and the registry-resolving generators are deleted, so nothing saves a scan image any more. Documents and files created before the change are not migrated.
+The attachment helpers, the backfill API and the registry-resolving generators are deleted, so nothing saves a scan image any more. Documents and files created before the change are not migrated. Putaway and the Quality Inspection actions were retired alongside (#97, #98), so a Purchase Receipt carries one Scan Code only.
+
+Anyone can draw an image for any string that looks like a Scan Code. That reveals nothing: the endpoint never checks whether the code exists.
 
 The QR payload comes from `frappe.utils.get_url()`, which honours the request Host header when `host_name` is not set in site config. Because the response is cached publicly for a year, a site must set `host_name` so a request with a foreign Host header cannot get a QR for the wrong domain cached.

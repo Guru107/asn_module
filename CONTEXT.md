@@ -36,7 +36,7 @@ _Avoid_: manual Create buttons between scanned steps, billing a Subcontracting R
 
 **Scan Code**:
 The 16-character canonical code of a Scan Code registry row, which dispatches one action when scanned. A chained document stores the code that creates its successor; the barcode and QR are only pictures drawn from it on demand by a guest-accessible image endpoint, never stored as files.
-_Avoid_: barcode (the picture), QR (the picture), scan image, attachment
+_Avoid_: barcode (the picture), QR (the picture), scan image, attachment, putaway code (retired)
 
 **Shipped Qty**:
 The quantity declared on an ASN Line, expressed in the Purchase Order line's purchase UOM.
