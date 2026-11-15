@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import frappe
 from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_receipt
 from frappe import _
+from frappe.query_builder import Case
 from frappe.query_builder.functions import IfNull, Sum
 from frappe.utils import cint, flt
 
@@ -151,14 +152,13 @@ def _add_received_qty(asn_item_name: str, delta: float) -> None:
 	delta = flt_qty(delta)
 	if not delta:
 		return
-	frappe.db.sql(
-		"""
-		UPDATE `tabASN Item`
-		SET received_qty = GREATEST(COALESCE(received_qty, 0) + %s, 0)
-		WHERE name = %s
-		""",
-		(delta, asn_item_name),
-	)
+	asn_item = frappe.qb.DocType("ASN Item")
+	new_qty = IfNull(asn_item.received_qty, 0) + delta
+	(
+		frappe.qb.update(asn_item)
+		.set(asn_item.received_qty, Case().when(new_qty < 0, 0).else_(new_qty))  # GREATEST(new_qty, 0)
+		.where(asn_item.name == asn_item_name)
+	).run()
 
 
 def _lines_with_delivered_qty(doc) -> list[tuple]:

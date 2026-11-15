@@ -187,6 +187,14 @@ class TestRecordSuccessfulScan(FrappeTestCase, _ScanCodeTestMixin):
 		status = frappe.db.get_value("Scan Code", name, "status")
 		self.assertEqual(status, "Used")
 
+	def test_increment_is_atomic_not_read_modify_write(self):
+		"""A concurrent scan that committed after our read must not be overwritten."""
+		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
+		frappe.db.set_value("Scan Code", name, "scan_count", 5)
+		with patch("asn_module.qr_engine.scan_codes.frappe.db.get_value", return_value=0):
+			record_successful_scan(name, "create_purchase_receipt")
+		self.assertEqual(frappe.db.get_value("Scan Code", name, "scan_count"), 6)
+
 
 class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 	@classmethod
