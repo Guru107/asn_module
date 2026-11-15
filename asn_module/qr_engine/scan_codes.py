@@ -32,7 +32,7 @@ def _random_scan_code_value() -> str:
 	return "".join(secrets.choice(SCAN_CODE_ALPHABET) for _ in range(SCAN_CODE_LENGTH))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_scan_code_length() -> int:
 	"""Return canonical scan-code length for UI clients."""
 	return SCAN_CODE_LENGTH

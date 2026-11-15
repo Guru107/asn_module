@@ -42,6 +42,7 @@ asn_module.parse_scan_input = function (value, copy) {
 
 asn_module.load_scan_code_length = function (apply_length) {
 	frappe.call({
+		type: "GET",
 		method: "asn_module.qr_engine.scan_codes.get_scan_code_length",
 		callback(r) {
 			const value = Number(r.message);

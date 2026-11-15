@@ -571,7 +571,7 @@ def _job_line_table(gate_pass) -> tuple[str | None, set[str]]:
 GATE_PASS_RECEIPT_ACTION = "create_receipt_from_gate_pass"
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 	"""Open the draft receipt for a submitted Gate Pass.
 

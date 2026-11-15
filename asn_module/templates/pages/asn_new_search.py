@@ -68,7 +68,7 @@ def _unit_price_po_item_names(purchase_order: str) -> set[str]:
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def search_open_purchase_orders(txt: str = "", start: int = 0, page_len: int = 20) -> list[dict]:
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
@@ -82,7 +82,7 @@ def search_open_purchase_orders(txt: str = "", start: int = 0, page_len: int = 2
 	return filtered[start : start + page_len]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def search_open_subcontracting_orders(txt: str = "", start: int = 0, page_len: int = 20) -> list[dict]:
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
@@ -130,7 +130,7 @@ def _unreceived_qty_by_subcontracting_order_item(
 	return totals
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def search_subcontracting_order_items(
 	subcontracting_order: str,
 	txt: str = "",
@@ -190,7 +190,7 @@ def search_subcontracting_order_items(
 	return filtered[start : start + page_len]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def search_purchase_order_items(
 	purchase_order: str,
 	txt: str = "",

@@ -696,7 +696,7 @@ def remaining_qty_by_purchase_order_item(
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -> list[dict]:
 	_get_accessible_purchase_order(purchase_order)
 	po_items = frappe.get_all(
@@ -740,7 +740,7 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 	return result
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_po_items(
 	doctype: str,
 	txt: str,
@@ -767,7 +767,7 @@ def get_po_items(
 	)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_item_transition_summary(asn: str) -> list[dict]:
 	"""Latest transition row per ASN line item (for compact ASN form summary)."""
 	doc = frappe.get_doc("ASN", asn)
