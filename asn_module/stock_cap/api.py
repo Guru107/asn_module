@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import replace
 
 from asn_module.stock_cap.collect import (
@@ -30,6 +31,31 @@ def breaches_for_asn_rows(
 
 	context = fetch_cap_context(lines, exclude_asn_name=exclude_asn_name)
 	return evaluate(lines, context, consumed=consumed)
+
+
+def asn_rows_cap_check(
+	rows: list[dict],
+) -> Callable[..., tuple[list[Breach], dict[tuple[str, str], float]]]:
+	"""Read the cap data for every row once; return a check over any subset of those rows.
+
+	``check(subset, consumed=None)`` gives what ``breaches_for_asn_rows(subset, consumed=...)``
+	would, without new reads: a context fetched for more branches and items holds the same
+	figures for the subset's own (branch, item) keys. Rows are matched by ``idx``, so every
+	row needs a distinct ``idx``. A bulk upload pays for one set of reads, not one per row.
+	"""
+	lines = _lines_on_owning_branch(collect_lines_from_asn_rows(rows))
+	context = fetch_cap_context(lines)
+	lines_by_idx: dict[int, list[Line]] = {}
+	for line in lines:
+		lines_by_idx.setdefault(line.row_idx, []).append(line)
+
+	def check(subset: list[dict], consumed: dict[tuple[str, str], float] | None = None):
+		subset_lines = [line for row in subset for line in lines_by_idx.get(int(row.get("idx") or 0), [])]
+		if not subset_lines:
+			return [], {}
+		return evaluate(subset_lines, context, consumed=consumed)
+
+	return check
 
 
 def breaches_for_asn_doc(doc) -> list[Breach]:

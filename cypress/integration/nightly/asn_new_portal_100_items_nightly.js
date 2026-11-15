@@ -98,6 +98,6 @@ context("ASN New portal nightly — 100 item PO flows", () => {
 		cy.get("form#asn-bulk-upload-form button[type='submit']").click();
 		cy.get("#bulk-pane .alert.alert-success", { timeout: 20000 })
 			.should("be.visible")
-			.and("contain.text", "Created and submitted 1 ASN");
+			.and("contain.text", "1 ASN(s) are queued");
 	});
 });

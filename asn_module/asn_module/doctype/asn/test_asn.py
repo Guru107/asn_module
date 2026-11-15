@@ -1006,8 +1006,8 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 			]
 			with (
 				patch(
-					"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-					return_value=([], {}),
+					"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+					return_value=lambda *_args, **_kwargs: ([], {}),
 				),
 				self.assertRaises(PortalValidationError) as raised,
 			):
@@ -1532,8 +1532,8 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		]
 		with (
 			patch(
-				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-				return_value=([], {}),
+				"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+				return_value=lambda *_args, **_kwargs: ([], {}),
 			),
 			self.assertRaises(PortalValidationError) as raised,
 		):
