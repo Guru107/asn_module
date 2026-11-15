@@ -46,7 +46,7 @@ def create_from_purchase_receipt(source_doctype: str, source_name: str, payload:
 		pi.bill_no = asn.supplier_invoice_no
 		pi.bill_date = asn.supplier_invoice_date
 	fill_custom_fiscal_year(pi)
-	pi.insert(ignore_permissions=True)
+	pi.insert()
 
 	if pr.asn:
 		asn_items_map = json.loads(pr.asn_items or "{}")

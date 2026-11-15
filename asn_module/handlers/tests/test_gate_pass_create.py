@@ -117,6 +117,12 @@ class TestMapPurchaseReceiptDraftHelpers(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			map_purchase_receipt_draft_from_gate_pass(gp)
 
+	def test_create_from_gate_pass_is_get_only_and_the_receipt_creator_is_not_an_endpoint(self):
+		from asn_module.handlers.purchase_receipt import create_receipt_from_gate_pass
+
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[create_from_gate_pass], ["GET"])
+		self.assertNotIn(create_receipt_from_gate_pass, frappe.whitelisted)
+
 	def test_create_from_gate_pass_requires_name(self):
 		with self.assertRaises(frappe.ValidationError):
 			create_from_gate_pass("")

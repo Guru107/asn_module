@@ -19,7 +19,8 @@ from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_LENGTH,
 	_random_scan_code_value,
 )
-from asn_module.utils.test_setup import inline_enqueue_patcher
+from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
+from asn_module.utils.test_setup import before_tests, inline_enqueue_patcher
 
 SOURCE_DOCTYPE = "DocType"
 SOURCE_NAME = "User"
@@ -577,3 +578,56 @@ class TestDispatchEndpointAccess(FrappeTestCase):
 			dispatch(code="garbage", device_info="Desktop")
 
 		enqueue.assert_not_called()
+
+
+class TestDispatchSourcePermission(FrappeTestCase):
+	"""A role alone is not enough: the user must also be allowed to read the scanned document."""
+
+	@classmethod
+	def setUpClass(cls):
+		before_tests()
+		super().setUpClass()
+		cls.email = ensure_integration_user()
+
+	def setUp(self):
+		super().setUp()
+		patcher = inline_enqueue_patcher()
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
+	def _warehouse(self, warehouse_name):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Warehouse",
+					"warehouse_name": warehouse_name,
+					"company": frappe.db.get_value("Company", {}, "name"),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def _scan(self, warehouse):
+		code = _fresh_scan_code("create_purchase_receipt", "Warehouse", warehouse)
+		handler_result = {"doctype": "Warehouse", "name": warehouse, "url": f"/app/warehouse/{warehouse}"}
+		with (
+			patched_action(
+				"create_purchase_receipt",
+				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
+				source_doctype="Warehouse",
+				roles=["Stock User"],
+			),
+			patch("asn_module.qr_engine.dispatch._call_handler", return_value=handler_result),
+			integration_user_context(self.email),
+		):
+			return dispatch(code=code)
+
+	def test_a_source_outside_the_users_permissions_is_refused_and_a_permitted_one_works(self):
+		own = self._warehouse("Scan Perm Own")
+		other = self._warehouse("Scan Perm Other")
+		frappe.permissions.add_user_permission("Warehouse", own, self.email, ignore_permissions=True)
+
+		self.assertTrue(self._scan(own)["success"])
+		with self.assertRaises(frappe.PermissionError):
+			self._scan(other)
