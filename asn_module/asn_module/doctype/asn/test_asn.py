@@ -704,12 +704,32 @@ class TestASN(FrappeTestCase):
 
 		mock_delete.assert_called_once_with("Purchase Receipt", "PR-DRAFT-1")
 
+	def _set_received_qty_in_db(self, asn, *received):
+		# Handlers write received_qty in SQL; update_receipt_status must read it from there.
+		for item, qty in zip(asn.items, received, strict=True):
+			frappe.db.set_value("ASN Item", item.name, "received_qty", qty, update_modified=False)
+
+	def test_update_receipt_status_keeps_received_qty_written_after_doc_was_loaded(self):
+		# Regression #120: a stale in-memory doc must not overwrite another receipt's increment.
+		asn = make_test_asn_with_two_items(qty=5)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		stale = frappe.get_doc("ASN", asn.name)
+
+		self._set_received_qty_in_db(asn, 5, 5)
+		stale.update_receipt_status()
+
+		self.assertEqual(
+			frappe.get_all("ASN Item", {"parent": asn.name}, pluck="received_qty", order_by="idx"),
+			[5, 5],
+		)
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Received")
+
 	def test_update_receipt_status_sets_partially_received_and_updates_discrepancy_qty(self):
 		asn = make_test_asn_with_two_items(qty=5)
 		asn.insert(ignore_permissions=True)
 
-		asn.items[0].received_qty = 2
-		asn.items[1].received_qty = 5
+		self._set_received_qty_in_db(asn, 2, 5)
 
 		asn.update_receipt_status()
 		asn.reload()
@@ -724,8 +744,7 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn_with_two_items(qty=5)
 		asn.insert(ignore_permissions=True)
 
-		asn.items[0].received_qty = 5
-		asn.items[1].received_qty = 5
+		self._set_received_qty_in_db(asn, 5, 5)
 
 		asn.update_receipt_status()
 		asn.reload()
@@ -741,8 +760,7 @@ class TestASN(FrappeTestCase):
 		asn.submit()
 
 		asn.reload()
-		asn.items[0].received_qty = 2
-		asn.items[1].received_qty = 5
+		self._set_received_qty_in_db(asn, 2, 5)
 
 		asn.update_receipt_status()
 		asn.reload()

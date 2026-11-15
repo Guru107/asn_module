@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder import DocType
-from frappe.query_builder.functions import Function, Sum
+from frappe.query_builder.functions import Function, IfNull, Sum
 from frappe.utils import cint, flt, today
 from frappe.website.website_generator import WebsiteGenerator
 
@@ -16,6 +16,7 @@ from asn_module.stock_cap.api import breaches_for_asn_doc
 from asn_module.stock_cap.fetch import cap_branch_by_warehouse, fetch_cap_context
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures, throw_stock_cap_exceeded
 from asn_module.stock_cap.models import Breach, Line
+from asn_module.stock_cap.precision import flt_qty
 from asn_module.supplier_asn_portal import (
 	asn_eligible_for_supplier_portal_cancel,
 	asn_eligible_for_supplier_portal_delete,
@@ -134,19 +135,30 @@ class ASN(WebsiteGenerator):
 			frappe.delete_doc("Purchase Receipt", pr_name)
 
 	def update_receipt_status(self):
-		"""Update ASN status based on received quantities across all items."""
-		all_received = True
-		any_received = False
+		"""Set discrepancy and status from the received quantities stored in the database.
 
-		for item in self.items:
-			received_qty = flt(item.received_qty)
-			qty = flt(item.qty)
+		Receipt handlers add to ``received_qty`` in SQL, so it is read from the table and
+		never written back from this (possibly stale) document.
+		"""
+		asn_item = DocType("ASN Item")
+		(
+			frappe.qb.update(asn_item)
+			.set(asn_item.discrepancy_qty, asn_item.qty - IfNull(asn_item.received_qty, 0))
+			.where(asn_item.parent == self.name)
+		).run()
+		# Locking read: a plain read under REPEATABLE READ can miss a concurrent receipt.
+		rows = (
+			frappe.qb.from_(asn_item)
+			.select(asn_item.qty, asn_item.received_qty)
+			.where(asn_item.parent == self.name)
+			.for_update()
+		).run(as_dict=True)
 
-			if received_qty > 0:
-				any_received = True
-			if received_qty < qty:
-				all_received = False
-			item.discrepancy_qty = qty - received_qty
+		received = [flt_qty(row.received_qty) for row in rows]
+		all_received = bool(rows) and all(
+			received_qty >= flt_qty(row.qty) for received_qty, row in zip(received, rows, strict=True)
+		)
+		any_received = any(received_qty > 0 for received_qty in received)
 
 		status = self.status
 		if all_received:
@@ -155,17 +167,6 @@ class ASN(WebsiteGenerator):
 			status = "Partially Received"
 		elif status in ("Received", "Partially Received"):
 			status = "Submitted"
-
-		for item in self.items:
-			frappe.db.set_value(
-				item.doctype,
-				item.name,
-				{
-					"received_qty": item.received_qty,
-					"discrepancy_qty": item.discrepancy_qty,
-				},
-				update_modified=False,
-			)
 
 		if status != self.status:
 			frappe.db.set_value(self.doctype, self.name, "status", status, update_modified=False)
