@@ -4,6 +4,7 @@
 - Frappe: `v15 + v16` | ERPNext: `v15 + v16` | Other apps: `hrms, india_compliance`
 - App: `asn_module` | Bench: `/root/workspace/bench15 (v15) / /root/workspace/bench16 (v16)` | Dev site: `development.localhost (v15) / frappe16.localhost (v16)` | Test site: `development.localhost / frappe16.localhost (dev sites double as test sites)` | Prod: `none — never run bench commands against production`
 - Python `3.10+ (benches run 3.13 / 3.14)`, Node `v24`
+- Cursor Cloud uses a different bench and site (`/home/ubuntu/frappe-bench`, `dev.localhost`): see `AGENTS.md`. Everything else in this file applies there too.
 - Use only APIs that exist in the version above. Unsure? Read `apps/frappe` / `apps/erpnext`. Don't guess.
 
 ## Commands
@@ -16,7 +17,7 @@ bench --site <site> run-tests --module <dotted.path.test_x> --test <test_name>
 bench --site <site> export-fixtures --app asn_module
 pre-commit run --files <changed files>
 ```
-- Tests only on the two sites above (needs `bench --site <site> set-config allow_tests true` once per site).
+- Tests only on the two sites above, or the Cursor Cloud site in `AGENTS.md` (needs `bench --site <site> set-config allow_tests true` once per site).
 - Ask before `reinstall`, `drop-site`, `restore` or any `--force`. Never run anything on a production site.
 - `bench start` only in the background, and only if not already running.
 
@@ -164,6 +165,8 @@ Run `frappe-code-review`. Quick check: qb not raw SQL | whitelist perms + type h
 ---
 
 ## Project context: ASN Module
+
+- Under active development: backward compatibility is out of scope unless a task explicitly requires it.
 
 - Response design & token optimization: `docs/ResponseDesign.md`
 

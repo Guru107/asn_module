@@ -1,4 +1,6 @@
-# Read CLAUDE.md
+# AGENTS.md
+
+**Read `CLAUDE.md` first.** It holds the rules for every agent: stack, commands, Frappe rules, security, tests, git. This file only adds Cursor Cloud environment notes. If the two disagree, `CLAUDE.md` wins.
 
 ## Cursor Cloud specific instructions
 
@@ -37,11 +39,10 @@ The app serves at `http://localhost:8000`. Login: `Administrator` / `admin`.
 
 ```bash
 cd /workspace
-ruff check asn_module/        # Python lint
-npx eslint asn_module/ --quiet # JS lint
+pre-commit run --files <changed files>   # ruff, ruff-format, prettier, eslint
 ```
 
-See `docs/ProjectOverview.md` for full linting/formatting commands.
+Same as `CLAUDE.md`'s definition of done. Standalone `ruff` / `eslint` commands are in `docs/ProjectOverview.md`.
 
 ### Running tests
 
@@ -61,4 +62,3 @@ Use `--lightmode` to avoid ERPNext test-record bootstrapping errors (fiscal year
 - Local Cypress E2E (`scripts/run_ephemeral_e2e.sh`) sets `ignore_csrf: 1` on the ephemeral site so `seed_context` can use `call_api` without an extra Desk load. For a persistent dev site, add `"ignore_csrf": 1` to `site_config.json` only while running UI tests (do not use in production).
 - The app is installed via `bench get-app --soft-link /workspace`, so code changes in `/workspace` are immediately reflected.
 - `bench build --app asn_module` rebuilds frontend assets. The `bench start` watcher auto-rebuilds JS/CSS on save.
-- Backward compatibility is intentionally out of scope while this module is under active development unless a task explicitly requires it.
