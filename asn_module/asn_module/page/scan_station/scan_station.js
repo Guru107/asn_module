@@ -36,7 +36,7 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 		const parsed = asn_module.parse_scan_input(value, {
 			file: __(
-				"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or dispatch URL."
+				"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or Scan Station URL."
 			),
 			missing_code: __(
 				"Scanned URL is missing the code query parameter. Expected ...scan-station?code=..."
@@ -105,7 +105,7 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 		clearTimeout(scan_timeout);
 		scan_timeout = setTimeout(() => {
 			let val = $input.val();
-			// Canonical raw scan codes or full dispatch URLs with code=
+			// Canonical raw scan codes or full Scan Station URLs with code=
 			if (val && (val.length >= scan_code_length || /^https?:\/\//i.test(val))) {
 				process_scan(val);
 			}

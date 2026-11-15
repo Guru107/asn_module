@@ -4,12 +4,12 @@ frappe.provide("asn_module");
 asn_module.parse_scan_input = function (value, copy) {
 	const messages = Object.assign(
 		{
-			empty: __("Please scan or paste a scan code or dispatch URL."),
+			empty: __("Please scan or paste a scan code or Scan Station URL."),
 			file: __(
 				"You pasted an image file URL. Scan the QR or barcode so the scanner sends the code or URL."
 			),
 			missing_code: __(
-				"Scanned URL is missing the code query parameter (expected ...dispatch?code=...)."
+				"Scanned URL is missing the code query parameter (expected ...scan-station?code=...)."
 			),
 		},
 		copy || {}
