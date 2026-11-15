@@ -10,7 +10,6 @@ from frappe.utils import add_days, flt, nowdate, today
 
 from asn_module.asn_module.doctype.asn.asn import (
 	get_item_transition_summary,
-	get_po_items,
 	get_purchase_order_items,
 )
 from asn_module.handlers.utils import fill_custom_fiscal_year
@@ -842,24 +841,6 @@ class TestASN(FrappeTestCase):
 		_rows, remaining = fetch_purchase_order_items([po.name])
 		self.assertEqual(remaining[po.items[0].name], 0)
 
-	def test_get_po_items_filters_results_by_purchase_order_and_search_text(self):
-		po = create_purchase_order(item_code=_ensure_item(), do_not_submit=True)
-
-		results = get_po_items(
-			"ASN Item",
-			"_Test ASN",
-			"item_code",
-			0,
-			20,
-			{"purchase_order": po.name},
-		)
-
-		self.assertGreaterEqual(len(results), 1)
-		self.assertEqual(results[0][0], po.items[0].item_code)
-
-	def test_get_po_items_returns_empty_without_purchase_order_filter(self):
-		self.assertEqual(get_po_items("ASN Item", "test", "item_code", 0, 20, {}), [])
-
 	def test_get_purchase_order_items_rejects_inaccessible_purchase_order(self):
 		with patch(
 			"asn_module.asn_module.doctype.asn.asn._get_accessible_purchase_order",
@@ -867,14 +848,6 @@ class TestASN(FrappeTestCase):
 		):
 			with self.assertRaises(frappe.PermissionError):
 				get_purchase_order_items("PO-0001")
-
-	def test_get_po_items_rejects_inaccessible_purchase_order(self):
-		with patch(
-			"asn_module.asn_module.doctype.asn.asn._get_accessible_purchase_order",
-			side_effect=frappe.PermissionError,
-		):
-			with self.assertRaises(frappe.PermissionError):
-				get_po_items("ASN Item", "test", "item_code", 0, 20, {"purchase_order": "PO-0001"})
 
 	def test_get_item_transition_summary_rejects_without_read_permission(self):
 		doc = SimpleNamespace(has_permission=lambda _ptype: False)

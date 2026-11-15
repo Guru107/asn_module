@@ -20,14 +20,6 @@ SCAN_CODE_LENGTH = 16
 _MAX_CREATE_ATTEMPTS = 64
 
 
-def format_scan_code_for_display(code: str) -> str:
-	"""Human-readable scan code as a plain uppercase string without separators."""
-	raw = (code or "").replace("-", "").replace(" ", "").upper()
-	if not raw:
-		return ""
-	return raw
-
-
 def _random_scan_code_value() -> str:
 	return "".join(secrets.choice(SCAN_CODE_ALPHABET) for _ in range(SCAN_CODE_LENGTH))
 
@@ -373,15 +365,3 @@ def void_scan_codes(action_key: str, source_doctype: str, source_name: str) -> N
 	}
 	for name in frappe.get_all("Scan Code", filters=filters, pluck="name"):
 		frappe.db.set_value("Scan Code", name, "status", "Voided", update_modified=True)
-
-
-def verify_registry_row_points_to_existing_source(doc: frappe.model.document.Document) -> bool:
-	"""Return True if ``source_doctype`` / ``source_name`` resolves to an existing document."""
-	try:
-		if not doc.source_doctype or not doc.source_name:
-			return False
-		if not frappe.db.exists("DocType", doc.source_doctype):
-			return False
-		return bool(frappe.db.exists(doc.source_doctype, doc.source_name))
-	except Exception:
-		return False

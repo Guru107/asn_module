@@ -741,33 +741,6 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 
 
 @frappe.whitelist(methods=["GET"])
-def get_po_items(
-	doctype: str,
-	txt: str,
-	searchfield: str,
-	start: int,
-	page_len: int,
-	filters: dict[str, Any] | None,
-) -> list[tuple[str, str]]:
-	del doctype, searchfield
-	purchase_order = (filters or {}).get("purchase_order")
-	if not purchase_order:
-		return []
-	_get_accessible_purchase_order(purchase_order)
-
-	return frappe.db.sql(
-		"""
-		SELECT poi.item_code, poi.item_name
-		FROM `tabPurchase Order Item` poi
-		WHERE poi.parent = %s
-		AND (poi.item_code LIKE %s OR poi.item_name LIKE %s)
-		LIMIT %s OFFSET %s
-		""",
-		(purchase_order, f"%{txt}%", f"%{txt}%", page_len, start),
-	)
-
-
-@frappe.whitelist(methods=["GET"])
 def get_item_transition_summary(asn: str) -> list[dict]:
 	"""Latest transition row per ASN line item (for compact ASN form summary)."""
 	doc = frappe.get_doc("ASN", asn)

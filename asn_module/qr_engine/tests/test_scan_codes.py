@@ -9,7 +9,6 @@ from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_ALPHABET,
 	SCAN_CODE_LENGTH,
 	_random_scan_code_value,
-	format_scan_code_for_display,
 	get_or_create_scan_code,
 	get_scan_code_doc,
 	get_scan_code_length,
@@ -21,7 +20,6 @@ from asn_module.qr_engine.scan_codes import (
 	record_successful_scan,
 	resolve_scan_code,
 	validate_scan_code_row,
-	verify_registry_row_points_to_existing_source,
 )
 
 
@@ -64,23 +62,6 @@ class TestFormatScanCodeForDisplay(FrappeTestCase):
 		value = _random_scan_code_value()
 		self.assertEqual(len(value), SCAN_CODE_LENGTH)
 		self.assertTrue(all(ch in SCAN_CODE_ALPHABET for ch in value))
-
-	def test_empty_code_returns_empty(self):
-		self.assertEqual(format_scan_code_for_display(""), "")
-
-	def test_short_code_is_uppercased(self):
-		self.assertEqual(format_scan_code_for_display("ab"), "AB")
-
-	def test_removes_spaces_and_dashes_without_grouping(self):
-		self.assertEqual(format_scan_code_for_display("ab cd-ef"), "ABCDEF")
-
-	def test_long_code_is_not_grouped(self):
-		result = format_scan_code_for_display("ABCDEFGHIJKLMNOP")
-		self.assertEqual(result, "ABCDEFGHIJKLMNOP")
-
-	def test_odd_length_code_is_not_grouped(self):
-		result = format_scan_code_for_display("ABCDEFGHI")
-		self.assertEqual(result, "ABCDEFGHI")
 
 
 class TestNormalizeScanCode(FrappeTestCase):
@@ -212,51 +193,6 @@ class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 		doc = frappe.get_doc("Scan Code", name)
 		with self.assertRaises(frappe.ValidationError):
 			validate_scan_code_row(doc, "create_purchase_receipt")
-
-
-class TestVerifyRegistryRowPointsToExistingSource(FrappeTestCase, _ScanCodeTestMixin):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls._create_real_asn()
-
-	def test_valid_source_returns_true(self):
-		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
-		doc = frappe.get_doc("Scan Code", name)
-		self.assertTrue(verify_registry_row_points_to_existing_source(doc))
-
-	def test_missing_source_returns_false(self):
-		name = self._make_scan_code_direct(
-			action_key="create_purchase_receipt",
-			source_doctype="ASN",
-			source_name="NONEXISTENT-" + frappe.generate_hash(length=6),
-		)
-		doc = frappe.get_doc("Scan Code", name)
-		self.assertFalse(verify_registry_row_points_to_existing_source(doc))
-
-	def test_missing_doctype_returns_false(self):
-		name = self._make_scan_code_direct(
-			action_key="create_purchase_receipt",
-			source_doctype="FakeDocType",
-			source_name="FAKE-" + frappe.generate_hash(length=6),
-		)
-		doc = frappe.get_doc("Scan Code", name)
-		self.assertFalse(verify_registry_row_points_to_existing_source(doc))
-
-	def test_empty_source_name_returns_false(self):
-		name = self._make_scan_code_direct(
-			action_key="create_purchase_receipt",
-			source_doctype="ASN",
-			source_name="",
-		)
-		doc = frappe.get_doc("Scan Code", name)
-		self.assertFalse(verify_registry_row_points_to_existing_source(doc))
-
-	def test_exception_during_db_check_returns_false(self):
-		name = get_or_create_scan_code("create_purchase_receipt", "ASN", self._asn_name)
-		doc = frappe.get_doc("Scan Code", name)
-		with patch("asn_module.qr_engine.scan_codes.frappe.db.exists", side_effect=Exception("db error")):
-			self.assertFalse(verify_registry_row_points_to_existing_source(doc))
 
 
 class TestPurgeScanRegistryOnTrash(FrappeTestCase, _ScanCodeTestMixin):
