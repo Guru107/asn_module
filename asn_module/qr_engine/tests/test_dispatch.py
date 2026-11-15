@@ -627,6 +627,8 @@ class TestDispatchSourcePermission(FrappeTestCase):
 		own = self._warehouse("Scan Perm Own")
 		other = self._warehouse("Scan Perm Other")
 		frappe.permissions.add_user_permission("Warehouse", own, self.email, ignore_permissions=True)
+		# The rollback does not clear the cached User Permissions; later tests reuse this user.
+		self.addCleanup(frappe.clear_cache, user=self.email)
 
 		self.assertTrue(self._scan(own)["success"])
 		with self.assertRaises(frappe.PermissionError):
