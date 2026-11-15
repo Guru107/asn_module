@@ -40,3 +40,18 @@ class TestRateDifferenceReport(FrappeTestCase):
 		_columns, rows = execute({"asn": self._asn_name, "from_date": future})
 
 		self.assertEqual(rows, [])
+
+	def test_user_permission_on_supplier_hides_other_suppliers(self):
+		supplier = frappe.db.get_value("ASN", self._asn_name, "supplier")
+		other = frappe.get_doc({"doctype": "Supplier", "supplier_name": "Rate Diff Other Supplier"}).insert(
+			ignore_permissions=True
+		)
+		frappe.get_doc(
+			{"doctype": "User Permission", "user": self._user, "allow": "Supplier", "for_value": other.name}
+		).insert(ignore_permissions=True)
+		self.assertNotEqual(supplier, other.name)
+
+		frappe.set_user(self._user)
+		_columns, rows = execute({"asn": self._asn_name})
+
+		self.assertEqual(rows, [])

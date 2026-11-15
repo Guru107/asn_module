@@ -71,7 +71,25 @@ def _columns():
 	]
 
 
+def _readable_asns(filters: dict) -> list[str]:
+	# qb ignores User Permissions, so resolve the ASNs this user may read through get_list first.
+	asn_filters: list = [["docstatus", "!=", 2]]
+	for key in ("supplier", "supplier_invoice_no"):
+		if filters.get(key):
+			asn_filters.append([key, "=", filters[key]])
+	if filters.get("asn"):
+		asn_filters.append(["name", "=", filters["asn"]])
+	if filters.get("from_date"):
+		asn_filters.append(["asn_date", ">=", getdate(filters["from_date"])])
+	if filters.get("to_date"):
+		asn_filters.append(["asn_date", "<=", getdate(filters["to_date"])])
+	return frappe.get_list("ASN", filters=asn_filters, pluck="name", limit_page_length=0)
+
+
 def _rate_rows(filters: dict) -> list[dict]:
+	asn_names = _readable_asns(filters)
+	if not asn_names:
+		return []
 	asn_item = DocType("ASN Item")
 	asn = DocType("ASN")
 	po_item = DocType("Purchase Order Item")
@@ -93,21 +111,11 @@ def _rate_rows(filters: dict) -> list[dict]:
 			po_item.rate.as_("po_rate"),
 			asn_item.qty,
 		)
-		.where(asn.docstatus != 2)
+		.where(asn.name.isin(asn_names))
 		.where(Abs(asn_item.rate - po_item.rate) > RATE_EPSILON)
 		.orderby(asn.name)
 		.orderby(asn_item.idx)
 	)
-	if filters.get("asn"):
-		query = query.where(asn.name == filters["asn"])
-	if filters.get("supplier"):
-		query = query.where(asn.supplier == filters["supplier"])
 	if filters.get("purchase_order"):
 		query = query.where(asn_item.purchase_order == filters["purchase_order"])
-	if filters.get("supplier_invoice_no"):
-		query = query.where(asn.supplier_invoice_no == filters["supplier_invoice_no"])
-	if filters.get("from_date"):
-		query = query.where(asn.asn_date >= getdate(filters["from_date"]))
-	if filters.get("to_date"):
-		query = query.where(asn.asn_date <= getdate(filters["to_date"]))
 	return query.run(as_dict=True)
