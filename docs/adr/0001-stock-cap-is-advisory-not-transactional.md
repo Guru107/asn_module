@@ -14,4 +14,4 @@ No code may treat "stock is at or below Maximum Stock" as an invariant. Reorder 
 
 This is invisible from the outside. The feature presents as a hard limit, and a reader inspecting only the enforcement code would reasonably conclude the invariant holds. That is the whole reason this decision is recorded.
 
-Stock movements outside the ASN and Purchase Receipt paths - Stock Entry, Stock Reconciliation, transfers between Cap Warehouses - are unguarded entirely and can carry an item above Maximum Stock regardless of concurrency.
+Stock movements outside the ASN and Purchase Receipt paths - Stock Entry, Stock Reconciliation, transfers between Cap Warehouses, and a Purchase Invoice with update_stock (receipts are expected to go through the Purchase Receipt, so the cap does not check them) - are unguarded entirely and can carry an item above Maximum Stock regardless of concurrency.
