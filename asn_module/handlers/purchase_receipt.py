@@ -305,11 +305,56 @@ def on_purchase_receipt_before_submit(doc, method=None):
 	inside breaches_for_purchase_receipt, whether or not this receipt is linked back to an
 	ASN by name.
 	"""
+	_pair_unmapped_rows(doc)
 	breaches = breaches_for_purchase_receipt(doc)
 	if not breaches:
 		return
 
 	throw_stock_cap_exceeded(breaches)
+
+
+def _pair_unmapped_rows(doc) -> None:
+	"""Map receipt rows the ASN map does not know to free ASN lines on the same PO Item.
+
+	The map is keyed by row name. Amend gives every row a new name (the desk still copies the
+	old map), and so does deleting and re-adding a row on a draft. Unpaired, submit records
+	nothing and the ASN stays in transit with the stock already on hand. Keys for rows no
+	longer on the receipt are dropped.
+	"""
+	if not getattr(doc, "asn", None) or getattr(doc, "is_return", 0):
+		return
+	row_names = {row.name for row in doc.items}
+	mapping = {
+		name: entry
+		for name, entry in json.loads(getattr(doc, "asn_items", None) or "{}").items()
+		if name in row_names
+	}
+	unmapped = [row for row in doc.items if row.name not in mapping]
+	if not unmapped:
+		return
+
+	lines_by_po_item: dict[str, list] = {}
+	for asn_item in frappe.get_all(
+		"ASN Item",
+		filters={"parent": doc.asn, "parenttype": "ASN"},
+		fields=["name", "purchase_order_item", "qty", "received_qty"],
+		order_by="idx asc",
+	):
+		lines_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
+
+	taken = {entry.get("asn_item_name") for entry in mapping.values()}
+	for row in unmapped:
+		lines = lines_by_po_item.get(row.purchase_order_item)
+		if not lines:
+			continue
+		# A line this receipt has not mapped and another receipt has not filled; else share one,
+		# since linked recording sums every row mapped to a line.
+		# shortcut: a split line the gate skipped can still be picked; read the amended_from map
+		# if amended gate-pass receipts start landing on the wrong line.
+		asn_item = min(lines, key=lambda line: (line.name in taken, flt(line.received_qty) >= flt(line.qty)))
+		taken.add(asn_item.name)
+		mapping[row.name] = {"asn_item_name": asn_item.name, "original_qty": asn_item.qty}
+	doc.asn_items = json.dumps(mapping)
 
 
 def _gate_pass_mode_on() -> bool:

@@ -1048,6 +1048,65 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		self.assertEqual(self._portal_remaining(open_po), 0)
 		self.assertEqual(self._portal_search_qty(open_po), 0)
 
+	def test_amended_receipt_records_received_qty_on_the_asn(self):
+		po = self._submitted_purchase_order(qty=10)
+		asn = make_test_asn(purchase_order=po, qty=10)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		receipt = self._purchase_receipt(po, asn, qty=10)
+		receipt.cancel()
+		asn.reload()
+		self.assertEqual(flt(asn.items[0].received_qty), 0)
+
+		# Desk Amend copies no_copy fields too, so the old map arrives keyed by the old row names.
+		amended = frappe.copy_doc(receipt)
+		amended.docstatus = 0
+		amended.amended_from = receipt.name
+		amended.insert(ignore_permissions=True)
+		self._submit_purchase_receipt(amended)
+
+		asn.reload()
+		self.assertEqual(flt(asn.items[0].received_qty), 10)
+		self.assertEqual(asn.status, "Received")
+
+		amended.cancel()
+		asn.reload()
+		self.assertEqual(flt(asn.items[0].received_qty), 0)
+
+	def test_an_unmapped_row_skips_the_split_line_another_receipt_filled(self):
+		po = self._submitted_purchase_order(qty=10)
+		asn = make_test_asn_with_two_items(purchase_order=po, qty=5)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		self._purchase_receipt(po, asn, qty=5)
+
+		second = self._purchase_receipt(po, asn, qty=5, submit=False)
+		second.db_set("asn_items", None, notify=False)
+		second.reload()
+		self._submit_purchase_receipt(second)
+
+		asn.reload()
+		self.assertEqual([flt(row.received_qty) for row in asn.items], [5, 5])
+		self.assertEqual(asn.status, "Received")
+
+	def test_a_row_re_added_on_a_draft_receipt_records_received_qty_on_the_asn(self):
+		po = self._submitted_purchase_order(qty=10)
+		asn = make_test_asn(purchase_order=po, qty=10)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		receipt = self._purchase_receipt(po, asn, qty=10, submit=False)
+		receipt.reload()
+
+		row = receipt.items[0].as_dict(no_default_fields=True)
+		receipt.set("items", [])
+		receipt.append("items", row)
+		receipt.save(ignore_permissions=True)
+		self._submit_purchase_receipt(receipt)
+
+		asn.reload()
+		self.assertEqual(flt(asn.items[0].received_qty), 10)
+		self.assertEqual(asn.status, "Received")
+
 	def test_submit_refuses_again_after_the_return_is_cancelled(self):
 		po, asn, purchase_return = self._accept_and_return(ordered=100, accepted=100, returned=10)
 		draft = make_test_asn(purchase_order=po, qty=10)
@@ -1434,7 +1493,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		self.assertEqual(flt(po.items[0].received_qty), ordered - returned)
 		return po, asn, purchase_return
 
-	def _purchase_receipt(self, po, asn, *, qty, rejected_qty=0):
+	def _purchase_receipt(self, po, asn, *, qty, rejected_qty=0, submit=True):
 		row = {
 			"item_code": po.items[0].item_code,
 			"qty": qty,
@@ -1466,7 +1525,8 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 				json.dumps({receipt.items[0].name: {"asn_item_name": asn.items[0].name}}),
 				notify=False,
 			)
-		self._submit_purchase_receipt(receipt)
+		if submit:
+			self._submit_purchase_receipt(receipt)
 		return receipt
 
 	def _purchase_return(self, receipt, *, qty):
