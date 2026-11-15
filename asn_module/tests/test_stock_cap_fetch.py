@@ -277,6 +277,15 @@ class TestStockCapFetchInTransit(FrappeTestCase):
 	def test_submitted_asn_contributes_to_in_transit(self):
 		self.assertEqual(self._in_transit(), 7.0 * (self.po_item.conversion_factor or 1))
 
+	def test_in_transit_uses_the_po_set_warehouse_when_the_item_has_none(self):
+		frappe.db.set_value(
+			"Purchase Order Item", self.po_item.name, "warehouse", None, update_modified=False
+		)
+		frappe.db.set_value(
+			"Purchase Order", self.purchase_order.name, "set_warehouse", self.warehouse, update_modified=False
+		)
+		self.assertEqual(self._in_transit(), 7.0 * (self.po_item.conversion_factor or 1))
+
 	def test_exclude_asn_name_removes_that_asn(self):
 		self.assertEqual(self._in_transit(exclude=self.asn.name), 0.0)
 

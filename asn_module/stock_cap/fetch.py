@@ -1,18 +1,11 @@
 import frappe
-from frappe.query_builder import DocType
+from frappe.query_builder import Case, DocType
+from frappe.query_builder.functions import Function, IfNull, Sum
 from frappe.utils import cint, flt
 
 from asn_module.stock_cap.models import CapContext, Line
 
 EXCLUDED_ASN_STATUSES = ("Received", "Closed")
-
-# Stock-UOM undelivered qty on one ASN Item row. GREATEST clamps over-receipts at zero so
-# a single line cannot lend negative in-transit to its siblings.
-_LINE_QTY_SQL = """
-	GREATEST(ai.qty - COALESCE(ai.received_qty, 0), 0)
-	* CASE WHEN COALESCE(poi.conversion_factor, 0) > 0
-		THEN poi.conversion_factor ELSE 1 END
-"""
 
 
 def fetch_cap_context(
@@ -209,214 +202,67 @@ def _fetch_in_transit(
 ) -> dict[tuple[str, str], float]:
 	"""Undelivered quantity on other submitted ASNs, converted to stock UOM.
 
-	Raw SQL rather than the query builder because GREATEST() has no portable
-	query-builder equivalent, and clamping matters: an over-receipted line, or a receipt
-	that receives more of a Purchase Order Item than is still outstanding, must not lend
-	negative in-transit quantity to its siblings.
+	One query returns the undelivered stock-UOM qty per (Purchase Order Item, item_code,
+	effective warehouse). Each ASN Item row is clamped at zero first, so an over-receipted
+	line cannot lend negative in-transit to its siblings.
 
 	``po_item_receiving_qty`` -- stock-UOM quantity a Purchase Receipt is actually
 	receiving, keyed by Purchase Order Item -- is subtracted from that Purchase Order
-	Item's own in-transit subtotal (summed across every ASN Item row referencing it,
-	clamped at zero per row exactly as before) before rows are pooled into the
-	item_code/warehouse totals the evaluator uses. The clamp-at-zero is applied at
-	Purchase Order Item granularity, not at the pooled item_code/warehouse level, so an
-	over-receipt of one Purchase Order Item cannot eat into a different Purchase Order
-	Item's still-undelivered quantity even when both land in the same item_code and
-	warehouse.
+	Item's subtotal and clamped at zero *per Purchase Order Item*, so an over-receipt of
+	one Purchase Order Item cannot eat into a different one's quantity even when both land
+	in the same item_code and warehouse. The remainders are then pooled to branch.
 
-	MySQL shape (see ``docs/CodingConventions.md`` MariaDB section):
-
-	- Sargability: the COALESCE(warehouse) ``IN`` predicate is split into two ``UNION ALL``
-	  legs -- ``poi.warehouse IN (...)`` and ``poi.warehouse IS NULL AND po.set_warehouse
-	  IN (...)`` -- so each leg can use an index without a function on the column.
-	- ASN filters live in the ``JOIN ... ON`` so they push down with the parent join.
-	- Branch pooling joins a parameterized warehouse→branch map and ``GROUP BY``s in SQL
-	  (in-transit result sets are larger than Bin's unique pairs).
-	- All user values travel as ``%s`` params; only placeholder runs are concatenated.
+	The effective warehouse is ``poi.warehouse`` when set, else ``po.set_warehouse``. It is
+	two ``UNION ALL`` legs rather than ``COALESCE`` in ``WHERE`` so each predicate can use
+	an index (see ``docs/CodingConventions.md`` MariaDB section).
 	"""
-	receiving_qty = {
-		po_item: qty for po_item, qty in (po_item_receiving_qty or {}).items() if qty and qty > 0
-	}
+	asn_item = DocType("ASN Item")
+	asn = DocType("ASN")
+	po_item = DocType("Purchase Order Item")
+	po = DocType("Purchase Order")
 
-	line_union_sql, line_params = _in_transit_line_union(
-		item_codes, warehouses, exclude_asn_name=exclude_asn_name
-	)
-	branch_map_sql, branch_map_params = _branch_map_union(warehouses, branch_by_warehouse)
+	# GREATEST clamps over-receipts at zero; a missing or non-positive factor means 1.
+	conversion = Case().when(IfNull(po_item.conversion_factor, 0) > 0, po_item.conversion_factor).else_(1)
+	undelivered = Function("GREATEST", asn_item.qty - IfNull(asn_item.received_qty, 0), 0) * conversion
 
-	if not receiving_qty:
+	def leg(warehouse_field, warehouse_filter):
 		query = (
-			"""
-			SELECT
-				bm.branch AS branch,
-				line_rows.item_code AS item_code,
-				SUM(line_rows.line_qty) AS qty
-			FROM (
-				"""
-			+ line_union_sql
-			+ """
-			) line_rows
-			INNER JOIN (
-				"""
-			+ branch_map_sql
-			+ """
-			) bm ON bm.warehouse = line_rows.warehouse
-			GROUP BY bm.branch, line_rows.item_code
-			"""
+			frappe.qb.from_(asn_item)
+			.inner_join(asn)
+			.on(asn.name == asn_item.parent)
+			.inner_join(po_item)
+			.on(po_item.name == asn_item.purchase_order_item)
+			.inner_join(po)
+			.on(po.name == po_item.parent)
+			.select(
+				asn_item.purchase_order_item.as_("purchase_order_item"),
+				po_item.item_code.as_("item_code"),
+				warehouse_field.as_("warehouse"),
+				Sum(undelivered).as_("qty"),
+			)
+			.where(asn.docstatus == 1)
+			.where(asn.status.notin(EXCLUDED_ASN_STATUSES))
+			.where(po_item.item_code.isin(item_codes))
+			.where(warehouse_filter)
+			.groupby(asn_item.purchase_order_item, po_item.item_code, warehouse_field)
 		)
-		rows = frappe.db.sql(query, [*line_params, *branch_map_params], as_dict=True)
-		return {(row["branch"], row["item_code"]): flt(row["qty"]) for row in rows}
+		if exclude_asn_name:
+			query = query.where(asn.name != exclude_asn_name)
+		return query
 
-	po_items = sorted(receiving_qty)
-	receiving_union = " UNION ALL ".join(["SELECT %s AS purchase_order_item, %s AS qty"] * len(po_items))
-	receiving_params: list = []
-	for po_item in po_items:
-		receiving_params.extend([po_item, receiving_qty[po_item]])
-
-	query = (
-		"""
-		SELECT
-			bm.branch AS branch,
-			remainders.item_code AS item_code,
-			SUM(remainders.remaining) AS qty
-		FROM (
-			SELECT
-				po_totals.item_code AS item_code,
-				po_totals.warehouse AS warehouse,
-				GREATEST(po_totals.in_transit_qty - COALESCE(recv.qty, 0), 0) AS remaining
-			FROM (
-				SELECT
-					line_rows.purchase_order_item AS purchase_order_item,
-					line_rows.item_code AS item_code,
-					line_rows.warehouse AS warehouse,
-					SUM(line_rows.line_qty) AS in_transit_qty
-				FROM (
-					"""
-		+ line_union_sql
-		+ """
-				) line_rows
-				GROUP BY line_rows.purchase_order_item, line_rows.item_code, line_rows.warehouse
-			) po_totals
-			LEFT JOIN (
-				"""
-		+ receiving_union
-		+ """
-			) recv ON recv.purchase_order_item = po_totals.purchase_order_item
-		) remainders
-		INNER JOIN (
-			"""
-		+ branch_map_sql
-		+ """
-		) bm ON bm.warehouse = remainders.warehouse
-		GROUP BY bm.branch, remainders.item_code
-		"""
-	)
-	rows = frappe.db.sql(
-		query,
-		[*line_params, *receiving_params, *branch_map_params],
-		as_dict=True,
-	)
-	return {(row["branch"], row["item_code"]): flt(row["qty"]) for row in rows}
-
-
-def _placeholders(count: int) -> str:
-	return ", ".join(["%s"] * count)
-
-
-def _branch_map_union(warehouses: list[str], branch_by_warehouse: dict[str, str]) -> tuple[str, list]:
-	"""Parameterized warehouse→branch derived table for SQL-side pooling."""
-	parts = ["SELECT %s AS warehouse, %s AS branch"] * len(warehouses)
-	params: list = []
-	for warehouse in warehouses:
-		params.extend([warehouse, branch_by_warehouse[warehouse]])
-	return " UNION ALL ".join(parts), params
-
-
-def _in_transit_line_union(
-	item_codes: list[str],
-	warehouses: list[str],
-	exclude_asn_name: str | None = None,
-) -> tuple[str, list]:
-	"""Two sargable legs for effective warehouse = COALESCE(poi.warehouse, po.set_warehouse).
-
-	Both Purchase Order Item.warehouse and Purchase Order.set_warehouse are nullable with
-	no non-NULL default (confirmed against the live schema -- NULL, not ''), so the
-	effective warehouse is exactly ``poi.warehouse`` when set, else ``po.set_warehouse``.
-	``UNION ALL`` of the two legs (rather than ``OR`` / ``COALESCE`` in ``WHERE``) keeps
-	each predicate index-friendly.
-	"""
-	item_placeholders = _placeholders(len(item_codes))
-	warehouse_placeholders = _placeholders(len(warehouses))
-	status_placeholders = _placeholders(len(EXCLUDED_ASN_STATUSES))
-
-	exclude_on = ""
-	exclude_params: list = []
-	if exclude_asn_name:
-		exclude_on = "AND asn.name != %s"
-		exclude_params.append(exclude_asn_name)
-
-	joins = (
-		"""
-		INNER JOIN `tabASN` asn
-			ON asn.name = ai.parent
-			AND asn.docstatus = 1
-			AND asn.status NOT IN ("""
-		+ status_placeholders
-		+ """)
-			"""
-		+ exclude_on
-		+ """
-		INNER JOIN `tabPurchase Order Item` poi ON poi.name = ai.purchase_order_item
-		INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
-		"""
+	rows = (
+		leg(po_item.warehouse, po_item.warehouse.isin(warehouses))
+		.union_all(leg(po.set_warehouse, po_item.warehouse.isnull() & po.set_warehouse.isin(warehouses)))
+		.run(as_dict=True)
 	)
 
-	# purchase_order_item is selected so the receiving-qty path can clamp per PO Item.
-	leg_line_warehouse = _in_transit_leg(
-		joins=joins,
-		warehouse_expr="poi.warehouse",
-		item_placeholders=item_placeholders,
-		warehouse_filter="AND poi.warehouse IN (" + warehouse_placeholders + ")",
-	)
-	leg_set_warehouse = _in_transit_leg(
-		joins=joins,
-		warehouse_expr="po.set_warehouse",
-		item_placeholders=item_placeholders,
-		warehouse_filter=(
-			"AND poi.warehouse IS NULL AND po.set_warehouse IN (" + warehouse_placeholders + ")"
-		),
-	)
-
-	# Per leg: status list, optional exclude, item_codes, warehouses.
-	leg_params = [*EXCLUDED_ASN_STATUSES, *exclude_params, *item_codes, *warehouses]
-	return leg_line_warehouse + " UNION ALL " + leg_set_warehouse, [*leg_params, *leg_params]
-
-
-def _in_transit_leg(
-	*,
-	joins: str,
-	warehouse_expr: str,
-	item_placeholders: str,
-	warehouse_filter: str,
-) -> str:
-	"""One UNION leg. The item is the Purchase Order Item's code, so a mismatched ASN item code still counts."""
-	return (
-		"""
-		SELECT
-			ai.purchase_order_item AS purchase_order_item,
-			poi.item_code AS item_code,
-			"""
-		+ warehouse_expr
-		+ """ AS warehouse,
-			"""
-		+ _LINE_QTY_SQL
-		+ """ AS line_qty
-		FROM `tabASN Item` ai
-		"""
-		+ joins
-		+ """
-		WHERE poi.item_code IN ("""
-		+ item_placeholders
-		+ """)
-			"""
-		+ warehouse_filter
-	)
+	receiving_qty = {item: qty for item, qty in (po_item_receiving_qty or {}).items() if qty and qty > 0}
+	totals: dict[tuple[str, str], float] = {}
+	for row in rows:
+		branch = branch_by_warehouse.get(row["warehouse"])
+		if not branch:
+			continue
+		remaining = max(flt(row["qty"]) - flt(receiving_qty.get(row["purchase_order_item"])), 0.0)
+		key = (branch, row["item_code"])
+		totals[key] = totals.get(key, 0.0) + remaining
+	return totals
