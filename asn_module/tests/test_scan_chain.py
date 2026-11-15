@@ -165,6 +165,18 @@ class TestScanChainWiring(FrappeTestCase):
 			"asn_module.handlers.subcontracting.on_subcontracting_receipt_cancel",
 			events["Subcontracting Receipt"]["on_cancel"],
 		)
+		self.assertIn(
+			"asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",
+			events["Purchase Receipt"]["on_cancel"],
+		)
+		self.assertIn(
+			"asn_module.handlers.subcontracting.on_subcontracting_order_cancel",
+			events["Subcontracting Order"]["on_cancel"],
+		)
+		self.assertIn(
+			"asn_module.handlers.subcontracting.on_subcontracting_dispatch_cancel",
+			events["Stock Entry"]["on_cancel"],
+		)
 
 
 class TestGatePassScanChain(FrappeTestCase):

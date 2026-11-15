@@ -14,6 +14,7 @@ from asn_module.handlers.purchase_receipt import (
 	asn_dispatch_action_key,
 	create_gate_pass_from_asn,
 	on_purchase_receipt_before_submit,
+	on_purchase_receipt_cancel,
 	on_purchase_receipt_submit,
 	on_purchase_receipt_trash,
 	stamp_asn_item_mapping,
@@ -262,6 +263,15 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				"state": "PR_CREATED_DRAFT",
 			},
 		)
+
+	def test_on_purchase_receipt_cancel_voids_the_invoice_scan_code(self):
+		# No ASN link: nothing else to reverse, but the code must still be voided.
+		doc = SimpleNamespace(name="PR-UNIT-006", asn=None, is_return=0)
+
+		with patch("asn_module.handlers.purchase_receipt.void_scan_codes") as void:
+			on_purchase_receipt_cancel(doc, "on_cancel")
+
+		void.assert_called_once_with("create_purchase_invoice", "Purchase Receipt", "PR-UNIT-006")
 
 	def test_on_purchase_receipt_trash_keeps_submitted_transition_logs(self):
 		doc = SimpleNamespace(name="PR-UNIT-005", docstatus=1, asn="ASN-UNIT-005")

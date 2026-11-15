@@ -145,6 +145,12 @@ def on_subcontracting_order_submit(doc, method):
 	store_scan_code(doc, "create_subcontracting_dispatch")
 
 
+def on_subcontracting_order_cancel(doc, method=None):
+	"""Void the dispatch scan code so a cancelled order cannot be scanned."""
+	del method
+	void_scan_codes("create_subcontracting_dispatch", "Subcontracting Order", doc.name)
+
+
 def on_subcontracting_dispatch_submit(doc, method):
 	"""Store the receipt scan code when a Send to Subcontractor Stock Entry is submitted."""
 	del method
@@ -153,3 +159,9 @@ def on_subcontracting_dispatch_submit(doc, method):
 		return
 
 	store_scan_code(doc, SUBCONTRACTING_RECEIPT_ACTION_FROM_DISPATCH)
+
+
+def on_subcontracting_dispatch_cancel(doc, method=None):
+	"""Void the receipt scan code so a cancelled Send to Subcontractor entry cannot be scanned."""
+	del method
+	void_scan_codes(SUBCONTRACTING_RECEIPT_ACTION_FROM_DISPATCH, "Stock Entry", doc.name)

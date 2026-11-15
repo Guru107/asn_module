@@ -287,7 +287,7 @@ def _unreceived_qty_on_open_asns(po_items: list[str]) -> dict[str, list[tuple[st
 
 
 def on_purchase_receipt_cancel(doc, method=None):
-	"""Put delivered quantity back when a receipt is cancelled.
+	"""Void the receipt's invoice scan code and put delivered quantity back when it is cancelled.
 
 	Submit adds to ``ASN Item.received_qty`` and may mark the ASN Received, which drops
 	it out of in-transit. Cancel reverses the stock ledger and must reverse that too.
@@ -296,6 +296,7 @@ def on_purchase_receipt_cancel(doc, method=None):
 	touched an ASN, so cancelling it leaves every ASN as it is.
 	"""
 	del method
+	void_scan_codes("create_purchase_invoice", "Purchase Receipt", doc.name)
 	if getattr(doc, "is_return", 0) or not getattr(doc, "asn", None):
 		return
 	_mapped, updated = _record_linked_received_qty(doc, sign=-1)
