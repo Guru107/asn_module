@@ -10,6 +10,8 @@ from frappe.utils import flt, today
 
 from asn_module.asn_module.doctype.asn.asn import ASN
 from asn_module.asn_module.doctype.asn.test_asn import (
+	_ensure_other_supplier,
+	_other_uom,
 	create_purchase_order,
 	make_test_asn,
 )
@@ -111,6 +113,71 @@ class TestAsnOrderIdentity(FrappeTestCase):
 			asn.insert(ignore_permissions=True)
 
 		self.assertIn("order line", str(raised.exception).lower())
+
+	def _job_asn_row(self, subcontracting_order):
+		finished_good = subcontracting_order.items[0]
+		asn = make_test_asn()
+		asn.supplier = subcontracting_order.supplier
+		asn.items = []
+		asn.append(
+			"items",
+			{
+				"subcontracting_order": subcontracting_order.name,
+				"subcontracting_order_item": finished_good.name,
+				"item_code": finished_good.item_code,
+				"qty": 1,
+				"uom": finished_good.stock_uom,
+				"rate": finished_good.rate,
+			},
+		)
+		return asn, finished_good
+
+	def test_save_refuses_a_job_line_of_another_suppliers_order(self):
+		asn, _finished_good = self._job_asn_row(
+			TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		)
+		asn.supplier = _ensure_other_supplier()
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("Row 1: Supplier _Test ASN Other Supplier does not match", str(raised.exception))
+
+	def test_save_refuses_a_job_line_that_belongs_to_another_order(self):
+		first_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		asn, _finished_good = self._job_asn_row(first_order)
+		asn.items[0].subcontracting_order = "SC-ORD-NOT-THIS-ONE"
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("Row 1: Subcontracting Order line", str(raised.exception))
+		self.assertIn(f"belongs to {first_order.name}, not SC-ORD-NOT-THIS-ONE", str(raised.exception))
+
+	def test_save_refuses_a_job_line_whose_item_differs_from_the_order_line(self):
+		asn, finished_good = self._job_asn_row(
+			TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		)
+		asn.items[0].item_code = make_test_asn().items[0].item_code
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(f"does not match {finished_good.item_code}", str(raised.exception))
+
+	def test_save_refuses_a_job_line_whose_uom_differs_from_the_order_line(self):
+		asn, finished_good = self._job_asn_row(
+			TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		)
+		wrong_uom = _other_uom(finished_good.stock_uom)
+		asn.items[0].uom = wrong_uom
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: UOM {wrong_uom} does not match {finished_good.stock_uom}", str(raised.exception)
+		)
 
 	def test_save_refuses_a_subcontracting_order_line_that_is_missing_the_order(self):
 		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()

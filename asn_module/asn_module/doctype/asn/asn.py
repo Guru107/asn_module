@@ -49,6 +49,7 @@ class ASN(WebsiteGenerator):
 	def validate(self):
 		self._validate_vehicle_number_present()
 		self._validate_one_order()
+		self._validate_order_lines()
 		if cint(self.docstatus) == 1:
 			self._validate_items_present()
 			self._validate_item_qty()
@@ -274,6 +275,77 @@ class ASN(WebsiteGenerator):
 
 		if len(orders) > 1:
 			frappe.throw(_("An ASN can reference only one order."))
+
+	def _validate_order_lines(self):
+		"""Each row names a real line of an open order that belongs to this supplier.
+
+		One query per order type reads every referenced line with its order. The
+		client-side supplier filter is not a check, and the order line decides the
+		item and UOM. A draft order is still allowed; a cancelled one is not.
+		"""
+		for order_doctype in ("Purchase Order", "Subcontracting Order"):
+			order_field = frappe.scrub(order_doctype)
+			rows = [row for row in self.items or [] if row.get(f"{order_field}_item")]
+			if not rows:
+				continue
+
+			line_doctype = DocType(f"{order_doctype} Item")
+			order = DocType(order_doctype)
+			uom_field = "uom" if order_doctype == "Purchase Order" else "stock_uom"
+			lines = {
+				line.name: line
+				for line in (
+					frappe.qb.from_(line_doctype)
+					.inner_join(order)
+					.on(order.name == line_doctype.parent)
+					.select(
+						line_doctype.name,
+						line_doctype.parent,
+						line_doctype.item_code,
+						line_doctype.field(uom_field).as_("uom"),
+						order.supplier,
+						order.docstatus,
+					)
+					.where(line_doctype.name.isin([row.get(f"{order_field}_item") for row in rows]))
+				).run(as_dict=True)
+			}
+
+			for row in rows:
+				line_name = row.get(f"{order_field}_item")
+				order_name = row.get(order_field)
+				line = lines.get(line_name)
+				if not line:
+					frappe.throw(
+						_("Row {0}: {1} line {2} does not exist").format(row.idx, _(order_doctype), line_name)
+					)
+				if line.parent != order_name:
+					frappe.throw(
+						_("Row {0}: {1} line {2} belongs to {3}, not {4}").format(
+							row.idx, _(order_doctype), line_name, line.parent, order_name
+						)
+					)
+				if cint(line.docstatus) == 2:
+					frappe.throw(
+						_("Row {0}: {1} {2} is cancelled").format(row.idx, _(order_doctype), order_name)
+					)
+				if line.supplier != self.supplier:
+					frappe.throw(
+						_("Row {0}: Supplier {1} does not match {2} {3}, which is for {4}").format(
+							row.idx, self.supplier, _(order_doctype), order_name, line.supplier
+						)
+					)
+				if row.item_code != line.item_code:
+					frappe.throw(
+						_("Row {0}: Item Code {1} does not match {2} on {3} line {4}").format(
+							row.idx, row.item_code, line.item_code, _(order_doctype), line_name
+						)
+					)
+				if row.uom and row.uom != line.uom:
+					frappe.throw(
+						_("Row {0}: UOM {1} does not match {2} on {3} line {4}").format(
+							row.idx, row.uom, line.uom, _(order_doctype), line_name
+						)
+					)
 
 	def _validate_po_qty(self):
 		rows_by_purchase_order_item = {}

@@ -84,6 +84,27 @@ def _ensure_supplier():
 	return supplier.name
 
 
+def _ensure_other_supplier():
+	supplier_name = "_Test ASN Other Supplier"
+	if frappe.db.exists("Supplier", supplier_name):
+		return supplier_name
+
+	supplier = frappe.get_doc(
+		{
+			"doctype": "Supplier",
+			"supplier_name": supplier_name,
+			"supplier_type": "Company",
+			"supplier_group": ensure_leaf_supplier_group(),
+		}
+	)
+	supplier.insert(ignore_permissions=True)
+	return supplier.name
+
+
+def _other_uom(uom: str) -> str:
+	return frappe.get_all("UOM", filters={"name": ["!=", uom]}, pluck="name", limit=1)[0]
+
+
 def _ensure_item(item_code: str = "_Test ASN Item") -> str:
 	if frappe.db.exists("Item", item_code):
 		# Keep the default ASN test item non-inspection to avoid cross-test leakage
@@ -337,6 +358,58 @@ class TestASN(FrappeTestCase):
 	def setUpClass(cls):
 		before_tests()
 		super().setUpClass()
+
+	def test_insert_rejects_a_row_whose_order_belongs_to_another_supplier(self):
+		asn = make_test_asn(supplier=_ensure_other_supplier())
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("Row 1: Supplier _Test ASN Other Supplier does not match", str(raised.exception))
+
+	def test_insert_rejects_a_line_that_belongs_to_another_purchase_order(self):
+		other_order = create_purchase_order()
+		asn = make_test_asn()
+		asn.items[0].purchase_order_item = other_order.items[0].name
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: Purchase Order line {other_order.items[0].name} belongs to {other_order.name}, not",
+			str(raised.exception),
+		)
+
+	def test_insert_rejects_an_item_that_differs_from_the_order_line(self):
+		asn = make_test_asn()
+		line_item = asn.items[0].item_code
+		asn.items[0].item_code = _ensure_item("_Test ASN Item 2")
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(f"Row 1: Item Code _Test ASN Item 2 does not match {line_item}", str(raised.exception))
+
+	def test_insert_rejects_a_uom_that_differs_from_the_order_line(self):
+		asn = make_test_asn()
+		line_uom = asn.items[0].uom
+		wrong_uom = _other_uom(line_uom)
+		asn.items[0].uom = wrong_uom
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(f"Row 1: UOM {wrong_uom} does not match {line_uom}", str(raised.exception))
+
+	def test_insert_rejects_a_line_of_a_cancelled_purchase_order(self):
+		purchase_order = create_purchase_order()
+		asn = make_test_asn(purchase_order=purchase_order)
+		purchase_order.cancel()
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(f"Row 1: Purchase Order {purchase_order.name} is cancelled", str(raised.exception))
 
 	def test_insert_rejects_empty_items(self):
 		asn = make_test_asn()
