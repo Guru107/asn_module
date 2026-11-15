@@ -158,7 +158,7 @@ class TestASNPortalPage(FrappeTestCase):
 			frappe._dict(
 				{
 					"name": "ASN-0001",
-					"route": None,
+					"route": "asn/asn-0001",
 					"supplier_invoice_no": "INV-001",
 					"status": "Submitted",
 					"expected_delivery_date": _test_dates()["expected_delivery_date"],
@@ -187,6 +187,7 @@ class TestASNPortalPage(FrappeTestCase):
 		):
 			get_context(context)
 
+		set_value.assert_not_called()
 		self.assertEqual(context.title, "ASN")
 		self.assertTrue(context.show_sidebar)
 		self.assertTrue(context.can_create_asn)
@@ -199,40 +200,6 @@ class TestASNPortalPage(FrappeTestCase):
 		self.assertIn("route", get_all.call_args_list[0].kwargs["fields"])
 		self.assertIn("docstatus", get_all.call_args_list[1].kwargs["fields"])
 		self.assertEqual(get_all.call_args_list[2].kwargs["fields"], ["parent"])
-		set_value.assert_called_once_with("ASN", "ASN-0001", "route", "asn/asn-0001", update_modified=False)
-
-	def test_get_context_rewrites_bare_website_generator_route(self):
-		context = SimpleNamespace()
-		asn_rows = [
-			frappe._dict(
-				{
-					"name": "ASN-0002",
-					"route": "asn-0002",
-					"supplier_invoice_no": "INV-002",
-					"status": "Submitted",
-					"expected_delivery_date": _test_dates()["expected_delivery_date"],
-					"asn_date": _test_dates()["asn_date"],
-					"docstatus": 1,
-				}
-			)
-		]
-
-		with (
-			patch(
-				"asn_module.templates.pages.asn.frappe.session", SimpleNamespace(user="supplier@example.com")
-			),
-			patch("asn_module.templates.pages.asn._get_supplier_for_user", return_value="Supp-001"),
-			patch("asn_module.templates.pages.asn.frappe.db.has_column", return_value=False),
-			patch(
-				"asn_module.templates.pages.asn.frappe.get_all",
-				side_effect=[asn_rows, []],
-			),
-			patch("asn_module.templates.pages.asn.frappe.db.set_value") as set_value,
-		):
-			get_context(context)
-
-		self.assertEqual(context.asn_list[0].route, "asn/asn-0002")
-		set_value.assert_called_once_with("ASN", "ASN-0002", "route", "asn/asn-0002", update_modified=False)
 
 	def test_get_context_returns_empty_list_when_user_has_no_supplier(self):
 		context = SimpleNamespace()
