@@ -23,14 +23,13 @@ def fetch_cap_context(
 
 	``po_item_receiving_qty`` subtracts, per Purchase Order Item, the stock-UOM quantity a
 	Purchase Receipt is actually receiving from that Purchase Order Item's in-transit
-	total -- regardless of whether the receipt is linked back to its ASN by name (the
-	Purchase Receipt path -- see breaches_for_purchase_receipt for why it cannot rely on
-	``doc.asn``). It subtracts a quantity rather than dropping rows outright so a partial
-	receipt, or a second ASN shipping the same Purchase Order Item, keeps its own
-	still-undelivered remainder counted (see fetch.py:_fetch_in_transit). They are separate
-	parameters, not one overloaded to mean two things, because a Purchase Receipt has no
-	ASN name to exclude by and an ASN save has no Purchase Order Items of its own to
-	receive against.
+	total (the Purchase Receipt path). Only a receipt linked to an ASN passes any: one with
+	no link never fills an ASN, so the ASN stays in transit (see
+	collect.py:purchase_order_item_receiving_qty). It subtracts a quantity rather than
+	dropping rows outright so a partial receipt, or a second ASN shipping the same Purchase
+	Order Item, keeps its own still-undelivered remainder counted (see _fetch_in_transit).
+	They are separate parameters, not one overloaded to mean two things, because an ASN
+	save has no Purchase Order Items of its own to receive against.
 	"""
 	if not lines:
 		return CapContext(cap_warehouses={}, max_stock={}, on_hand={}, in_transit={})

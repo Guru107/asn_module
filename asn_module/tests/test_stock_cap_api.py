@@ -300,7 +300,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 	def setUp(self):
 		# FrappeTestCase only rolls back once at class teardown, not per test, so a
 		# submitted ASN inserted by an earlier test in this class (e.g.
-		# test_receipt_not_linked_to_its_asn_is_not_double_counted) would otherwise keep
+		# test_receipt_not_linked_to_its_asn_keeps_the_asn_in_transit) would otherwise keep
 		# contributing to later tests' in-transit totals.
 		delete_asns_with_items([PR_ITEM])
 		frappe.db.delete("ASN Stock Cap Warehouse")
@@ -444,13 +444,10 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		self.assertEqual(breaches_for_purchase_receipt(doc), [])
 
-	def test_receipt_not_linked_to_its_asn_is_not_double_counted(self):
-		"""Nothing disables the standard Purchase Order -> Create -> Purchase Receipt
-		action, which leaves Purchase Receipt.asn empty -- handlers/purchase_receipt.py:
-		create_gate_pass_from_asn is the only place that sets it. breaches_for_purchase_receipt must
-		not double-count such a receipt's goods (once as the submitted ASN's in-transit
-		quantity, again as this receipt's own incoming) even though it has no ASN name to
-		exclude by; it must exclude by the Purchase Order Item instead.
+	def test_receipt_not_linked_to_its_asn_keeps_the_asn_in_transit(self):
+		"""A receipt with no ASN link (the standard Purchase Order -> Create -> Purchase
+		Receipt action) never fills an ASN, so nothing comes off in-transit for it. The
+		open shipment's 5 still count, and this receipt's own 5 on top breach the ceiling.
 		"""
 		po = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,
@@ -467,6 +464,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		doc = SimpleNamespace(
 			branch=PR_BRANCH,
 			is_return=0,
+			asn=None,
 			items=[
 				self._receipt_row(
 					warehouse=po_item.warehouse,
@@ -476,7 +474,10 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 			],
 		)
 
-		self.assertEqual(breaches_for_purchase_receipt(doc), [])
+		breaches = breaches_for_purchase_receipt(doc)
+
+		self.assertEqual(len(breaches), 1)
+		self.assertEqual(breaches[0].in_transit, PR_MAX_STOCK)
 
 	def test_partial_receipt_breach_from_the_undelivered_remainder_is_refused(self):
 		"""Regression for the in-transit under-count: an ASN ships 10 units and none of it
@@ -504,6 +505,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		doc = SimpleNamespace(
 			branch=PR_BRANCH,
 			is_return=0,
+			asn=asn.name,
 			items=[
 				self._receipt_row(
 					warehouse=po_item.warehouse,
@@ -555,6 +557,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		doc = SimpleNamespace(
 			branch=PR_BRANCH,
 			is_return=0,
+			asn=asn_a.name,
 			items=[
 				self._receipt_row(
 					warehouse=po_item.warehouse,
@@ -662,6 +665,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		doc = SimpleNamespace(
 			branch=PR_BRANCH,
 			is_return=0,
+			asn=asn_b.name,
 			items=[
 				self._receipt_row(
 					warehouse=po_item_b.warehouse,
@@ -673,7 +677,7 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		self.assertEqual(breaches_for_purchase_receipt(doc), [])
 
-	def test_unlinked_receipt_submit_drains_in_transit(self):
+	def test_unlinked_receipt_submit_and_cancel_leave_the_asn_in_transit(self):
 		po = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,
 			tax_description="_Test Stock Cap PR API Unlinked Drain Tax",
@@ -684,123 +688,10 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
 		asn.insert(ignore_permissions=True)
 		asn.submit()
-
-		with _no_followup_codes():
-			on_purchase_receipt_submit(
-				SimpleNamespace(
-					asn=None,
-					is_return=0,
-					name="PR-UNLINKED-DRAIN",
-					items=[
-						SimpleNamespace(
-							idx=1,
-							qty=PR_MAX_STOCK,
-							stock_qty=PR_MAX_STOCK,
-							rejected_qty=0,
-							conversion_factor=1,
-							purchase_order_item=po_item.name,
-							item_code=PR_ITEM,
-						)
-					],
-				),
-				"on_submit",
-			)
-
-		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), PR_MAX_STOCK)
-		later = SimpleNamespace(
-			branch=PR_BRANCH,
-			is_return=0,
-			items=[
-				self._receipt_row(warehouse=po_item.warehouse, stock_qty=1, purchase_order_item="OTHER-POI")
-			],
-		)
-		self.assertEqual(breaches_for_purchase_receipt(later), [])
-
-	def test_unlinked_receipt_does_not_fill_a_closed_asn(self):
-		"""A receipt with no ASN link must leave a Closed shipment untouched.
-
-		In-transit already ignores Closed. Filling that shipment anyway keeps the open
-		one fully in transit, and a later receipt is blocked for stock already on hand.
-		"""
-		po = build_purchase_order_with_mandatory_fields(
-			create_purchase_order,
-			tax_description="_Test Stock Cap PR API Unlinked Closed Tax",
-			item_code=PR_ITEM,
-			qty=15,
-		)
-		po_item = po.items[0]
-		closed = make_test_asn(purchase_order=po, qty=10)
-		closed.insert(ignore_permissions=True)
-		self._submit_with_room(closed)
-		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
-
-		open_asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
-		open_asn.insert(ignore_permissions=True)
-		self._submit_with_room(open_asn)
-
-		self.assertLess(closed.name, open_asn.name)
-		with _no_followup_codes():
-			on_purchase_receipt_submit(
-				SimpleNamespace(
-					asn=None,
-					is_return=0,
-					name="PR-UNLINKED-CLOSED",
-					items=[
-						SimpleNamespace(
-							idx=1,
-							qty=PR_MAX_STOCK,
-							stock_qty=PR_MAX_STOCK,
-							rejected_qty=0,
-							conversion_factor=1,
-							purchase_order_item=po_item.name,
-							item_code=PR_ITEM,
-						)
-					],
-				),
-				"on_submit",
-			)
-
-		self.assertEqual(frappe.db.get_value("ASN Item", closed.items[0].name, "received_qty"), 0)
-		self.assertEqual(
-			frappe.db.get_value("ASN Item", open_asn.items[0].name, "received_qty"), PR_MAX_STOCK
-		)
-		later = SimpleNamespace(
-			branch=PR_BRANCH,
-			is_return=0,
-			items=[
-				self._receipt_row(warehouse=po_item.warehouse, stock_qty=1, purchase_order_item="OTHER-POI")
-			],
-		)
-		self.assertEqual(breaches_for_purchase_receipt(later), [])
-
-	def test_cancelling_an_unlinked_receipt_does_not_reduce_a_closed_asn(self):
-		"""Cancel reverses the open shipment, not a Closed one this receipt never filled.
-
-		The Closed shipment sorts after the open one and already has received quantity.
-		Walking every submitted line in reverse would take that quantity first.
-		"""
-		po = build_purchase_order_with_mandatory_fields(
-			create_purchase_order,
-			tax_description="_Test Stock Cap PR API Unlinked Closed Cancel Tax",
-			item_code=PR_ITEM,
-			qty=15,
-		)
-		po_item = po.items[0]
-		open_asn = make_test_asn(purchase_order=po, qty=PR_MAX_STOCK)
-		open_asn.insert(ignore_permissions=True)
-		open_asn.submit()
-
-		closed = make_test_asn(purchase_order=po, qty=10)
-		closed.insert(ignore_permissions=True)
-		self._submit_with_room(closed)
-		frappe.db.set_value("ASN", closed.name, "status", "Closed", update_modified=False)
-		frappe.db.set_value("ASN Item", closed.items[0].name, "received_qty", 4, update_modified=False)
-
-		self.assertLess(open_asn.name, closed.name)
 		pr_doc = SimpleNamespace(
 			asn=None,
 			is_return=0,
-			name="PR-UNLINKED-CLOSED-CANCEL",
+			name="PR-UNLINKED-DRAIN",
 			items=[
 				SimpleNamespace(
 					idx=1,
@@ -813,12 +704,23 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 				)
 			],
 		)
+		later = SimpleNamespace(
+			branch=PR_BRANCH,
+			is_return=0,
+			items=[
+				self._receipt_row(warehouse=po_item.warehouse, stock_qty=1, purchase_order_item="OTHER-POI")
+			],
+		)
+
 		with _no_followup_codes():
 			on_purchase_receipt_submit(pr_doc, "on_submit")
-		on_purchase_receipt_cancel(pr_doc, "on_cancel")
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 0)
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Submitted")
+		self.assertEqual(breaches_for_purchase_receipt(later)[0].in_transit, PR_MAX_STOCK)
 
-		self.assertEqual(frappe.db.get_value("ASN Item", closed.items[0].name, "received_qty"), 4)
-		self.assertEqual(frappe.db.get_value("ASN Item", open_asn.items[0].name, "received_qty"), 0)
+		on_purchase_receipt_cancel(pr_doc, "on_cancel")
+		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 0)
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Submitted")
 
 	def test_received_qty_uses_purchase_uom_when_the_receipt_uom_differs(self):
 		po = build_purchase_order_with_mandatory_fields(
