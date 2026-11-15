@@ -140,6 +140,9 @@ class ASN(WebsiteGenerator):
 
 		Receipt handlers add to ``received_qty`` in SQL, so it is read from the table and
 		never written back from this (possibly stale) document.
+
+		Status: Received when every line is fully received, Closed when anything was
+		received short, back to Submitted when the receipt is cancelled and nothing is left.
 		"""
 		asn_item = DocType("ASN Item")
 		(
@@ -161,12 +164,13 @@ class ASN(WebsiteGenerator):
 		)
 		any_received = any(received_qty > 0 for received_qty in received)
 
+		# One ASN means one receipt: once it has received anything, a short shipment is final.
 		status = self.status
 		if all_received:
 			status = "Received"
 		elif any_received:
-			status = "Partially Received"
-		elif status in ("Received", "Partially Received"):
+			status = "Closed"
+		elif status in ("Received", "Partially Received", "Closed"):
 			status = "Submitted"
 
 		if status != self.status:

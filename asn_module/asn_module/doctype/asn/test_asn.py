@@ -818,7 +818,7 @@ class TestASN(FrappeTestCase):
 		)
 		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Received")
 
-	def test_update_receipt_status_sets_partially_received_and_updates_discrepancy_qty(self):
+	def test_update_receipt_status_closes_short_receipt_and_updates_discrepancy_qty(self):
 		asn = make_test_asn_with_two_items(qty=5)
 		asn.insert(ignore_permissions=True)
 
@@ -827,7 +827,7 @@ class TestASN(FrappeTestCase):
 		asn.update_receipt_status()
 		asn.reload()
 
-		self.assertEqual(asn.status, "Partially Received")
+		self.assertEqual(asn.status, "Closed")
 		self.assertEqual(asn.items[0].received_qty, 2)
 		self.assertEqual(asn.items[1].received_qty, 5)
 		self.assertEqual(asn.items[0].discrepancy_qty, 3)
@@ -859,11 +859,25 @@ class TestASN(FrappeTestCase):
 		asn.reload()
 
 		self.assertEqual(asn.docstatus, 1)
-		self.assertEqual(asn.status, "Partially Received")
+		self.assertEqual(asn.status, "Closed")
 		self.assertEqual(asn.items[0].received_qty, 2)
 		self.assertEqual(asn.items[1].received_qty, 5)
 		self.assertEqual(asn.items[0].discrepancy_qty, 3)
 		self.assertEqual(asn.items[1].discrepancy_qty, 0)
+
+	def test_update_receipt_status_reopens_closed_asn_when_receipt_is_reversed(self):
+		# Cancelling the receipt reverses received_qty; the ASN must go back in transit.
+		asn = make_test_asn_with_two_items(qty=5)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		self._set_received_qty_in_db(asn, 2, 5)
+		asn.update_receipt_status()
+		self.assertEqual(asn.status, "Closed")
+
+		self._set_received_qty_in_db(asn, 0, 0)
+		asn.update_receipt_status()
+
+		self.assertEqual(asn.status, "Submitted")
 
 	def test_amendment_resets_copied_lifecycle_fields(self):
 		frappe.reload_doc("asn_module", "doctype", "asn")
