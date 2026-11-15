@@ -520,6 +520,9 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 def _reopen_uncancelled_gate_pass(asn) -> dict | None:
 	if not frappe.db.exists("DocType", "Gate Pass"):
 		frappe.throw(_("Gate Pass is not set up on this site."))
+	# The field is added at migrate; Gate Pass installed after this app needs another migrate.
+	if not frappe.get_meta("Gate Pass").has_field("asn"):
+		frappe.throw(_("Gate Pass has no ASN field on this site. Run bench migrate."))
 
 	existing = frappe.get_all(
 		"Gate Pass",
