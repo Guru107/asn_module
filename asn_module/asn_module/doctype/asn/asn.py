@@ -355,9 +355,9 @@ class ASN(WebsiteGenerator):
 			filters={"name": ["in", list(rows_by_line)]},
 			fields=["name", "qty", "received_qty"],
 		)
-		remaining_by_line = {row.name: flt(row.qty) - flt(row.received_qty) for row in order_lines}
+		remaining_by_line = {row.name: flt_qty(flt(row.qty) - flt(row.received_qty)) for row in order_lines}
 		for line_name, rows in rows_by_line.items():
-			shipped_qty = sum(flt(row.qty) for row in rows)
+			shipped_qty = flt_qty(sum(flt(row.qty) for row in rows))
 			remaining_qty = remaining_by_line.get(line_name, 0)
 			if shipped_qty <= remaining_qty:
 				continue

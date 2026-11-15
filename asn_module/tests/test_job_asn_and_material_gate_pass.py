@@ -8,6 +8,7 @@ from frappe.model.document import Document
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
 
+from asn_module.asn_module.doctype.asn.asn import ASN
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
 	make_test_asn,
@@ -340,6 +341,13 @@ class TestJobAsnPortal(FrappeTestCase):
 			)
 
 		self.assertIn("duplicate", str(raised.exception).lower())
+
+	def test_shipped_qty_equal_to_the_remaining_qty_is_not_refused_by_float_noise(self):
+		# 0.3 - 0.1 is 0.19999999999999998 as a raw float.
+		asn = SimpleNamespace(items=[SimpleNamespace(idx=1, subcontracting_order_item="SCO-ITEM-1", qty=0.2)])
+		order_line = frappe._dict(name="SCO-ITEM-1", qty=0.3, received_qty=0.1)
+		with patch.object(frappe, "get_all", return_value=[order_line]):
+			ASN._validate_subcontracting_lines(asn)
 
 
 class _PostedForm(dict):
