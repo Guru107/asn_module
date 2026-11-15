@@ -4,8 +4,12 @@
 import frappe
 from frappe import _
 from frappe.query_builder import DocType
-from frappe.utils import get_datetime
+from frappe.utils import cint, get_datetime
 from pypika import Order
+
+
+def escape_like(text: str) -> str:
+	return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def execute(filters=None):
@@ -47,12 +51,12 @@ def execute(filters=None):
 		q = q.where(Log.event_ts >= get_datetime(filters["from_date"]))
 	if filters.get("to_date"):
 		q = q.where(Log.event_ts <= get_datetime(filters["to_date"]))
-	if filters.get("failures_only"):
-		q = q.where(Log.transition_status == "Error")
 
 	search = (filters.get("search") or "").strip()
 	if search:
-		pat = f"%{search}%"
+		if not (filters.get("asn") or filters.get("from_date")):
+			frappe.throw(_("Set ASN or From Date to use Search."))
+		pat = f"%{escape_like(search)}%"
 		q = q.where(
 			(Log.state.like(pat))
 			| (Log.item_code.like(pat))
@@ -60,9 +64,9 @@ def execute(filters=None):
 			| (Log.details.like(pat))
 		)
 
-	limit = int(filters.get("limit_page_length") or 200)
+	limit = cint(filters.get("limit_page_length")) or 200
 	limit = max(1, min(limit, 500))
-	offset = int(filters.get("limit_start") or 0)
+	offset = cint(filters.get("limit_start"))
 	offset = max(0, offset)
 
 	q = q.limit(limit).offset(offset)

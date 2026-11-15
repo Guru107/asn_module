@@ -791,8 +791,17 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 
 		asn.reload()
 		self.assertEqual(asn.status, "Received")
-		on_purchase_receipt_cancel(pr_doc, "on_cancel")
+		with patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit:
+			on_purchase_receipt_cancel(pr_doc, "on_cancel")
 
+		emit.assert_called_once_with(
+			asn=asn.name,
+			asn_item=asn.items[0].name,
+			item_code=PR_ITEM,
+			state="PR_CANCELLED",
+			ref_doctype="Purchase Receipt",
+			ref_name="PR-CANCEL-DRAIN",
+		)
 		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 0)
 		asn.reload()
 		self.assertEqual(asn.status, "Submitted")

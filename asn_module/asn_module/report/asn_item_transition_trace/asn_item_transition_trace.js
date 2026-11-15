@@ -46,11 +46,6 @@ frappe.query_reports["ASN Item Transition Trace"] = {
 			fieldtype: "Datetime",
 		},
 		{
-			fieldname: "failures_only",
-			label: __("Failures only"),
-			fieldtype: "Check",
-		},
-		{
 			fieldname: "search",
 			label: __("Search"),
 			fieldtype: "Data",
