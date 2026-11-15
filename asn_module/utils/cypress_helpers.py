@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import flt
 
 from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
+from asn_module.utils.test_setup import ensure_leaf_supplier_group
 
 
 def _ensure_supplier_portal_user(
@@ -19,7 +20,7 @@ def _ensure_supplier_portal_user(
 			{
 				"doctype": "Supplier",
 				"supplier_name": supplier_name,
-				"supplier_group": "All Supplier Groups",
+				"supplier_group": ensure_leaf_supplier_group(),
 				"supplier_type": "Individual",
 			}
 		).insert(ignore_permissions=True)
