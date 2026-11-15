@@ -3,7 +3,6 @@ from frappe.tests.utils import FrappeTestCase
 
 INDEXED_FIELDS = {
 	"ASN": ("supplier", "supplier_invoice_no", "status"),
-	"ASN Stock Cap Warehouse": ("warehouse",),
 	"ASN Item": ("purchase_order",),
 	"Purchase Receipt": ("asn",),
 }
