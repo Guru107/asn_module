@@ -406,12 +406,9 @@ class TestASN(FrappeTestCase):
 		asn = make_test_asn(purchase_order=purchase_order)
 		purchase_order.cancel()
 
-		with self.assertRaises(frappe.ValidationError) as raised:
+		# Frappe's link check refuses a cancelled order before validate runs.
+		with self.assertRaises(frappe.CancelledLinkError):
 			asn.insert(ignore_permissions=True)
-
-		self.assertIn(
-			f"Row 1: Purchase Order {purchase_order.name} is Cancelled, not open", str(raised.exception)
-		)
 
 	def test_insert_rejects_a_line_of_a_draft_purchase_order(self):
 		purchase_order = create_purchase_order(do_not_submit=True)

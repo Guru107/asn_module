@@ -145,14 +145,15 @@ class TestAsnOrderIdentity(FrappeTestCase):
 
 	def test_save_refuses_a_job_line_that_belongs_to_another_order(self):
 		first_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		other_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
 		asn, _finished_good = self._job_asn_row(first_order)
-		asn.items[0].subcontracting_order = "SC-ORD-NOT-THIS-ONE"
+		asn.items[0].subcontracting_order = other_order.name
 
 		with self.assertRaises(frappe.ValidationError) as raised:
 			asn.insert(ignore_permissions=True)
 
 		self.assertIn("Row 1: Subcontracting Order line", str(raised.exception))
-		self.assertIn(f"belongs to {first_order.name}, not SC-ORD-NOT-THIS-ONE", str(raised.exception))
+		self.assertIn(f"belongs to {first_order.name}, not {other_order.name}", str(raised.exception))
 
 	def test_save_refuses_a_job_line_whose_item_differs_from_the_order_line(self):
 		asn, finished_good = self._job_asn_row(
