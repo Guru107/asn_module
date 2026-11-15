@@ -198,14 +198,16 @@ class TestStockCapCollectASN(FrappeTestCase):
 		rows = [{"idx": 1, "purchase_order": "", "purchase_order_item": "", "item_code": "X", "qty": 1}]
 		self.assertEqual(collect_lines_from_asn_rows(rows), [])
 
-	def test_missing_branch_column_returns_no_lines(self):
+	def test_missing_branch_column_still_returns_lines_with_blank_branch(self):
+		purchase_order = _create_purchase_order(qty=10)
+		po_item = purchase_order.items[0]
 		rows = [
 			{
 				"idx": 1,
-				"purchase_order": "PO-0001",
-				"purchase_order_item": "poi-1",
-				"item_code": "WIDGET",
-				"qty": 1,
+				"purchase_order": purchase_order.name,
+				"purchase_order_item": po_item.name,
+				"item_code": po_item.item_code,
+				"qty": 4.0,
 			}
 		]
 		original = frappe.db.has_column
@@ -217,9 +219,14 @@ class TestStockCapCollectASN(FrappeTestCase):
 
 		frappe.db.has_column = fake_has_column
 		try:
-			self.assertEqual(collect_lines_from_asn_rows(rows), [])
+			lines = collect_lines_from_asn_rows(rows)
 		finally:
 			frappe.db.has_column = original
+
+		self.assertEqual(len(lines), 1)
+		self.assertEqual(lines[0].branch, "")
+		self.assertEqual(lines[0].warehouse, po_item.warehouse)
+		self.assertEqual(lines[0].stock_qty, 4.0 * (po_item.conversion_factor or 1.0))
 
 	def test_collect_lines_from_asn_rows_multiplies_qty_by_po_item_conversion_factor(self):
 		branch = _ensure_branch("_Test Stock Cap Collect Branch")
