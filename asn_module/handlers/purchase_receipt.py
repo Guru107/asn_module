@@ -968,7 +968,6 @@ def on_purchase_receipt_submit(doc, method):
 		return
 
 	asn = frappe.get_doc("ASN", doc.asn)
-	asn.reload()
 	asn.update_receipt_status()
 
 	if not mapped_names:
