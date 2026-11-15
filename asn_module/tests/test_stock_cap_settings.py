@@ -80,3 +80,15 @@ class TestStockCapSettings(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError) as ctx:
 			_make_settings(second, [warehouse])
 		self.assertIn(first, str(ctx.exception))
+
+	def test_claim_error_names_the_current_branch_not_the_document_name(self):
+		first = _ensure_branch("_Test Cap Branch F")
+		renamed = _ensure_branch("_Test Cap Branch F Renamed")
+		second = _ensure_branch("_Test Cap Branch G")
+		warehouse = _ensure_warehouse("_Test Cap WH F")
+		settings = _make_settings(first, [warehouse])
+		# A Branch rename updates the branch field but leaves the document name alone.
+		frappe.db.set_value("ASN Stock Cap Settings", settings.name, "branch", renamed)
+		with self.assertRaises(frappe.ValidationError) as ctx:
+			_make_settings(second, [warehouse])
+		self.assertIn(renamed, str(ctx.exception))

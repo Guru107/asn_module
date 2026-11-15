@@ -10,8 +10,15 @@ class ASNStockCapSettings(Document):
 		self._validate_not_claimed_by_another_branch()
 
 	def _validate_leaf_warehouses(self):
-		for row in self.warehouses or []:
-			if not frappe.db.get_value("Warehouse", row.warehouse, "is_group"):
+		warehouses = [row.warehouse for row in self.warehouses or []]
+		if not warehouses:
+			return
+
+		groups = set(
+			frappe.get_all("Warehouse", filters={"name": ["in", warehouses], "is_group": 1}, pluck="name")
+		)
+		for row in self.warehouses:
+			if row.warehouse not in groups:
 				continue
 
 			frappe.throw(
@@ -45,9 +52,11 @@ class ASNStockCapSettings(Document):
 		if not claimed:
 			return
 
+		# The settings document is named after its branch, but the name is not the live branch value.
+		branch = frappe.db.get_value("ASN Stock Cap Settings", claimed[0].parent, "branch")
 		frappe.throw(
 			_(
 				"Warehouse {0} is already a cap warehouse for branch {1}. "
 				"A warehouse can belong to only one branch."
-			).format(claimed[0].warehouse, claimed[0].parent)
+			).format(claimed[0].warehouse, branch or claimed[0].parent)
 		)
