@@ -164,4 +164,9 @@ def on_subcontracting_dispatch_submit(doc, method):
 def on_subcontracting_dispatch_cancel(doc, method=None):
 	"""Void the receipt scan code so a cancelled Send to Subcontractor entry cannot be scanned."""
 	del method
+
+	# Runs on every Stock Entry cancel; only a dispatch ever stored this code.
+	if doc.stock_entry_type != "Send to Subcontractor" or not doc.subcontracting_order:
+		return
+
 	void_scan_codes(SUBCONTRACTING_RECEIPT_ACTION_FROM_DISPATCH, "Stock Entry", doc.name)

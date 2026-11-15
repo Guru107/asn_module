@@ -328,12 +328,25 @@ class TestSubcontractingHandlers(FrappeTestCase):
 		void.assert_called_once_with("create_subcontracting_dispatch", "Subcontracting Order", "SCO-0001")
 
 	def test_on_subcontracting_dispatch_cancel_voids_receipt_code(self):
-		doc = frappe._dict(doctype="Stock Entry", name="STE-0001")
+		doc = frappe._dict(
+			doctype="Stock Entry",
+			name="STE-0001",
+			stock_entry_type="Send to Subcontractor",
+			subcontracting_order="SCO-0001",
+		)
 
 		with patch("asn_module.handlers.subcontracting.void_scan_codes") as void:
 			on_subcontracting_dispatch_cancel(doc, "on_cancel")
 
 		void.assert_called_once_with("create_subcontracting_receipt_from_dispatch", "Stock Entry", "STE-0001")
+
+	def test_on_subcontracting_dispatch_cancel_ignores_other_stock_entries(self):
+		doc = frappe._dict(doctype="Stock Entry", name="STE-0002", stock_entry_type="Material Receipt")
+
+		with patch("asn_module.handlers.subcontracting.void_scan_codes") as void:
+			on_subcontracting_dispatch_cancel(doc, "on_cancel")
+
+		void.assert_not_called()
 
 	def test_on_subcontracting_receipt_submit_skips_returns(self):
 		doc = frappe._dict(doctype="Subcontracting Receipt", name="SCR-0001", is_return=1)
