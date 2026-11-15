@@ -1089,6 +1089,32 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		self.assertEqual([flt(row.received_qty) for row in asn.items], [5, 5])
 		self.assertEqual(asn.status, "Received")
 
+	def test_an_added_row_shares_its_receipts_line_before_one_another_receipt_filled(self):
+		po = self._submitted_purchase_order(qty=10)
+		asn = make_test_asn_with_two_items(purchase_order=po, qty=5)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		first = self._purchase_receipt(po, asn, qty=5, submit=False)
+		first.db_set(
+			"asn_items",
+			json.dumps({first.items[0].name: {"asn_item_name": asn.items[1].name}}),
+			notify=False,
+		)
+		first.reload()
+		self._submit_purchase_receipt(first)
+
+		second = self._purchase_receipt(po, asn, qty=3, submit=False)
+		second.reload()
+		split = second.items[0].as_dict(no_default_fields=True)
+		split.update(qty=2, received_qty=2, stock_qty=2, received_stock_qty=2)
+		second.append("items", split)
+		second.save(ignore_permissions=True)
+		self._submit_purchase_receipt(second)
+
+		asn.reload()
+		self.assertEqual([flt(row.received_qty) for row in asn.items], [5, 5])
+		self.assertEqual(asn.status, "Received")
+
 	def test_a_row_re_added_on_a_draft_receipt_records_received_qty_on_the_asn(self):
 		po = self._submitted_purchase_order(qty=10)
 		asn = make_test_asn(purchase_order=po, qty=10)

@@ -347,11 +347,12 @@ def _pair_unmapped_rows(doc) -> None:
 		lines = lines_by_po_item.get(row.purchase_order_item)
 		if not lines:
 			continue
-		# A line this receipt has not mapped and another receipt has not filled; else share one,
-		# since linked recording sums every row mapped to a line.
+		# Room left beats everything: the ASN is Received only when every line is full. Among lines
+		# with room, prefer one this receipt has not mapped; sharing is fine, since linked
+		# recording sums every row mapped to a line.
 		# shortcut: a split line the gate skipped can still be picked; read the amended_from map
 		# if amended gate-pass receipts start landing on the wrong line.
-		asn_item = min(lines, key=lambda line: (line.name in taken, flt(line.received_qty) >= flt(line.qty)))
+		asn_item = min(lines, key=lambda line: (flt(line.received_qty) >= flt(line.qty), line.name in taken))
 		taken.add(asn_item.name)
 		mapping[row.name] = {"asn_item_name": asn_item.name, "original_qty": asn_item.qty}
 	doc.asn_items = json.dumps(mapping)
