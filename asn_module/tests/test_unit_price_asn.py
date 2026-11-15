@@ -25,6 +25,7 @@ from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
+	ensure_leaf_supplier_group,
 	resolve_test_company,
 )
 
@@ -51,8 +52,7 @@ class TestUnitPricePurchaseOrderAsn(FrappeTestCase):
 					"doctype": "Supplier",
 					"supplier_name": supplier_name,
 					"supplier_type": "Company",
-					"supplier_group": frappe.db.get_value("Supplier Group", {}, "name")
-					or "All Supplier Groups",
+					"supplier_group": ensure_leaf_supplier_group(),
 				}
 			).insert(ignore_permissions=True)
 		cls.supplier = supplier_name
