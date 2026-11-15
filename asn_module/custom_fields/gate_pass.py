@@ -11,17 +11,17 @@ def setup():
 	"""
 	if not frappe.db.exists("DocType", "Gate Pass"):
 		return
-	create_custom_fields(
-		{
-			"Gate Pass": [
-				{
-					"fieldname": "asn",
-					"fieldtype": "Link",
-					"label": "ASN",
-					"options": "ASN",
-					"insert_after": "supplier",
-				},
-				scan_code_field("asn"),
-			]
-		}
-	)
+	fields = []
+	# A Gate Pass that already has its own asn field must not get a second one.
+	if not frappe.get_meta("Gate Pass").has_field("asn"):
+		fields.append(
+			{
+				"fieldname": "asn",
+				"fieldtype": "Link",
+				"label": "ASN",
+				"options": "ASN",
+				"insert_after": "supplier",
+			}
+		)
+	fields.append(scan_code_field("asn"))
+	create_custom_fields({"Gate Pass": fields})
