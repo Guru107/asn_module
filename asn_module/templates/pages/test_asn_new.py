@@ -54,7 +54,9 @@ class TestASNNewPortalPage(FrappeTestCase):
 
 		with (
 			patch.object(
-				cypress_helpers.frappe, "conf", SimpleNamespace(get=lambda key: key == "allow_tests")
+				cypress_helpers.frappe,
+				"conf",
+				SimpleNamespace(get=lambda key: key in ("developer_mode", "asn_enable_e2e_seeders")),
 			),
 			patch.object(cypress_helpers.frappe, "only_for"),
 			patch(
@@ -105,14 +107,24 @@ class TestASNNewPortalPage(FrappeTestCase):
 			"ITEM-100",
 		)
 
-	def test_seed_supplier_large_po_context_rejects_when_tests_disabled(self):
+	def test_seed_supplier_large_po_context_rejects_without_seeder_flag(self):
 		# v15's translation cache reads conf.db_name inside frappe.throw, so the
 		# stub must carry it or the throw itself blows up.
-		stub_conf = SimpleNamespace(get=lambda _key: False, db_name=getattr(frappe.conf, "db_name", None))
-		with (
-			patch.object(cypress_helpers.frappe, "conf", stub_conf),
-			self.assertRaises(frappe.exceptions.ValidationError),
-		):
+		db_name = getattr(frappe.conf, "db_name", None)
+		for enabled in ((), ("developer_mode",), ("asn_enable_e2e_seeders",), ("allow_tests",)):
+			stub_conf = SimpleNamespace(get=lambda key, enabled=enabled: key in enabled, db_name=db_name)
+			with (
+				patch.object(cypress_helpers.frappe, "conf", stub_conf),
+				patch.object(cypress_helpers.frappe, "only_for"),
+				self.assertRaises(frappe.PermissionError),
+			):
+				cypress_helpers.seed_supplier_large_po_context()
+
+	def test_seed_supplier_large_po_context_rejects_non_administrator(self):
+		original_user = frappe.session.user
+		self.addCleanup(frappe.set_user, original_user)
+		frappe.set_user("Guest")
+		with self.assertRaises(frappe.PermissionError):
 			cypress_helpers.seed_supplier_large_po_context()
 
 	def test_parse_single_rows_returns_empty_without_type_error_for_blank_form_lists(self):
