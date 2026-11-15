@@ -23,5 +23,15 @@ frappe.query_reports["ASN Item Rate Difference"] = {
 			label: __("Supplier Invoice No"),
 			fieldtype: "Data",
 		},
+		{
+			fieldname: "from_date",
+			label: __("From Date"),
+			fieldtype: "Date",
+		},
+		{
+			fieldname: "to_date",
+			label: __("To Date"),
+			fieldtype: "Date",
+		},
 	],
 };

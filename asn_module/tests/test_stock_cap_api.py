@@ -796,6 +796,12 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 0)
 		asn.reload()
 		self.assertEqual(asn.status, "Submitted")
+		self.assertTrue(
+			frappe.db.exists(
+				"ASN Transition Log",
+				{"asn": asn.name, "state": "PR_CANCELLED", "ref_name": "PR-CANCEL-DRAIN"},
+			)
+		)
 		later = SimpleNamespace(
 			branch=PR_BRANCH,
 			is_return=0,

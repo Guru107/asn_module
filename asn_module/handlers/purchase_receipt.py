@@ -298,9 +298,18 @@ def on_purchase_receipt_cancel(doc, method=None):
 	del method
 	if getattr(doc, "is_return", 0) or not getattr(doc, "asn", None):
 		return
-	_mapped, updated = _record_linked_received_qty(doc, sign=-1)
+	mapped_names, updated = _record_linked_received_qty(doc, sign=-1)
 	if updated and frappe.db.exists("ASN", doc.asn):
 		frappe.get_doc("ASN", doc.asn).update_receipt_status()
+	for asn_item_name, item_code in _asn_item_codes(mapped_names).items():
+		emit_asn_item_transition(
+			asn=doc.asn,
+			asn_item=asn_item_name,
+			item_code=item_code,
+			state="PR_CANCELLED",
+			ref_doctype="Purchase Receipt",
+			ref_name=doc.name,
+		)
 
 
 def on_purchase_receipt_before_submit(doc, method=None):
@@ -1055,14 +1064,7 @@ def on_purchase_receipt_submit(doc, method):
 	if not mapped_names:
 		return
 
-	asn_item_codes = {
-		row.name: row.item_code
-		for row in frappe.get_all(
-			"ASN Item",
-			filters={"name": ["in", mapped_names]},
-			fields=["name", "item_code"],
-		)
-	}
+	asn_item_codes = _asn_item_codes(mapped_names)
 
 	for asn_item_name in mapped_names:
 		emit_asn_item_transition(
@@ -1074,6 +1076,19 @@ def on_purchase_receipt_submit(doc, method):
 			ref_doctype="Purchase Receipt",
 			ref_name=doc.name,
 		)
+
+
+def _asn_item_codes(asn_item_names: list[str]) -> dict[str, str]:
+	if not asn_item_names:
+		return {}
+	return {
+		row.name: row.item_code
+		for row in frappe.get_all(
+			"ASN Item",
+			filters={"name": ["in", asn_item_names]},
+			fields=["name", "item_code"],
+		)
+	}
 
 
 def _store_invoice_code(doc) -> None:

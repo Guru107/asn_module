@@ -4,12 +4,19 @@
 import frappe
 from frappe import _
 from frappe.query_builder import DocType
+from frappe.query_builder.functions import Abs
+from frappe.utils import getdate
 
-from asn_module.rate_difference import build_rate_difference_rows
+from asn_module.rate_difference import RATE_EPSILON, build_rate_difference_rows
+
+SCOPE_FILTERS = ("asn", "supplier", "purchase_order", "supplier_invoice_no", "from_date", "to_date")
 
 
 def execute(filters=None):
 	filters = filters or {}
+	frappe.has_permission("ASN", "report", throw=True)
+	if not any(filters.get(key) for key in SCOPE_FILTERS):
+		frappe.throw(_("Set at least one filter (ASN, Supplier, Purchase Order, Invoice No or date)."))
 	rows = build_rate_difference_rows(_rate_rows(filters))
 	return _columns(), rows
 
@@ -87,6 +94,7 @@ def _rate_rows(filters: dict) -> list[dict]:
 			asn_item.qty,
 		)
 		.where(asn.docstatus != 2)
+		.where(Abs(asn_item.rate - po_item.rate) > RATE_EPSILON)
 		.orderby(asn.name)
 		.orderby(asn_item.idx)
 	)
@@ -98,4 +106,8 @@ def _rate_rows(filters: dict) -> list[dict]:
 		query = query.where(asn_item.purchase_order == filters["purchase_order"])
 	if filters.get("supplier_invoice_no"):
 		query = query.where(asn.supplier_invoice_no == filters["supplier_invoice_no"])
+	if filters.get("from_date"):
+		query = query.where(asn.asn_date >= getdate(filters["from_date"]))
+	if filters.get("to_date"):
+		query = query.where(asn.asn_date <= getdate(filters["to_date"]))
 	return query.run(as_dict=True)
