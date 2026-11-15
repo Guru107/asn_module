@@ -9,7 +9,9 @@ from asn_module.handlers.subcontracting import (
 	create_dispatch_from_subcontracting_order,
 	create_receipt_from_subcontracting_dispatch,
 	create_receipt_from_subcontracting_order,
+	on_subcontracting_dispatch_cancel,
 	on_subcontracting_dispatch_submit,
+	on_subcontracting_order_cancel,
 	on_subcontracting_order_submit,
 	on_subcontracting_receipt_submit,
 )
@@ -316,6 +318,35 @@ class TestSubcontractingHandlers(FrappeTestCase):
 			on_subcontracting_order_submit(doc, "on_submit")
 
 		store.assert_called_once_with(doc, "create_subcontracting_dispatch")
+
+	def test_on_subcontracting_order_cancel_voids_dispatch_code(self):
+		doc = frappe._dict(doctype="Subcontracting Order", name="SCO-0001")
+
+		with patch("asn_module.handlers.subcontracting.void_scan_codes") as void:
+			on_subcontracting_order_cancel(doc, "on_cancel")
+
+		void.assert_called_once_with("create_subcontracting_dispatch", "Subcontracting Order", "SCO-0001")
+
+	def test_on_subcontracting_dispatch_cancel_voids_receipt_code(self):
+		doc = frappe._dict(
+			doctype="Stock Entry",
+			name="STE-0001",
+			stock_entry_type="Send to Subcontractor",
+			subcontracting_order="SCO-0001",
+		)
+
+		with patch("asn_module.handlers.subcontracting.void_scan_codes") as void:
+			on_subcontracting_dispatch_cancel(doc, "on_cancel")
+
+		void.assert_called_once_with("create_subcontracting_receipt_from_dispatch", "Stock Entry", "STE-0001")
+
+	def test_on_subcontracting_dispatch_cancel_ignores_other_stock_entries(self):
+		doc = frappe._dict(doctype="Stock Entry", name="STE-0002", stock_entry_type="Material Receipt")
+
+		with patch("asn_module.handlers.subcontracting.void_scan_codes") as void:
+			on_subcontracting_dispatch_cancel(doc, "on_cancel")
+
+		void.assert_not_called()
 
 	def test_on_subcontracting_receipt_submit_skips_returns(self):
 		doc = frappe._dict(doctype="Subcontracting Receipt", name="SCR-0001", is_return=1)

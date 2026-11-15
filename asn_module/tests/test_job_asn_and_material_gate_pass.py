@@ -590,9 +590,8 @@ class TestJobAsnScanWithMandatoryFiscalYear(FrappeTestCase):
 def ensure_gate_pass_for_tests() -> None:
 	"""Give the scan a Gate Pass to save.
 
-	CI has no Gate Pass. This bench has the gate_entry DocType, which has no
-	``gate_pass_type`` and no ``items`` table. Missing fields are custom fields
-	on that DocType. The gate_entry controller is left as it is.
+	CI has no Gate Pass, so this builds the production custom DocType's shape:
+	its required fields, link types and the ``items`` / ``item`` tables.
 	"""
 	if not frappe.db.exists("DocType", "Gate Pass Item"):
 		frappe.get_doc(
@@ -681,15 +680,27 @@ def ensure_gate_pass_for_tests() -> None:
 						"fieldtype": "Select",
 						"options": "\nGate In\nGate Out",
 						"label": "Entry Type",
+						"reqd": 1,
 					},
 					{
 						"fieldname": "gate_pass_type",
 						"fieldtype": "Link",
 						"options": "Gate Pass Type",
 						"label": "Gate Pass Type",
+						"reqd": 1,
 					},
-					{"fieldname": "document_reference", "fieldtype": "Data", "label": "Document Reference"},
-					{"fieldname": "reference_number", "fieldtype": "Data", "label": "Reference Number"},
+					{
+						"fieldname": "document_reference",
+						"fieldtype": "Link",
+						"options": "DocType",
+						"label": "Document Reference",
+					},
+					{
+						"fieldname": "reference_number",
+						"fieldtype": "Dynamic Link",
+						"options": "document_reference",
+						"label": "Reference Number",
+					},
 					{"fieldname": "company", "fieldtype": "Link", "options": "Company", "label": "Company"},
 					{
 						"fieldname": "supplier",
@@ -697,7 +708,12 @@ def ensure_gate_pass_for_tests() -> None:
 						"options": "Supplier",
 						"label": "Supplier",
 					},
-					{"fieldname": "vehicle_number", "fieldtype": "Data", "label": "Vehicle Number"},
+					{
+						"fieldname": "vehicle_number",
+						"fieldtype": "Data",
+						"label": "Vehicle Number",
+						"reqd": 1,
+					},
 					{"fieldname": "invoice_number", "fieldtype": "Data", "label": "Invoice Number"},
 					{"fieldname": "invoice_date", "fieldtype": "Date", "label": "Invoice Date"},
 					{"fieldname": "challan_number", "fieldtype": "Data", "label": "Challan Number"},
@@ -726,52 +742,6 @@ def ensure_gate_pass_for_tests() -> None:
 
 	meta = frappe.get_meta("Gate Pass")
 	custom_fields = []
-	if not meta.has_field("gate_pass_type"):
-		custom_fields.append(
-			{
-				"fieldname": "gate_pass_type",
-				"fieldtype": "Link",
-				"options": "Gate Pass Type",
-				"label": "Gate Pass Type",
-				"insert_after": "entry_type",
-			}
-		)
-	if not meta.has_field("invoice_number"):
-		custom_fields.append(
-			{
-				"fieldname": "invoice_number",
-				"fieldtype": "Data",
-				"label": "Invoice Number",
-				"insert_after": "supplier",
-			}
-		)
-	if not meta.has_field("invoice_date"):
-		custom_fields.append(
-			{
-				"fieldname": "invoice_date",
-				"fieldtype": "Date",
-				"label": "Invoice Date",
-				"insert_after": "invoice_number",
-			}
-		)
-	if not meta.has_field("challan_number"):
-		custom_fields.append(
-			{
-				"fieldname": "challan_number",
-				"fieldtype": "Data",
-				"label": "Challan Number",
-				"insert_after": "invoice_date",
-			}
-		)
-	if not meta.has_field("challan_date"):
-		custom_fields.append(
-			{
-				"fieldname": "challan_date",
-				"fieldtype": "Date",
-				"label": "Challan Date",
-				"insert_after": "challan_number",
-			}
-		)
 	if not meta.has_field("asn"):
 		custom_fields.append(
 			{
@@ -780,26 +750,6 @@ def ensure_gate_pass_for_tests() -> None:
 				"options": "ASN",
 				"label": "ASN",
 				"insert_after": "supplier",
-			}
-		)
-	if not meta.has_field("items"):
-		custom_fields.append(
-			{
-				"fieldname": "items",
-				"fieldtype": "Table",
-				"options": "Gate Pass Item",
-				"label": "Items",
-				"insert_after": "supplier",
-			}
-		)
-	if not meta.has_field("item"):
-		custom_fields.append(
-			{
-				"fieldname": "item",
-				"fieldtype": "Table",
-				"options": "Gate Pass Item Table",
-				"label": "Item",
-				"insert_after": "items",
 			}
 		)
 	if custom_fields:
@@ -1327,8 +1277,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(flt(receipt.items[0].qty), 2)
 
 	def test_a_gate_pass_draft_runs_gate_pass_validation(self):
-		# CI's Gate Pass is a custom DocType on Document, which has no validate
-		# method. The gate_entry controller does. create=True covers both.
+		# The custom Gate Pass DocType has no validate method; create=True adds one.
 		controller = type(frappe.new_doc("Gate Pass"))
 		original_validate = getattr(controller, "validate", None)
 
@@ -1339,16 +1288,19 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				return None
 			frappe.throw(_("refused by gate pass rules"))
 
-		with with_gate_pass_mode(True):
-			with integration_user_context():
-				_purchase_order, asn = self._submitted_material_asn()
-				with (
-					patch.object(controller, "validate", validate, create=True),
-					self.assertRaises(frappe.ValidationError) as raised,
-				):
-					create_gate_pass_from_asn("ASN", asn.name, {})
+		# Job drafts too: production's Before Save server script must run on them.
+		for submitted_asn in (self._submitted_material_asn, self._submitted_job_asn):
+			with self.subTest(submitted_asn.__name__):
+				with with_gate_pass_mode(True):
+					with integration_user_context():
+						_order, asn = submitted_asn()
+						with (
+							patch.object(controller, "validate", validate, create=True),
+							self.assertRaises(frappe.ValidationError) as raised,
+						):
+							create_gate_pass_from_asn("ASN", asn.name, {})
 
-		self.assertIn("refused by gate pass rules", str(raised.exception).lower())
+				self.assertIn("refused by gate pass rules", str(raised.exception).lower())
 
 	def test_a_second_create_reopens_the_draft_gate_pass(self):
 		with with_gate_pass_mode(True):

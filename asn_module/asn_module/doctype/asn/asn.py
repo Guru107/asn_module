@@ -119,10 +119,8 @@ class ASN(WebsiteGenerator):
 		"""Drop ASN link on cancelled receipts so deletion is not blocked by a stale Link field."""
 		if not frappe.db.has_column("Purchase Receipt", "asn"):
 			return
-		frappe.db.sql(
-			"UPDATE `tabPurchase Receipt` SET `asn` = NULL WHERE `asn` = %s AND `docstatus` = 2",
-			(self.name,),
-		)
+		pr = DocType("Purchase Receipt")
+		(frappe.qb.update(pr).set(pr.asn, None).where((pr.asn == self.name) & (pr.docstatus == 2))).run()
 
 	def _delete_linked_draft_purchase_receipts(self):
 		"""Remove draft PRs created from this ASN so the notice can be deleted after cancel without a manual PR delete."""
@@ -823,33 +821,6 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 		)
 
 	return result
-
-
-@frappe.whitelist(methods=["GET"])
-def get_po_items(
-	doctype: str,
-	txt: str,
-	searchfield: str,
-	start: int,
-	page_len: int,
-	filters: dict[str, Any] | None,
-) -> list[tuple[str, str]]:
-	del doctype, searchfield
-	purchase_order = (filters or {}).get("purchase_order")
-	if not purchase_order:
-		return []
-	_get_accessible_purchase_order(purchase_order)
-
-	return frappe.db.sql(
-		"""
-		SELECT poi.item_code, poi.item_name
-		FROM `tabPurchase Order Item` poi
-		WHERE poi.parent = %s
-		AND (poi.item_code LIKE %s OR poi.item_name LIKE %s)
-		LIMIT %s OFFSET %s
-		""",
-		(purchase_order, f"%{txt}%", f"%{txt}%", page_len, start),
-	)
 
 
 @frappe.whitelist(methods=["GET"])

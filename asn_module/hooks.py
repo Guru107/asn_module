@@ -174,9 +174,11 @@ doc_events = {
 	},
 	"Stock Entry": {
 		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_dispatch_submit",
+		"on_cancel": "asn_module.handlers.subcontracting.on_subcontracting_dispatch_cancel",
 	},
 	"Subcontracting Order": {
 		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_order_submit",
+		"on_cancel": "asn_module.handlers.subcontracting.on_subcontracting_order_cancel",
 	},
 	"Subcontracting Receipt": {
 		"before_insert": "asn_module.handlers.purchase_receipt.stamp_receipt_built_by_gate_pass",

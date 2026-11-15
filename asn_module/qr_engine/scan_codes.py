@@ -11,6 +11,7 @@ from typing import NoReturn
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import IfNull
 from frappe.utils import cint, now_datetime
 
 # Uppercase compact alphabet without ambiguous characters (0/O, 1/I/L).
@@ -18,14 +19,6 @@ SCAN_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SCAN_CODE_LENGTH = 16
 
 _MAX_CREATE_ATTEMPTS = 64
-
-
-def format_scan_code_for_display(code: str) -> str:
-	"""Human-readable scan code as a plain uppercase string without separators."""
-	raw = (code or "").replace("-", "").replace(" ", "").upper()
-	if not raw:
-		return ""
-	return raw
 
 
 def _random_scan_code_value() -> str:
@@ -150,18 +143,18 @@ def validate_scan_code_row(doc: frappe.model.document.Document, action_key: str)
 
 def record_successful_scan(doc_name: str, action_key: str) -> None:
 	"""Update scan metadata and mark the code ``Used``."""
-	count = cint(frappe.db.get_value("Scan Code", doc_name, "scan_count"))
-	frappe.db.set_value(
-		"Scan Code",
-		doc_name,
-		{
-			"scan_count": count + 1,
-			"last_scanned_on": now_datetime(),
-		},
-		update_modified=True,
-	)
-
-	frappe.db.set_value("Scan Code", doc_name, "status", "Used", update_modified=True)
+	# One atomic UPDATE: a read-modify-write of scan_count loses increments under concurrent scans.
+	sc = frappe.qb.DocType("Scan Code")
+	now = now_datetime()
+	(
+		frappe.qb.update(sc)
+		.set(sc.scan_count, IfNull(sc.scan_count, 0) + 1)
+		.set(sc.last_scanned_on, now)
+		.set(sc.status, "Used")
+		.set(sc.modified, now)
+		.set(sc.modified_by, frappe.session.user)
+		.where(sc.name == doc_name)
+	).run()
 
 
 def is_single_use_action(action_key: str, source_doctype: str) -> bool:
@@ -184,11 +177,14 @@ def claim_scan_code_for_single_use(doc_name: str) -> None:
 	# InnoDB refuses the UPDATE outright instead of matching zero rows. Same
 	# outcome either way: the race was lost, so report the code as used.
 	try:
-		frappe.db.sql(
-			"UPDATE `tabScan Code` SET `status` = 'Used', `modified` = %s, `modified_by` = %s "
-			"WHERE `name` = %s AND `status` = 'Active'",
-			(now_datetime(), frappe.session.user, doc_name),
-		)
+		sc = frappe.qb.DocType("Scan Code")
+		(
+			frappe.qb.update(sc)
+			.set(sc.status, "Used")
+			.set(sc.modified, now_datetime())
+			.set(sc.modified_by, frappe.session.user)
+			.where((sc.name == doc_name) & (sc.status == "Active"))
+		).run()
 	except frappe.QueryDeadlockError:
 		_throw_already_used()
 	# frappe exposes no public affected-rows count; the cursor's rowcount reflects
@@ -373,15 +369,3 @@ def void_scan_codes(action_key: str, source_doctype: str, source_name: str) -> N
 	}
 	for name in frappe.get_all("Scan Code", filters=filters, pluck="name"):
 		frappe.db.set_value("Scan Code", name, "status", "Voided", update_modified=True)
-
-
-def verify_registry_row_points_to_existing_source(doc: frappe.model.document.Document) -> bool:
-	"""Return True if ``source_doctype`` / ``source_name`` resolves to an existing document."""
-	try:
-		if not doc.source_doctype or not doc.source_name:
-			return False
-		if not frappe.db.exists("DocType", doc.source_doctype):
-			return False
-		return bool(frappe.db.exists(doc.source_doctype, doc.source_name))
-	except Exception:
-		return False

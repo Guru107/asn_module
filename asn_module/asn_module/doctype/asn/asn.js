@@ -24,18 +24,6 @@ frappe.ui.form.on("ASN", {
 				},
 			};
 		});
-
-		frm.set_query("item_code", "items", function (_doc, cdt, cdn) {
-			const row = locals[cdt][cdn];
-			if (!row.purchase_order) {
-				return {};
-			}
-
-			return {
-				query: "asn_module.asn_module.doctype.asn.asn.get_po_items",
-				filters: { purchase_order: row.purchase_order },
-			};
-		});
 	},
 
 	supplier(frm) {
