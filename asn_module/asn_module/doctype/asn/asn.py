@@ -302,7 +302,7 @@ class ASN(WebsiteGenerator):
 						line_doctype.name,
 						line_doctype.parent,
 						line_doctype.item_code,
-						line_doctype.field(uom_field).as_("uom"),
+						getattr(line_doctype, uom_field).as_("uom"),
 						order.supplier,
 						order.docstatus,
 					)
