@@ -174,8 +174,10 @@ class TestMapPurchaseReceiptDraft(FrappeTestCase):
 		from asn_module.handlers.gate_pass_create import create_from_gate_pass
 		from asn_module.handlers.purchase_receipt import _open_or_create_material_gate_pass
 		from asn_module.tests.integration.fixtures import integration_user_context
+		from asn_module.tests.test_job_asn_and_material_gate_pass import ensure_gate_pass_for_tests
 
 		before_tests()
+		ensure_gate_pass_for_tests()
 		with integration_user_context():
 			purchase_order = create_purchase_order(qty=3)
 			asn = make_test_asn(
