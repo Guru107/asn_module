@@ -20,6 +20,8 @@ MAX_BULK_INVOICES = 500
 # Errors shown for one upload; the rest are summed up in one line.
 MAX_BULK_ERRORS = 50
 BULK_ASN_JOB = "asn_module.templates.pages.asn_new_services.create_bulk_asns_job"
+# Seconds: up to MAX_BULK_INVOICES inserts and submits, at most ~6 s each.
+BULK_ASN_JOB_TIMEOUT = MAX_BULK_INVOICES * 6
 BULK_CSV_HEADERS = [
 	"supplier_invoice_no",
 	"supplier_invoice_date",
@@ -51,7 +53,6 @@ INVOICE_GROUP_FIELDS = (
 @dataclass
 class PortalValidationError(Exception):
 	errors: list[dict]
-	created_asn_names: tuple[str, ...] = ()
 
 	def __str__(self):
 		return "\n".join(error.get("message", "") for error in self.errors)
@@ -814,42 +815,44 @@ def insert_bulk_asns(
 	payloads: list[tuple[dict, list[dict]]],
 	insert_asn=None,
 ) -> list[str]:
+	# Desk upload: a refusal propagates and rolls the whole request back.
 	insert_asn = insert_asn or insert_and_submit_asn
-	asn_names = []
-	for header, items in payloads:
-		try:
-			asn = insert_asn(supplier=supplier, header=header, items=items)
-		except PortalValidationError as exc:
-			# Names only. The portal job commits and emails which ASNs stayed.
-			# The desk caller rethrows, and that rolls the request back, so those
-			# ASNs do not stay submitted there.
-			if asn_names:
-				exc.created_asn_names = tuple(asn_names)
-			raise
-		asn_names.append(asn.name)
-	return asn_names
+	return [insert_asn(supplier=supplier, header=header, items=items).name for header, items in payloads]
 
 
 def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]], notify_user: str) -> None:
 	"""Background half of a portal bulk upload: create the ASNs the request validated, then email the user.
 
-	The ASN controller checks each one again on submit. A refusal stops the run and
-	keeps the ASNs already submitted, as the portal did when this ran in the request.
+	The ASN controller checks each one again on submit. A refusal or an unexpected error
+	stops the run; the ASNs already submitted stay, and the email names them.
 	"""
+	asn_names: list[str] = []
 	errors: list[dict] = []
-	try:
-		asn_names = insert_bulk_asns(supplier, payloads)
-	except PortalValidationError as exc:
-		asn_names = list(exc.created_asn_names)
-		errors = exc.errors
-	except Exception:
-		# Job entry point: a caught error is not rolled back for us, so undo every ASN this run made.
-		frappe.db.rollback()
-		frappe.log_error(title="ASN portal bulk upload job failed")
-		asn_names = []
-		errors = [
-			error_entry(field="bulk", message=_("ASN creation failed unexpectedly. No ASNs were created."))
-		]
+	for header, items in payloads:
+		try:
+			asn = insert_and_submit_asn(supplier=supplier, header=header, items=items)
+		except PortalValidationError as exc:
+			errors = exc.errors
+			break
+		except Exception:
+			# Job entry point: a caught error is not rolled back for us. Undo this ASN only;
+			# the earlier ones are committed.
+			frappe.db.rollback()
+			frappe.log_error(title="ASN portal bulk upload job failed")
+			errors = [
+				error_entry(
+					field="bulk",
+					invoice_no=header.get("supplier_invoice_no"),
+					message=_("Invoice {0}: ASN creation failed unexpectedly.").format(
+						header.get("supplier_invoice_no")
+					),
+				)
+			]
+			break
+		# Batch job: commit each ASN so a later failure, timeout or killed worker cannot undo
+		# the ones already submitted, locks stay short, and a rerun sees their invoice numbers.
+		frappe.db.commit()
+		asn_names.append(asn.name)
 	_email_bulk_result(notify_user, asn_names, errors)
 
 

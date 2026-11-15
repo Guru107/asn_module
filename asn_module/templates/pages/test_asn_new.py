@@ -11,6 +11,7 @@ from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 from asn_module.templates.pages import asn_new
 from asn_module.templates.pages.asn_new_services import (
 	BULK_ASN_JOB,
+	BULK_ASN_JOB_TIMEOUT,
 	ParsedBulkRow,
 	ParsedSingleRow,
 	PortalValidationError,
@@ -1047,6 +1048,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(enqueue.call_args.args, (BULK_ASN_JOB,))
 		kwargs = enqueue.call_args.kwargs
 		self.assertEqual(kwargs["queue"], "long")
+		self.assertEqual(kwargs["timeout"], BULK_ASN_JOB_TIMEOUT)
 		self.assertTrue(kwargs["enqueue_after_commit"])
 		self.assertEqual(kwargs["supplier"], "Supp-001")
 		self.assertEqual(kwargs["notify_user"], frappe.session.user)

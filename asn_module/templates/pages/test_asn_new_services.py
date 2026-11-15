@@ -561,9 +561,9 @@ class TestBulkUploadStockCap(FrappeTestCase):
 		self.assertEqual(len(names), len(inserted))
 		self.assertTrue(names)
 
-	def test_a_later_submit_failure_names_the_asns_already_submitted(self):
-		"""Validation passed for both invoices. The second submit is refused. The first
-		ASN is already submitted, so the error must name it and must not say nothing was created.
+	def test_a_later_submit_failure_propagates_without_claiming_nothing_was_created(self):
+		"""Validation passed for both invoices. The second submit is refused. The refusal
+		propagates (the desk request rolls back), and it must not read as a validation failure.
 		"""
 
 		def insert_asn(**kwargs):
@@ -586,7 +586,6 @@ class TestBulkUploadStockCap(FrappeTestCase):
 				insert_asn=insert_asn,
 			)
 
-		self.assertEqual(raised.exception.created_asn_names, ("ASN-0001",))
 		messages = " ".join(error.get("message", "") for error in raised.exception.errors)
 		self.assertNotIn("No ASNs created", messages)
 		self.assertNotIn("ASN-0001", messages)
@@ -870,14 +869,18 @@ class TestBulkUploadJob(FrappeTestCase):
 				side_effect=insert_side_effect,
 			),
 			patch("asn_module.templates.pages.asn_new_services.frappe.sendmail") as sendmail,
+			# The job commits each ASN; a real commit would break the test's rollback.
+			patch.object(frappe.db, "commit") as commit,
 		):
 			create_bulk_asns_job("Supp-001", self.PAYLOADS, "Administrator")
 		sendmail.assert_called_once()
+		self.commits = commit.call_count
 		return sendmail.call_args.kwargs
 
 	def test_emails_the_created_asns(self):
 		mail = self._run([SimpleNamespace(name="ASN-J1"), SimpleNamespace(name="ASN-J2")])
 
+		self.assertEqual(self.commits, 2)
 		self.assertEqual(mail["recipients"], [frappe.db.get_value("User", "Administrator", "email")])
 		self.assertIn("ASN-J1, ASN-J2", mail["message"])
 		self.assertEqual(mail["subject"], "Bulk ASN upload finished")
@@ -888,6 +891,7 @@ class TestBulkUploadJob(FrappeTestCase):
 			mail = self._run([SimpleNamespace(name="ASN-J1"), refusal])
 
 		rollback.assert_not_called()
+		self.assertEqual(self.commits, 1)
 		self.assertIn("ASN-J1", mail["message"])
 		self.assertIn("&lt;b&gt;Stock Cap&lt;/b&gt;", mail["message"])
 		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
@@ -899,6 +903,10 @@ class TestBulkUploadJob(FrappeTestCase):
 		):
 			mail = self._run([SimpleNamespace(name="ASN-J1"), RuntimeError("boom")])
 
+		# Only the failing ASN is undone; the one committed before it is kept and named.
 		rollback.assert_called_once_with()
 		log_error.assert_called_once()
-		self.assertIn("No ASNs were created", mail["message"])
+		self.assertEqual(self.commits, 1)
+		self.assertIn("Created and submitted 1 ASN(s): ASN-J1", mail["message"])
+		self.assertIn("Invoice JOB-INV-2: ASN creation failed unexpectedly", mail["message"])
+		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")

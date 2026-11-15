@@ -12,6 +12,7 @@ from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purc
 from asn_module.templates.pages.asn_new_search import supplier_draft_asn_name
 from asn_module.templates.pages.asn_new_services import (
 	BULK_ASN_JOB,
+	BULK_ASN_JOB_TIMEOUT,
 	BULK_CSV_HEADERS,
 	ParsedBulkRow,
 	ParsedSingleRow,
@@ -418,6 +419,7 @@ def _queue_bulk_asns(supplier: str) -> int:
 	frappe.enqueue(
 		BULK_ASN_JOB,
 		queue="long",
+		timeout=BULK_ASN_JOB_TIMEOUT,
 		enqueue_after_commit=True,
 		supplier=supplier,
 		payloads=payloads,
