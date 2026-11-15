@@ -782,6 +782,79 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertEqual(form["purchase_order"], "PO-0001")
 		self.assertEqual(form["rows"], [])
 
+	def test_portal_draft_form_returns_the_subcontracting_order_and_its_lines(self):
+		doc = SimpleNamespace(
+			name="ASN-1",
+			supplier="Supp-001",
+			docstatus=0,
+			supplier_invoice_no="",
+			supplier_invoice_date=None,
+			expected_delivery_date=None,
+			supplier_invoice_amount=0,
+			lr_no="",
+			lr_date=None,
+			transporter_name="",
+			vehicle_number="",
+			driver_contact="",
+			draft_purchase_order="",
+		)
+		asn_items = [
+			frappe._dict(
+				purchase_order="",
+				purchase_order_item="",
+				subcontracting_order="SCO-0001",
+				subcontracting_order_item="SCO-ITEM-1",
+				item_code="FG-001",
+				uom="Nos",
+				qty=4,
+				rate=10,
+			)
+		]
+
+		def get_all(doctype, **kwargs):
+			if doctype == "ASN Item":
+				return asn_items
+			if doctype == "Subcontracting Order Item":
+				return [frappe._dict(name="SCO-ITEM-1", idx=2)]
+			return []
+
+		with (
+			patch("asn_module.templates.pages.asn_new.frappe.db.get_value", return_value=doc),
+			patch("asn_module.templates.pages.asn_new.frappe.get_all", side_effect=get_all),
+		):
+			form = asn_new.portal_draft_form("Supp-001", "ASN-1")
+
+		self.assertEqual(form["subcontracting_order"], "SCO-0001")
+		self.assertEqual(form["purchase_order"], "")
+		self.assertEqual(
+			form["rows"],
+			[
+				{
+					"sr_no": "2",
+					"item_code": "FG-001",
+					"uom": "Nos",
+					"qty": 4,
+					"rate": 10,
+					"subcontracting_order_item": "SCO-ITEM-1",
+				}
+			],
+		)
+
+	def test_create_single_asn_refuses_a_purchase_order_save_onto_a_job_asn_draft(self):
+		with (
+			patch("asn_module.templates.pages.asn_new._request_list", return_value=[]),
+			patch("asn_module.templates.pages.asn_new._parse_single_rows", return_value=[]),
+			patch("asn_module.templates.pages.asn_new.supplier_draft_asn_name", return_value="ASN-1"),
+			patch("asn_module.templates.pages.asn_new.frappe.db.exists", return_value="ASN-ITEM-1") as exists,
+			patch("asn_module.templates.pages.asn_new._insert_and_submit_asn") as insert_submit,
+			self.assertRaises(PortalValidationError) as ctx,
+		):
+			asn_new._create_single_asn("Supp-001")
+
+		self.assertEqual(ctx.exception.errors[0]["field"], "subcontracting_order")
+		self.assertEqual(exists.call_args.args[1]["parent"], "ASN-1")
+		insert_submit.assert_not_called()
+
 	def test_create_single_asn_rejects_unselected_purchase_order_row(self):
 		rows = [
 			ParsedSingleRow(

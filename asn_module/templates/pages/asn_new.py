@@ -147,6 +147,20 @@ def _create_single_asn(supplier: str) -> CreateResult:
 			field="selected_purchase_orders",
 		)
 	draft_name = supplier_draft_asn_name(supplier, _request_value("asn_name"))
+	if draft_name and frappe.db.exists(
+		"ASN Item", {"parent": draft_name, "subcontracting_order": ["is", "set"]}
+	):
+		# Saving here would replace the draft's Job ASN lines with this form's rows.
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="subcontracting_order",
+					message=_("ASN {0} is a Job ASN. Select its Subcontracting Order to save it.").format(
+						draft_name
+					),
+				)
+			]
+		)
 	validate_supplier_invoices_not_reused(
 		supplier,
 		[_request_value("supplier_invoice_no")],
@@ -327,24 +341,45 @@ def portal_draft_form(supplier: str, asn_name: str | None) -> dict | None:
 	items = frappe.get_all(
 		"ASN Item",
 		filters={"parent": name},
-		fields=["purchase_order", "purchase_order_item", "item_code", "uom", "qty", "rate", "idx"],
+		fields=[
+			"purchase_order",
+			"purchase_order_item",
+			"subcontracting_order",
+			"subcontracting_order_item",
+			"item_code",
+			"uom",
+			"qty",
+			"rate",
+			"idx",
+		],
 		order_by="idx asc",
 		limit_page_length=0,
 	)
-	po_item_names = [row.purchase_order_item for row in items if row.purchase_order_item]
 	sr_by_name = {}
-	if po_item_names:
+	for order_item_doctype, order_item_names in (
+		("Purchase Order Item", [row.purchase_order_item for row in items if row.purchase_order_item]),
+		(
+			"Subcontracting Order Item",
+			[row.subcontracting_order_item for row in items if row.subcontracting_order_item],
+		),
+	):
+		if not order_item_names:
+			continue
 		for row in frappe.get_all(
-			"Purchase Order Item",
-			filters={"name": ["in", po_item_names]},
+			order_item_doctype,
+			filters={"name": ["in", order_item_names]},
 			fields=["name", "idx"],
 			limit_page_length=0,
 		):
 			sr_by_name[row.name] = str(row.idx)
 
-	purchase_order = next((row.purchase_order for row in items if row.purchase_order), "")
-	if not purchase_order:
-		purchase_order = doc.draft_purchase_order or ""
+	# A Job ASN names a Subcontracting Order; its rows are not Purchase Order rows.
+	subcontracting_order = next((row.subcontracting_order for row in items if row.subcontracting_order), "")
+	purchase_order = ""
+	if not subcontracting_order:
+		purchase_order = next((row.purchase_order for row in items if row.purchase_order), "")
+		if not purchase_order:
+			purchase_order = doc.draft_purchase_order or ""
 	return {
 		"supplier_invoice_no": doc.supplier_invoice_no or "",
 		"supplier_invoice_date": _date_input(doc.supplier_invoice_date),
@@ -356,16 +391,19 @@ def portal_draft_form(supplier: str, asn_name: str | None) -> dict | None:
 		"vehicle_number": doc.vehicle_number or "",
 		"driver_contact": doc.driver_contact or "",
 		"purchase_order": purchase_order,
+		"subcontracting_order": subcontracting_order,
 		"rows": [
 			{
-				"sr_no": sr_by_name.get(row.purchase_order_item, ""),
+				"sr_no": sr_by_name.get(row.subcontracting_order_item or row.purchase_order_item, ""),
 				"item_code": row.item_code,
 				"uom": row.uom or "",
 				"qty": row.qty,
 				"rate": row.rate,
+				"subcontracting_order_item": row.subcontracting_order_item or "",
 			}
 			for row in items
-			if row.purchase_order == purchase_order
+			if (row.subcontracting_order or "") == subcontracting_order
+			and (subcontracting_order or row.purchase_order == purchase_order)
 		],
 	}
 

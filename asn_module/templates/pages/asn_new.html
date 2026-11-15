@@ -1613,7 +1613,27 @@
 		setNamedInput("transporter_name", draftForm.transporter_name);
 		setNamedInput("vehicle_number", draftForm.vehicle_number);
 		setNamedInput("driver_contact", draftForm.driver_contact);
-		if (draftForm.purchase_order) {
+		if (draftForm.subcontracting_order) {
+			if (scoInput) scoInput.value = draftForm.subcontracting_order;
+			void loadScoItems(draftForm.subcontracting_order).then(() => {
+				(draftForm.rows || []).forEach((row) => {
+					// Rebuild a line the picker no longer lists so Save keeps it.
+					const entry = poItems.find(
+						(item) => String(item.subcontracting_order_item || "") === String(row.subcontracting_order_item || "")
+					) || {
+						sr_no: row.sr_no,
+						value: row.item_code,
+						uom: row.uom,
+						subcontracting_order: draftForm.subcontracting_order,
+						subcontracting_order_item: row.subcontracting_order_item,
+					};
+					if (row.rate != null && row.rate !== "") entry.rate = row.rate;
+					if (row.qty != null && row.qty !== "") entry.qty = row.qty;
+					selectItem(entry);
+				});
+				renderItemPicker();
+			});
+		} else if (draftForm.purchase_order) {
 			void setSelectedPurchaseOrder(draftForm.purchase_order).then(() => {
 				(draftForm.rows || []).forEach((row) => {
 					// The picker hides lines whose Remaining Qty is now zero (e.g. another
