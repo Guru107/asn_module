@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       FRAPPE_VERSION: "16"
       ERPNEXT_VERSION: "16"
@@ -117,7 +117,7 @@ jobs:
           if-no-files-found: warn
 
   property-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       FRAPPE_VERSION: "16"
       ERPNEXT_VERSION: "16"

@@ -11,7 +11,7 @@ on:
 
 jobs:
   cypress:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: E2E (Frappe ${{ matrix.frappe_version }} / ERPNext ${{ matrix.erpnext_version }})
     concurrency:
       group: e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.frappe_version }}-${{ matrix.erpnext_version }}
