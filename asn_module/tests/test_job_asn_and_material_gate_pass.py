@@ -179,6 +179,37 @@ class TestAsnOrderIdentity(FrappeTestCase):
 			f"Row 1: UOM {wrong_uom} does not match {finished_good.stock_uom}", str(raised.exception)
 		)
 
+	def test_save_refuses_a_job_line_of_a_draft_order(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		asn, _finished_good = self._job_asn_row(subcontracting_order)
+		frappe.db.set_value(
+			"Subcontracting Order",
+			subcontracting_order.name,
+			{"docstatus": 0, "status": "Draft"},
+			update_modified=False,
+		)
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: Subcontracting Order {subcontracting_order.name} is Draft, not open",
+			str(raised.exception),
+		)
+
+	def test_save_refuses_a_job_line_of_a_closed_order(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		asn, _finished_good = self._job_asn_row(subcontracting_order)
+		frappe.db.set_value("Subcontracting Order", subcontracting_order.name, "status", "Closed")
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: Subcontracting Order {subcontracting_order.name} is Closed, not open",
+			str(raised.exception),
+		)
+
 	def test_save_refuses_a_subcontracting_order_line_that_is_missing_the_order(self):
 		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
 		finished_good = subcontracting_order.items[0]

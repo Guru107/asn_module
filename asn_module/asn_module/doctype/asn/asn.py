@@ -49,7 +49,6 @@ class ASN(WebsiteGenerator):
 	def validate(self):
 		self._validate_vehicle_number_present()
 		self._validate_one_order()
-		self._validate_order_lines()
 		if cint(self.docstatus) == 1:
 			self._validate_items_present()
 			self._validate_item_qty()
@@ -58,6 +57,7 @@ class ASN(WebsiteGenerator):
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
 		self._validate_subcontracting_lines()
+		self._validate_order_lines()
 		self._warn_stock_cap()
 
 	def before_submit(self):
@@ -277,11 +277,12 @@ class ASN(WebsiteGenerator):
 			frappe.throw(_("An ASN can reference only one order."))
 
 	def _validate_order_lines(self):
-		"""Each row names a real line of an open order that belongs to this supplier.
+		"""Each row names a real line of a submitted, open order that belongs to this supplier.
 
 		One query per order type reads every referenced line with its order. The
 		client-side supplier filter is not a check, and the order line decides the
-		item and UOM. A draft order is still allowed; a cancelled one is not.
+		item and UOM. Runs after the quantity checks, which already refuse shipping
+		against a missing line or a Closed / On Hold order with their own messages.
 		"""
 		for order_doctype in ("Purchase Order", "Subcontracting Order"):
 			order_field = frappe.scrub(order_doctype)
@@ -305,6 +306,7 @@ class ASN(WebsiteGenerator):
 						getattr(line_doctype, uom_field).as_("uom"),
 						order.supplier,
 						order.docstatus,
+						order.status,
 					)
 					.where(line_doctype.name.isin([row.get(f"{order_field}_item") for row in rows]))
 				).run(as_dict=True)
@@ -324,9 +326,11 @@ class ASN(WebsiteGenerator):
 							row.idx, _(order_doctype), line_name, line.parent, order_name
 						)
 					)
-				if cint(line.docstatus) == 2:
+				if cint(line.docstatus) != 1 or line.status in _STATUSES_NOT_OPEN[order_doctype]:
 					frappe.throw(
-						_("Row {0}: {1} {2} is cancelled").format(row.idx, _(order_doctype), order_name)
+						_("Row {0}: {1} {2} is {3}, not open").format(
+							row.idx, _(order_doctype), order_name, line.status
+						)
 					)
 				if line.supplier != self.supplier:
 					frappe.throw(
@@ -471,6 +475,11 @@ class ASN(WebsiteGenerator):
 
 
 _PO_STATUSES_WITH_NO_SHIPPED_QTY = ("Closed", "On Hold")
+# Draft and Cancelled orders are refused by docstatus; these are the submitted ones that are not open.
+_STATUSES_NOT_OPEN = {
+	"Purchase Order": _PO_STATUSES_WITH_NO_SHIPPED_QTY,
+	"Subcontracting Order": ("Closed",),
+}
 
 
 def _unreceived_qty_by_po_item(

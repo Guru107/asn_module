@@ -45,13 +45,12 @@ def _create_purchase_order(**kwargs) -> "frappe.model.document.Document":
 	"""Build a real Purchase Order fixture, filling in bench-specific mandatory fields.
 
 	See asn_module.utils.test_setup.build_purchase_order_with_mandatory_fields for why
-	this bench-specific mandatory-field workaround is needed. Never submits -- callers in
-	this module only need a saved (not necessarily submitted) Purchase Order.
+	this bench-specific mandatory-field workaround is needed. The Purchase Order is
+	submitted: an ASN line must name a submitted, open order.
 	"""
 	return build_purchase_order_with_mandatory_fields(
 		create_purchase_order,
 		tax_description="_Test Stock Cap Access Tax",
-		do_not_submit=True,
 		**kwargs,
 	)
 
@@ -313,7 +312,6 @@ class TestBreachesForPurchaseReceipt(FrappeTestCase):
 		po = build_purchase_order_with_mandatory_fields(
 			create_purchase_order,
 			tax_description="_Test Stock Cap PR API Tax",
-			do_not_submit=True,
 			item_code=PR_ITEM,
 			qty=10,
 		)
