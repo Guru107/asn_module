@@ -62,6 +62,8 @@ bench --site "$SITE_NAME" install-app asn_module
 bench build --app asn_module
 
 bench --site "$SITE_NAME" set-config allow_tests true
+bench --site "$SITE_NAME" set-config developer_mode 1
+bench --site "$SITE_NAME" set-config asn_enable_e2e_seeders 1
 # Token-less API seeding: Cypress posts to whitelisted methods without loading Desk
 # to mint a CSRF token (frappe/auth.py validate_csrf_token honors this on v15 and v16).
 bench --site "$SITE_NAME" set-config ignore_csrf 1

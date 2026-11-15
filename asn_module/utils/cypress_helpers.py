@@ -6,6 +6,17 @@ from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
 from asn_module.utils.test_setup import ensure_leaf_supplier_group
 
 
+def _assert_e2e_seeders_enabled() -> None:
+	"""Gate every seeder: Administrator, developer mode and an explicit site-config flag.
+
+	``frappe.conf`` merges common_site_config.json, so ``allow_tests`` alone can be set
+	bench-wide; the dedicated flag must be set per throwaway E2E site.
+	"""
+	frappe.only_for("Administrator")
+	if not (frappe.conf.get("developer_mode") and frappe.conf.get("asn_enable_e2e_seeders")):
+		frappe.throw(_("E2E seeders are disabled on this site"), frappe.PermissionError)
+
+
 def _ensure_supplier_portal_user(
 	*,
 	supplier_name: str,
@@ -71,11 +82,9 @@ def _ensure_supplier_portal_user(
 	return supplier, portal_user.name, portal_password
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_minimal_asn():
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	from asn_module.asn_module.doctype.asn.test_asn import (
 		create_purchase_order,
@@ -94,11 +103,9 @@ def seed_minimal_asn():
 	return {"asn_name": asn.name, "asn_status": asn.status, "supplier": asn.supplier}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_scan_station_context():
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	from asn_module.asn_module.doctype.asn.test_asn import (
 		create_purchase_order,
@@ -125,11 +132,9 @@ def seed_scan_station_context():
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_supplier_context():
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	supplier_name = "Test Supplier E2E"
 	portal_email = "supplier_e2e@test.com"
@@ -157,11 +162,9 @@ def seed_supplier_context():
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_supplier_large_po_context():
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	supplier_name = "Test Supplier E2E"
 	portal_email = "supplier_e2e@test.com"
@@ -204,11 +207,9 @@ def seed_supplier_large_po_context():
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_asn_with_items():
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	from asn_module.asn_module.doctype.asn.test_asn import (
 		create_purchase_order,
@@ -290,15 +291,13 @@ def _cancel_orphaned_stock_cap_asns(item_code: str) -> None:
 		asn_doc.cancel()
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_stock_cap_context():
 	"""Seed a branch with one cap warehouse and an item capped below the PO quantity.
 
 	Returns everything the stock cap spec needs to drive the desk form.
 	"""
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	branch = "_Cypress Cap Branch"
 	if not frappe.db.exists("Branch", branch):
@@ -551,16 +550,14 @@ def _cypress_purchase_order(*, supplier: str, qty: float, item_code: str, wareho
 	return po
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_portal_draft_remaining_context():
 	"""Ordered 10, this supplier's draft declares 6. Another supplier has a draft too.
 
 	The create page should offer the draft's quantity back only when that draft is the
 	one being edited.
 	"""
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	supplier, portal_user, portal_password = _portal_e2e_supplier()
 	other_supplier, _other_user, _other_password = _ensure_supplier_portal_user(
@@ -610,7 +607,7 @@ def seed_portal_draft_remaining_context():
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_portal_draft_hidden_line_context():
 	"""Draft row on a PO line whose full Remaining Qty another notice then shipped.
 
@@ -618,9 +615,7 @@ def seed_portal_draft_hidden_line_context():
 	notice can ship all 10. Reopening the draft then finds the line missing from the
 	item picker (Remaining Qty 0) — the restore path must still render the stored row.
 	"""
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	supplier, portal_user, portal_password = _portal_e2e_supplier()
 	item_code = "_Cypress Draft Hidden Item"
@@ -645,12 +640,10 @@ def seed_portal_draft_hidden_line_context():
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def seed_supplier_asn_context():
 	"""Portal supplier with one draft ASN, so the /asn portal list renders a row."""
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	supplier, portal_user, portal_password = _portal_e2e_supplier()
 	item_code = "_Cypress Portal List Item"
@@ -674,9 +667,7 @@ def seed_supplier_asn_context():
 @frappe.whitelist(methods=["POST"])
 def seed_portal_branch_capacity_context(already_full: int = 0):
 	"""A portal purchase order whose branch can take 4, or nothing when already full."""
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("Only available in test mode"))
-	frappe.only_for("System Manager")
+	_assert_e2e_seeders_enabled()
 
 	from frappe.utils import cint
 
@@ -703,8 +694,6 @@ def seed_portal_branch_capacity_context(already_full: int = 0):
 			{"has_unit_price_items": 1, "branch": branch},
 		)
 		frappe.db.set_value("Purchase Order Item", po_item.name, "qty", 0)
-		# Persist unit-price PO flags for portal search in follow-up HTTP requests (Cypress).
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit
 	frappe.db.delete("ASN Stock Cap Warehouse", {"warehouse": po_item.warehouse})
 	if frappe.db.exists("ASN Stock Cap Settings", branch):
 		frappe.delete_doc("ASN Stock Cap Settings", branch, force=True)
