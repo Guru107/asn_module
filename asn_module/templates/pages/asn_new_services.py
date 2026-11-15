@@ -851,7 +851,7 @@ def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]],
 			break
 		# Batch job: commit each ASN so a later failure, timeout or killed worker cannot undo
 		# the ones already submitted, locks stay short, and a rerun sees their invoice numbers.
-		frappe.db.commit()
+		frappe.db.commit()  # nosemgrep: per-ASN batch commit, see comment above
 		asn_names.append(asn.name)
 	_email_bulk_result(notify_user, asn_names, errors)
 
