@@ -90,8 +90,11 @@ def purchase_order_item_receiving_qty(doc) -> dict[str, float]:
 	breaches_for_purchase_receipt to subtract only the quantity this receipt covers from
 	in-transit (see fetch.py:_fetch_in_transit), rather than dropping every ASN Item row
 	for the Purchase Order Item wholesale.
+
+	Only a receipt linked to an ASN fills that ASN. One with no link may only take
+	quantity no open ASN declares, so the ASN stays in transit and nothing comes off.
 	"""
-	if getattr(doc, "is_return", 0):
+	if getattr(doc, "is_return", 0) or not getattr(doc, "asn", None):
 		return {}
 
 	receiving: dict[str, float] = {}

@@ -1381,74 +1381,122 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			make_test_asn(purchase_order=po, qty=1).insert(ignore_permissions=True)
 
-	def test_a_stock_purchase_invoice_consumes_an_open_shipment_once(self):
-		from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_invoice
+	def test_a_direct_receipt_on_a_line_with_no_asn_submits(self):
+		po = self._submitted_purchase_order(qty=10)
+		other_po = self._submitted_purchase_order(qty=10)
+		other_shipment = make_test_asn(purchase_order=other_po, qty=10)
+		other_shipment.insert(ignore_permissions=True)
+		other_shipment.submit()
 
+		receipt = self._purchase_receipt(po, None, qty=10)
+
+		self.assertEqual(receipt.docstatus, 1)
+		other_shipment.reload()
+		self.assertEqual(flt(other_shipment.items[0].received_qty), 0)
+		self.assertEqual(other_shipment.status, "Submitted")
+
+	def test_a_direct_receipt_within_remaining_qty_leaves_the_open_asn_alone(self):
+		"""PO 100 with ASN-1 open for 10: a direct receipt for exactly 90 is the boundary."""
 		po = self._submitted_purchase_order(qty=100)
-		shipment = make_test_asn(purchase_order=po, qty=40)
-		shipment.insert(ignore_permissions=True)
-		shipment.submit()
-
-		invoice = make_purchase_invoice(po.name)
-		invoice.update_stock = 1
-		fill_custom_fiscal_year(invoice)
-		invoice.items[0].qty = 30
-		invoice.insert(ignore_permissions=True)
-		invoice.submit()
-		shipment.reload()
-
-		self.assertEqual(flt(shipment.items[0].received_qty), 30)
-		self.assertEqual(self._offered_qty(po), 60)
-		invoice.cancel()
-		shipment.reload()
-		po.reload()
-		self.assertEqual(flt(po.items[0].received_qty), 0)
-		self.assertEqual(flt(shipment.items[0].received_qty), 0)
-		self.assertEqual(self._offered_qty(po), 60)
-
-		invoice = make_purchase_invoice(po.name)
-		invoice.update_stock = 1
-		fill_custom_fiscal_year(invoice)
-		invoice.items[0].qty = 30
-		invoice.insert(ignore_permissions=True)
-		invoice.submit()
-		self.assertEqual(self._offered_qty(po), 60)
-		make_test_asn(purchase_order=po, qty=60).insert(ignore_permissions=True)
-		with self.assertRaises(frappe.ValidationError):
-			make_test_asn(purchase_order=po, qty=1).insert(ignore_permissions=True)
-
-	def test_a_stock_purchase_invoice_in_another_uom_records_purchase_uom(self):
-		from asn_module.handlers.purchase_invoice import on_purchase_invoice_submit
-
-		po = self._purchase_order_in_boxes(qty=10, conversion_factor=12)
 		shipment = make_test_asn(purchase_order=po, qty=10)
 		shipment.insert(ignore_permissions=True)
 		shipment.submit()
 
-		class _Invoice:
-			def __init__(self):
-				self.update_stock = 1
-				self.is_return = 0
-				self.items = [
-					frappe._dict(
-						purchase_receipt=None,
-						po_detail=po.items[0].name,
-						qty=48,
-						stock_qty=48,
-						conversion_factor=1,
-						rejected_qty=0,
-					)
-				]
+		receipt = self._purchase_receipt(po, None, qty=90)
 
-			def get(self, key, default=None):
-				return getattr(self, key, default)
-
-		on_purchase_invoice_submit(_Invoice())
-		frappe.db.set_value("Purchase Order Item", po.items[0].name, "received_qty", 4)
 		shipment.reload()
-
-		self.assertEqual(flt(shipment.items[0].received_qty), 4)
+		self.assertEqual(flt(shipment.items[0].received_qty), 0)
+		self.assertEqual(shipment.status, "Submitted")
 		self.assertEqual(self._offered_qty(po), 0)
+
+		receipt.cancel()
+		shipment.reload()
+		self.assertEqual(flt(shipment.items[0].received_qty), 0)
+		self.assertEqual(shipment.status, "Submitted")
+		self.assertEqual(self._offered_qty(po), 90)
+
+	def test_a_direct_receipt_above_remaining_qty_names_the_asn_to_scan(self):
+		po = self._submitted_purchase_order(qty=100)
+		shipment = make_test_asn(purchase_order=po, qty=10)
+		shipment.insert(ignore_permissions=True)
+		shipment.submit()
+
+		receipt = self._purchase_receipt(po, None, qty=95, submit=False)
+		with self.assertRaises(frappe.ValidationError) as raised:
+			self._submit_purchase_receipt(receipt)
+
+		self.assertIn(
+			f"Row 1: 5.0 of {po.items[0].item_code} on {po.name} row 1 is already declared on "
+			f"{shipment.name}; receive it by scanning {shipment.name}",
+			str(raised.exception),
+		)
+		shipment.reload()
+		self.assertEqual(flt(shipment.items[0].received_qty), 0)
+
+	def test_a_direct_receipt_may_use_the_over_receipt_allowance_no_asn_covers(self):
+		po = self._submitted_purchase_order(qty=100)
+		shipment = make_test_asn(purchase_order=po, qty=10)
+		shipment.insert(ignore_permissions=True)
+		shipment.submit()
+
+		with _over_receipt_allowance(item_code=po.items[0].item_code, item_allowance=10, stock_allowance=0):
+			refused = self._purchase_receipt(po, None, qty=101, submit=False)
+			with self.assertRaises(frappe.ValidationError) as raised:
+				self._submit_purchase_receipt(refused)
+			self.assertIn(f"Row 1: 1.0 of {po.items[0].item_code}", str(raised.exception))
+
+			self._purchase_receipt(po, None, qty=100)
+
+		shipment.reload()
+		self.assertEqual(flt(shipment.items[0].received_qty), 0)
+
+	def test_a_stock_invoice_follows_the_direct_receipt_rule(self):
+		po = self._submitted_purchase_order(qty=100)
+		shipment = make_test_asn(purchase_order=po, qty=10)
+		shipment.insert(ignore_permissions=True)
+		shipment.submit()
+
+		refused = self._stock_invoice(po, qty=95)
+		with self.assertRaises(frappe.ValidationError) as raised:
+			refused.submit()
+		self.assertIn(
+			f"Row 1: 5.0 of {po.items[0].item_code} on {po.name} row 1 is already declared on "
+			f"{shipment.name}",
+			str(raised.exception),
+		)
+
+		invoice = self._stock_invoice(po, qty=90)
+		invoice.submit()
+		shipment.reload()
+		self.assertEqual(flt(shipment.items[0].received_qty), 0)
+		self.assertEqual(shipment.status, "Submitted")
+
+		invoice.cancel()
+		shipment.reload()
+		self.assertEqual(flt(shipment.items[0].received_qty), 0)
+		self.assertEqual(shipment.status, "Submitted")
+
+	def test_an_invoice_billed_against_a_receipt_is_not_checked(self):
+		from asn_module.handlers.purchase_invoice import on_purchase_invoice_before_submit
+
+		po = self._submitted_purchase_order(qty=100)
+		shipment = make_test_asn(purchase_order=po, qty=100)
+		shipment.insert(ignore_permissions=True)
+		shipment.submit()
+		row = frappe._dict(
+			idx=1,
+			po_detail=po.items[0].name,
+			purchase_receipt="PR-BILLED",
+			qty=100,
+			stock_qty=100,
+			conversion_factor=1,
+		)
+
+		on_purchase_invoice_before_submit(frappe._dict(update_stock=1, is_return=0, items=[row]))
+
+		row.purchase_receipt = None
+		with self.assertRaises(frappe.ValidationError):
+			on_purchase_invoice_before_submit(frappe._dict(update_stock=1, is_return=0, items=[row]))
 
 	def test_a_closed_or_on_hold_purchase_order_accepts_no_shipped_qty(self):
 		for status in ("Closed", "On Hold"):
@@ -1554,6 +1602,16 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		if submit:
 			self._submit_purchase_receipt(receipt)
 		return receipt
+
+	def _stock_invoice(self, po, *, qty):
+		from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_invoice
+
+		invoice = make_purchase_invoice(po.name)
+		invoice.update_stock = 1
+		fill_custom_fiscal_year(invoice)
+		invoice.items[0].qty = qty
+		invoice.insert(ignore_permissions=True)
+		return invoice
 
 	def _purchase_return(self, receipt, *, qty):
 		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_return

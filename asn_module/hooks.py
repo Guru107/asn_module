@@ -170,8 +170,7 @@ doc_events = {
 		"on_trash": "asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
 	},
 	"Purchase Invoice": {
-		"on_submit": "asn_module.handlers.purchase_invoice.on_purchase_invoice_submit",
-		"on_cancel": "asn_module.handlers.purchase_invoice.on_purchase_invoice_cancel",
+		"before_submit": "asn_module.handlers.purchase_invoice.on_purchase_invoice_before_submit",
 	},
 	"Stock Entry": {
 		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_dispatch_submit",

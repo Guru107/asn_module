@@ -1,8 +1,10 @@
 import json
+from types import SimpleNamespace
 
 import frappe
 from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_receipt
 from frappe import _
+from frappe.query_builder.functions import IfNull, Sum
 from frappe.utils import cint, flt
 
 from asn_module.handlers.gate_pass_create import gate_pass_receive_qty
@@ -12,7 +14,6 @@ from asn_module.handlers.utils import (
 )
 from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
-from asn_module.stock_cap.fetch import EXCLUDED_ASN_STATUSES
 from asn_module.stock_cap.messages import throw_stock_cap_exceeded
 from asn_module.stock_cap.precision import flt_qty
 from asn_module.traceability import emit_asn_item_transition
@@ -196,86 +197,93 @@ def _record_linked_received_qty(doc, sign: int) -> tuple[list[str], bool]:
 	return list(mapped_names), bool(received_qty_by_asn_item)
 
 
-def _record_unlinked_received_qty(doc, sign: int) -> list[str]:
-	"""Spread a receipt that has no ASN link across the submitted ASN lines for its PO items.
+def refuse_qty_declared_on_open_asns(items: list) -> None:
+	"""Refuse receipt rows with no ASN link that take quantity an open ASN still declares.
 
-	The standard Purchase Order -> Create -> Purchase Receipt action leaves ``asn`` empty,
-	so the linked mapping never runs and ``received_qty`` stays 0. In-transit keeps the
-	full ASN quantity after the goods are already on hand.
-
-	Filling skips the same statuses in-transit ignores (Received and Closed). A Closed
-	shipment can still have unreceived quantity; recording it there would leave the open
-	shipment in transit. Cancel also skips Closed, so a closed shipment this receipt did
-	not fill is not reduced. It still sees Received: filling an open shipment moves it to
-	Received, and cancel has to reverse that.
+	Such a row may receive at most its PO line's Remaining Qty as it stood before this
+	document: the part no open ASN covers, within the over-receipt allowance. Past that the
+	goods overlap a shipment in transit, so they must be received by scanning that ASN. An
+	excess no ASN covers is left to ERPNext's own over-receipt check.
 	"""
 	delivered_by_po_item: dict[str, float] = {}
-	for row, delivered in _lines_with_delivered_qty(doc):
+	row_idxs_by_po_item: dict[str, list[str]] = {}
+	for row, delivered in _lines_with_delivered_qty(SimpleNamespace(items=items)):
 		po_item = getattr(row, "purchase_order_item", None)
-		if not po_item or delivered <= 0:
+		if not po_item:
 			continue
 		delivered_by_po_item[po_item] = delivered_by_po_item.get(po_item, 0.0) + delivered
-
+		row_idxs_by_po_item.setdefault(po_item, []).append(str(row.idx))
 	if not delivered_by_po_item:
-		return []
+		return
 
-	po_items = list(delivered_by_po_item)
-	# Only the placeholder run is interpolated. Every purchase order item name is a param.
-	placeholders = ", ".join(["%s"] * len(po_items))
-	asn_rows = frappe.db.sql(
-		"""
-		SELECT ai.name, ai.parent, ai.purchase_order_item, ai.qty, ai.received_qty, asn.status
-		FROM `tabASN Item` ai
-		INNER JOIN `tabASN` asn ON asn.name = ai.parent AND asn.docstatus = 1
-		WHERE ai.purchase_order_item IN ("""
-		+ placeholders
-		+ """
+	# Imported here: asn.py imports this module.
+	from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
+
+	po_lines = {
+		line.name: line
+		for line in frappe.get_all(
+			"Purchase Order Item",
+			filters={"name": ["in", list(delivered_by_po_item)]},
+			fields=["name", "parent", "idx", "item_code", "qty"],
 		)
-		ORDER BY ai.parent, ai.idx
-		""",
-		po_items,
-		as_dict=True,
+	}
+	remaining_by_po_item = remaining_qty_by_purchase_order_item(
+		{name: flt(line.qty) for name, line in po_lines.items()}
 	)
-	rows_by_po_item: dict[str, list] = {}
-	for row in asn_rows:
-		rows_by_po_item.setdefault(row.purchase_order_item, []).append(row)
-
-	parents: set[str] = set()
+	excess_by_po_item = {}
 	for po_item, delivered in delivered_by_po_item.items():
-		rows = rows_by_po_item.get(po_item) or []
-		# Fill skips Received and Closed. Cancel skips Closed only: the shipment this
-		# receipt filled is Received by the time cancel runs.
-		skipped = EXCLUDED_ASN_STATUSES if sign > 0 else ("Closed",)
-		rows = [row for row in rows if row.status not in skipped]
-		remaining = delivered
-		# Submit fills lines in document order. Cancel subtracts in reverse so a single
-		# receipt restores the lines it filled. Several receipts on one PO item can
-		# leave the remainder on a different line; the total received quantity, which
-		# the cap uses, still changes by the cancelled amount.
-		ordered = rows if sign > 0 else list(reversed(rows))
-		for index, row in enumerate(ordered):
-			if remaining <= 0:
-				break
-			if sign > 0:
-				room = max(flt(row.qty) - flt(row.received_qty), 0)
-				take = remaining if index == len(ordered) - 1 else min(room, remaining)
-			else:
-				take = min(flt(row.received_qty), remaining)
-			if take <= 0:
-				continue
-			_add_received_qty(row.name, sign * take)
-			parents.add(row.parent)
-			remaining -= take
-
-	return sorted(parents)
-
-
-def _refresh_asn_receipt_status(asn_names: list[str]) -> None:
-	for asn_name in asn_names:
-		if not asn_name or not frappe.db.exists("ASN", asn_name):
+		remaining = remaining_by_po_item.get(po_item)
+		# None is a unit-price line with no cap: it has no ceiling to exceed.
+		if remaining is None:
 			continue
-		asn = frappe.get_doc("ASN", asn_name)
-		asn.update_receipt_status()
+		excess = flt_qty(delivered - flt(remaining))
+		if excess > 0:
+			excess_by_po_item[po_item] = excess
+	if not excess_by_po_item:
+		return
+
+	messages = []
+	for po_item, asns in _unreceived_qty_on_open_asns(list(excess_by_po_item)).items():
+		line = po_lines[po_item]
+		declared = flt_qty(min(excess_by_po_item[po_item], sum(qty for _asn, qty in asns)))
+		asn_names = ", ".join(asn for asn, _qty in asns)
+		messages.append(
+			_(
+				"Row {0}: {1} of {2} on {3} row {4} is already declared on {5}; receive it by scanning {5}"
+			).format(
+				", ".join(row_idxs_by_po_item[po_item]),
+				declared,
+				line.item_code,
+				line.parent,
+				line.idx,
+				asn_names,
+			)
+		)
+	if messages:
+		frappe.throw("<br>".join(messages), title=_("Quantity Declared on an Open ASN"))
+
+
+def _unreceived_qty_on_open_asns(po_items: list[str]) -> dict[str, list[tuple[str, float]]]:
+	"""Unreceived Shipped Qty per ASN for each PO Item, on the ASNs Remaining Qty holds back."""
+	asn_item = frappe.qb.DocType("ASN Item")
+	asn = frappe.qb.DocType("ASN")
+	received = IfNull(asn_item.received_qty, 0)
+	rows = (
+		frappe.qb.from_(asn_item)
+		.inner_join(asn)
+		.on(asn.name == asn_item.parent)
+		.select(asn_item.purchase_order_item, asn.name.as_("asn"), Sum(asn_item.qty - received).as_("qty"))
+		.where(asn_item.purchase_order_item.isin(po_items))
+		.where(asn.docstatus != 2)
+		.where(asn.status != "Closed")
+		.where(asn_item.qty > received)
+		.groupby(asn_item.purchase_order_item, asn.name)
+		.orderby(asn.name)
+	).run(as_dict=True)
+	by_po_item: dict[str, list[tuple[str, float]]] = {}
+	for row in rows:
+		by_po_item.setdefault(row.purchase_order_item, []).append((row.asn, flt(row.qty)))
+	return by_po_item
 
 
 def on_purchase_receipt_cancel(doc, method=None):
@@ -284,17 +292,15 @@ def on_purchase_receipt_cancel(doc, method=None):
 	Submit adds to ``ASN Item.received_qty`` and may mark the ASN Received, which drops
 	it out of in-transit. Cancel reverses the stock ledger and must reverse that too.
 	A return is a separate transaction: the quantity that arrived stays received, so
-	cancelling the return does not change it either.
+	cancelling the return does not change it either. A receipt with no ASN link never
+	touched an ASN, so cancelling it leaves every ASN as it is.
 	"""
 	del method
-	if getattr(doc, "is_return", 0):
+	if getattr(doc, "is_return", 0) or not getattr(doc, "asn", None):
 		return
-	if getattr(doc, "asn", None):
-		_mapped, updated = _record_linked_received_qty(doc, sign=-1)
-		asn_names = [doc.asn] if updated else []
-	else:
-		asn_names = _record_unlinked_received_qty(doc, sign=-1)
-	_refresh_asn_receipt_status(asn_names)
+	_mapped, updated = _record_linked_received_qty(doc, sign=-1)
+	if updated and frappe.db.exists("ASN", doc.asn):
+		frappe.get_doc("ASN", doc.asn).update_receipt_status()
 
 
 def on_purchase_receipt_before_submit(doc, method=None):
@@ -302,10 +308,13 @@ def on_purchase_receipt_before_submit(doc, method=None):
 
 	Runs before_submit so no stock ledger entry is written before the block. The Purchase
 	Order Items this receipt is itself receiving are excluded from the in-transit figure
-	inside breaches_for_purchase_receipt, whether or not this receipt is linked back to an
-	ASN by name.
+	inside breaches_for_purchase_receipt when this receipt is linked to an ASN.
+
+	A receipt with no ASN link may only take quantity no open ASN declares.
 	"""
 	_pair_unmapped_rows(doc)
+	if not getattr(doc, "asn", None) and not getattr(doc, "is_return", 0):
+		refuse_qty_declared_on_open_asns(doc.items)
 	breaches = breaches_for_purchase_receipt(doc)
 	if not breaches:
 		return
@@ -1036,11 +1045,9 @@ def on_purchase_receipt_submit(doc, method):
 
 	_store_invoice_code(doc)
 
-	if doc.asn:
-		mapped_names, _updated = _record_linked_received_qty(doc, sign=1)
-	else:
-		_refresh_asn_receipt_status(_record_unlinked_received_qty(doc, sign=1))
+	if not doc.asn:
 		return
+	mapped_names, _updated = _record_linked_received_qty(doc, sign=1)
 
 	asn = frappe.get_doc("ASN", doc.asn)
 	asn.update_receipt_status()
