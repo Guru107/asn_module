@@ -2,7 +2,6 @@ from collections import Counter
 
 import frappe
 from frappe import _
-from frappe.website.utils import cleanup_page_name
 
 from asn_module.supplier_asn_portal import purchase_receipt_exists_for_asn
 
@@ -64,9 +63,6 @@ def get_context(context):
 	)
 
 	for asn in asn_list:
-		route = (asn.route or "").strip().strip("/")
-		if not route.startswith("asn/"):
-			asn.route = _ensure_asn_route(asn.name)
 		asn.total_items = item_counts.get(asn.name, 0)
 		asn.can_cancel_portal = (
 			asn.docstatus == 1 and asn.status == "Submitted" and asn.name not in asns_with_active_pr
@@ -135,12 +131,6 @@ def has_website_permission(doc, ptype, user=None, verbose=False):
 	return doc.supplier == supplier if supplier else False
 
 
-def _ensure_asn_route(asn_name: str) -> str:
-	route = f"asn/{cleanup_page_name(asn_name).replace('_', '-')}"
-	frappe.db.set_value("ASN", asn_name, "route", route, update_modified=False)
-	return route
-
-
 @frappe.whitelist(methods=["POST"])
 def cancel_portal_asn(asn_name: str | None = None):
 	"""Cancel a submitted ASN for the logged-in portal supplier, if no purchase receipt exists."""
@@ -200,10 +190,7 @@ def submit_portal_asn(asn_name: str | None = None):
 
 	doc.flags.ignore_permissions = True
 	doc.submit()
-	stored_route = (frappe.db.get_value("ASN", doc.name, "route") or "").strip().strip("/")
-	if not stored_route.startswith("asn/"):
-		stored_route = _ensure_asn_route(doc.name)
-	return {"ok": True, "redirect": f"/{stored_route}"}
+	return {"ok": True, "redirect": f"/{doc.route}"}
 
 
 @frappe.whitelist(methods=["POST"])
