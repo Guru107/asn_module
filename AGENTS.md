@@ -1,6 +1,8 @@
 # AGENTS.md
 
-**Read `CLAUDE.md` first.** It holds the rules for every agent: stack, commands, Frappe rules, security, tests, git. This file only adds Cursor Cloud environment notes. If the two disagree, `CLAUDE.md` wins.
+@CLAUDE.md
+
+**Read [CLAUDE.md](CLAUDE.md) first.** It holds the rules for every agent: stack, commands, Frappe rules, security, tests, git. This file only adds Cursor Cloud environment notes. If the two disagree, [CLAUDE.md](CLAUDE.md) wins.
 
 ## Cursor Cloud specific instructions
 
