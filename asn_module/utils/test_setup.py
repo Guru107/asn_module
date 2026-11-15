@@ -10,6 +10,26 @@ from asn_module.stock_cap.models import Breach
 
 TEST_COMPANY_NAME = "_Test Company"
 TEST_COMPANY_ABBR = "_TC"
+TEST_SUPPLIER_GROUP = "_Test ASN Supplier Group"
+
+
+def ensure_leaf_supplier_group() -> str:
+	"""A non-group Supplier Group for test suppliers; ERPNext refuses group-type ones."""
+	if frappe.db.exists("Supplier Group", TEST_SUPPLIER_GROUP):
+		return TEST_SUPPLIER_GROUP
+	parent = frappe.db.get_value("Supplier Group", {"is_group": 1}, "name", order_by="lft asc")
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Supplier Group",
+				"supplier_group_name": TEST_SUPPLIER_GROUP,
+				"parent_supplier_group": parent,
+				"is_group": 0,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _get_erpnext_before_tests() -> Callable[[], None] | None:

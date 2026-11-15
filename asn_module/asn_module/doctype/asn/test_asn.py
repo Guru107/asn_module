@@ -29,6 +29,7 @@ from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
 	disable_hsn_validation,
+	ensure_leaf_supplier_group,
 	make_test_breach,
 	message_log_text,
 	reset_test_item_stock_flags,
@@ -71,16 +72,14 @@ def _ensure_supplier():
 	if frappe.db.exists("Supplier", supplier_name):
 		return supplier_name
 
-	supplier_group = _first_or_none("Supplier Group") or "All Supplier Groups"
-	supplier_data = {
-		"doctype": "Supplier",
-		"supplier_name": supplier_name,
-		"supplier_type": "Company",
-	}
-	if supplier_group:
-		supplier_data["supplier_group"] = supplier_group
-
-	supplier = frappe.get_doc(supplier_data)
+	supplier = frappe.get_doc(
+		{
+			"doctype": "Supplier",
+			"supplier_name": supplier_name,
+			"supplier_type": "Company",
+			"supplier_group": ensure_leaf_supplier_group(),
+		}
+	)
 	supplier.insert(ignore_permissions=True)
 	return supplier.name
 
@@ -908,7 +907,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 					"doctype": "Supplier",
 					"supplier_name": supplier_name,
 					"supplier_type": "Company",
-					"supplier_group": _first_or_none("Supplier Group") or "All Supplier Groups",
+					"supplier_group": ensure_leaf_supplier_group(),
 				}
 			).insert(ignore_permissions=True)
 		cls.supplier = supplier_name
