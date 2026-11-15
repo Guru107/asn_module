@@ -5,6 +5,7 @@ from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_r
 from frappe import _
 from frappe.utils import cint, flt
 
+from asn_module.handlers.gate_pass_create import gate_pass_receive_qty
 from asn_module.handlers.utils import (
 	fill_custom_fiscal_year,
 	store_scan_code,
@@ -588,7 +589,7 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 
 	asn = frappe.get_doc("ASN", gate_pass.asn)
 	pr = map_purchase_receipt_draft_from_gate_pass(gate_pass)
-	_apply_asn_fields(pr, asn, preserve_qty=True)
+	_apply_asn_fields(pr, asn, gate_pass=gate_pass)
 	fill_custom_fiscal_year(pr)
 	pr.insert(ignore_permissions=True)
 
@@ -693,7 +694,7 @@ def stamp_receipt_built_by_gate_pass(doc, method=None) -> None:
 	if doc.doctype == "Purchase Receipt":
 		# Create on the Gate Pass already mapped the quantity received at the gate.
 		# Keep that quantity. The ASN still supplies the link, invoice, batch, and serial.
-		_apply_asn_fields(doc, asn, preserve_qty=True)
+		_apply_asn_fields(doc, asn, gate_pass=frappe.get_doc("Gate Pass", gate_pass_name))
 		return
 	_ensure_subcontracting_receipt_asn_link()
 	doc.meta = frappe.get_meta(doc.doctype)
@@ -825,7 +826,8 @@ def _ensure_subcontracting_receipt_asn_link() -> None:
 	frappe.clear_cache(doctype="Subcontracting Receipt")
 
 
-def _apply_asn_fields(pr, asn, *, preserve_qty: bool = False) -> None:
+def _apply_asn_fields(pr, asn, *, gate_pass=None) -> None:
+	"""Stamp the ASN onto a receipt. With a Gate Pass, keep the qty received at the gate."""
 	pr.supplier = asn.supplier
 	if not getattr(pr, "supplier_name", None):
 		pr.supplier_name = getattr(asn, "supplier_name", None) or asn.supplier
@@ -839,9 +841,14 @@ def _apply_asn_fields(pr, asn, *, preserve_qty: bool = False) -> None:
 	pr.lr_no = asn.lr_no
 	pr.lr_date = asn.lr_date
 
-	_preserve_asn_item_rows(pr, asn.items)
+	if gate_pass is None:
+		_preserve_asn_item_rows(pr, asn.items)
+		asn_lines = asn.items
+	else:
+		# Receipt rows are already one per Gate Pass row; cloning would copy one row's qty.
+		asn_lines = _asn_lines_received_at_gate(asn, gate_pass)
 	asn_items_by_po_item = {}
-	for asn_item in asn.items:
+	for asn_item in asn_lines:
 		asn_items_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
 
 	# Row names do not exist until insert, so the map is stamped afterwards, keyed by
@@ -854,7 +861,7 @@ def _apply_asn_fields(pr, asn, *, preserve_qty: bool = False) -> None:
 		if not asn_item:
 			continue
 
-		if not preserve_qty:
+		if gate_pass is None:
 			pr_item.qty = flt(asn_item.qty)
 			pr_item.stock_qty = flt(asn_item.qty) * flt(pr_item.conversion_factor or 1)
 		pr_item.batch_no = asn_item.batch_no
@@ -863,6 +870,28 @@ def _apply_asn_fields(pr, asn, *, preserve_qty: bool = False) -> None:
 		asn_item_pairs.append((pr_item, asn_item))
 
 	pr._asn_item_pairs = asn_item_pairs
+
+
+def _asn_lines_received_at_gate(asn, gate_pass) -> list:
+	"""ASN lines whose Gate Pass row has Receive Qty, in order.
+
+	The Gate Pass is built one row per ASN line in ASN order, so the k-th row on an order
+	line is the k-th ASN line on it. A row left at 0 drops its own line, not a sibling's.
+	shortcut: pairs by position, so deleting or reordering Gate Pass rows shifts it; upgrade
+	to an ASN Item link on the Gate Pass row if the gate starts editing rows.
+	"""
+	asn_lines_by_po_item = {}
+	for asn_item in asn.items:
+		asn_lines_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
+	received = []
+	for row in gate_pass.get("items") or []:
+		siblings = asn_lines_by_po_item.get(row.purchase_order_item)
+		if not siblings:
+			continue
+		asn_item = siblings.pop(0)
+		if gate_pass_receive_qty(row) > 0:
+			received.append(asn_item)
+	return received
 
 
 def stamp_asn_item_mapping(doc, method=None) -> None:

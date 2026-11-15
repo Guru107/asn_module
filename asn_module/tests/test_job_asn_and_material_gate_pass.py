@@ -4,6 +4,7 @@ from unittest.mock import patch
 import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+from frappe.model.document import Document
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
 
@@ -12,6 +13,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn,
 )
 from asn_module.custom_fields.gate_pass import setup as setup_gate_pass_fields
+from asn_module.handlers.gate_pass_create import create_from_gate_pass
 from asn_module.handlers.purchase_invoice import create_from_purchase_receipt
 from asn_module.handlers.purchase_receipt import (
 	ASN_GATE_PASS_SCAN_ACTION,
@@ -29,6 +31,7 @@ from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
 	patch_subcontracting_incoming_rate,
 )
+from asn_module.handlers.utils import fill_custom_fiscal_year
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.templates.pages import asn_new
@@ -979,6 +982,84 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(flt(receipt.items[0].qty), 1)
 		self.assertEqual(flt(receipt.items[0].received_qty), 1)
 
+	def _submitted_gate_pass_for_two_lines_on_one_order_line(self) -> tuple[Document, str]:
+		"""ASN with two lines (4 and 6) on one Purchase Order Item, through a submitted Gate Pass."""
+		purchase_order = create_purchase_order(qty=10)
+		po_item = purchase_order.items[0]
+		asn = frappe.get_doc(
+			{
+				"doctype": "ASN",
+				"supplier": purchase_order.supplier,
+				"supplier_invoice_no": f"GP-SPLIT-{frappe.generate_hash(length=8)}",
+				"supplier_invoice_date": today(),
+				"expected_delivery_date": today(),
+				"supplier_invoice_amount": 10 * flt(po_item.rate),
+				"vehicle_number": "MH12AB1234",
+				"items": [
+					{
+						"purchase_order": purchase_order.name,
+						"purchase_order_item": po_item.name,
+						"item_code": po_item.item_code,
+						"qty": qty,
+						"uom": po_item.uom,
+						"rate": po_item.rate,
+					}
+					for qty in (4, 6)
+				],
+			}
+		)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		opened = create_gate_pass_from_asn("ASN", asn.name, {})
+		frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
+		return asn, opened["name"]
+
+	def _assert_each_asn_line_gets_its_own_qty(self, asn: Document, receipt: Document) -> None:
+		self.assertEqual(sorted(flt(row.qty) for row in receipt.items), [4, 6])
+		with patch("asn_module.handlers.purchase_receipt.store_scan_code"):
+			receipt.submit()
+		for asn_item in asn.items:
+			self.assertEqual(
+				flt(frappe.db.get_value("ASN Item", asn_item.name, "received_qty")), flt(asn_item.qty)
+			)
+
+	def test_two_asn_lines_on_one_order_line_keep_their_own_qty_through_the_gate_pass(self):
+		with with_gate_pass_mode(True):
+			with integration_user_context():
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				created = create_receipt_from_gate_pass(gate_pass_name)
+
+		self._assert_each_asn_line_gets_its_own_qty(asn, frappe.get_doc("Purchase Receipt", created["name"]))
+
+	def test_a_line_left_at_zero_at_the_gate_does_not_shift_qty_onto_it(self):
+		with with_gate_pass_mode(True):
+			with integration_user_context():
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				first_row = frappe.get_doc("Gate Pass", gate_pass_name).items[0]
+				frappe.db.set_value("Gate Pass Item", first_row.name, "receive_qty", 0, update_modified=False)
+				created = create_receipt_from_gate_pass(gate_pass_name)
+
+		receipt = frappe.get_doc("Purchase Receipt", created["name"])
+		self.assertEqual([flt(row.qty) for row in receipt.items], [6])
+		with patch("asn_module.handlers.purchase_receipt.store_scan_code"):
+			receipt.submit()
+		received = [flt(frappe.db.get_value("ASN Item", row.name, "received_qty")) for row in asn.items]
+		self.assertEqual(received, [0, 6])
+
+	def test_desk_create_keeps_each_asn_lines_own_qty_on_insert(self):
+		with with_gate_pass_mode(True):
+			with integration_user_context():
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				create_from_gate_pass(gate_pass_name)
+				receipt = frappe.response.pop("message")
+				# The stamp hook reads this link; set it where the site lacks the custom field.
+				receipt.custom_gate_pass_reference = gate_pass_name
+				fill_custom_fiscal_year(receipt)  # the desk form fills this before save
+				receipt.insert(ignore_permissions=True)
+
+		self.assertEqual(receipt.asn, asn.name)
+		self._assert_each_asn_line_gets_its_own_qty(asn, receipt)
+
 	def test_create_on_a_submitted_material_gate_pass_opens_a_purchase_receipt_carrying_the_asn(self):
 		with with_gate_pass_mode(True):
 			with integration_user_context():
@@ -1313,11 +1394,16 @@ class TestReceiptHelpers(FrappeTestCase):
 				)
 			],
 		)
+		gate_pass_row = SimpleNamespace(purchase_order_item="POI-1", receive_qty=8)
+		gate_pass = SimpleNamespace(get=lambda field: [gate_pass_row] if field == "items" else None)
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.db.exists", return_value=True),
 			patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", return_value=True),
 			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value="ASN-1"),
-			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
+			patch(
+				"asn_module.handlers.purchase_receipt.frappe.get_doc",
+				side_effect=lambda doctype, _name: gate_pass if doctype == "Gate Pass" else asn,
+			),
 		):
 			stamp_receipt_built_by_gate_pass(receipt)
 
