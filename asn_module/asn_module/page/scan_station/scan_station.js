@@ -70,7 +70,7 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 						{
 							message:
 								frappe.utils.escape_html(
-									__(r.message.message || "Document created")
+									r.message.message || __("Document created")
 								) + doc_link,
 							indicator: "green",
 						},
