@@ -420,46 +420,19 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 	_set_asn_invoice_on_gate_pass(gate_pass, asn)
 	_set_if_present(gate_pass, "asn", asn.name)
 
-	invoice_no = (asn.supplier_invoice_no or "").strip()
-	invoices_field = gate_pass.meta.get_field("gate_pass_invoices")
-	if invoices_field and invoices_field.fieldtype == "Table" and invoice_no:
-		invoice_fields = {df.fieldname for df in frappe.get_meta(invoices_field.options).fields}
-		invoice_row = {}
-		if "supplier_delivery_note" in invoice_fields:
-			invoice_row["supplier_delivery_note"] = invoice_no
-		if "invoice_date" in invoice_fields:
-			invoice_row["invoice_date"] = asn.supplier_invoice_date
-		gate_pass.append("gate_pass_invoices", invoice_row)
-
-	for items_fieldname, items_field in _gate_pass_line_tables(gate_pass):
-		child_fields = {df.fieldname for df in frappe.get_meta(items_field.options).fields}
-		for asn_item in asn.items:
-			order_line = order_lines.get(asn_item.purchase_order_item)
-			shipped_qty = flt(asn_item.qty)
-			row = {}
-			if "item_code" in child_fields:
-				row["item_code"] = asn_item.item_code
-			if "uom" in child_fields:
-				row["uom"] = asn_item.uom
-			if "rate" in child_fields:
-				row["rate"] = asn_item.rate
-			if "purchase_order_item" in child_fields:
-				row["purchase_order_item"] = asn_item.purchase_order_item
-			if "order_item_name" in child_fields:
-				row["order_item_name"] = asn_item.purchase_order_item
-			if "supplier_delivery_note" in child_fields and invoice_no:
-				row["supplier_delivery_note"] = invoice_no
-			if "receive_qty" in child_fields:
-				row["receive_qty"] = shipped_qty
-			if "received_qty" in child_fields:
-				row["received_qty"] = shipped_qty
-			if order_line and "qty" in child_fields:
-				row["qty"] = flt(order_line.qty)
-			if order_line and "ordered_qty" in child_fields:
-				row["ordered_qty"] = flt(order_line.qty)
-			if order_line and "pending_qty" in child_fields:
-				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
-			gate_pass.append(items_fieldname, row)
+	for asn_item in asn.items:
+		order_line = order_lines.get(asn_item.purchase_order_item)
+		row = {
+			"item_code": asn_item.item_code,
+			"uom": asn_item.uom,
+			"rate": asn_item.rate,
+			"purchase_order_item": asn_item.purchase_order_item,
+			"receive_qty": flt(asn_item.qty),
+		}
+		if order_line:
+			row["qty"] = flt(order_line.qty)
+			row["pending_qty"] = flt(order_line.qty) - flt(order_line.received_qty)
+		gate_pass.append("items", row)
 
 	gate_pass.insert()
 
@@ -512,10 +485,6 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
 			gate_pass.append(table_field, row)
 
-	# Material drafts run the site Gate Pass controller. That controller checks
-	# material lines on gate_pass_table, so a Job draft that only fills the job
-	# line table would be rejected. Skip that validation for Job drafts.
-	gate_pass.flags.ignore_validate = True
 	gate_pass.insert(ignore_mandatory=True)
 
 	return {
@@ -745,20 +714,6 @@ def stamp_receipt_built_by_gate_pass(doc, method=None) -> None:
 	if not doc.meta.has_field("asn"):
 		return
 	doc.asn = asn_name
-
-
-def _gate_pass_line_tables(gate_pass) -> list[tuple[str, object]]:
-	"""Child tables that hold material lines.
-
-	Sites that use the Gate Entry app store lines on ``gate_pass_table``. The
-	scan fixture uses ``items``. A site can have both, and each one is filled.
-	"""
-	tables = []
-	for fieldname in ("gate_pass_table", "items"):
-		field = gate_pass.meta.get_field(fieldname)
-		if field and field.fieldtype == "Table":
-			tables.append((fieldname, field))
-	return tables
 
 
 def _is_job_asn(asn) -> bool:
