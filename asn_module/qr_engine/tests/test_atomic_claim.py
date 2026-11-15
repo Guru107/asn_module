@@ -21,7 +21,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import claim_scan_code_for_single_use, get_or_create_scan_code
 from asn_module.qr_engine.tests.test_dispatch import patched_action
-from asn_module.utils.test_setup import before_tests
+from asn_module.utils.test_setup import before_tests, inline_enqueue_patcher
 
 HANDLER = "asn_module.handlers.purchase_receipt.create_from_asn"
 
@@ -66,14 +66,11 @@ class TestAtomicScanClaim(FrappeTestCase):
 
 	def setUp(self):
 		super().setUp()
-		# Some tests here commit for real; that commit must not persist an earlier test's rows.
+		# The concurrency test commits for real; that commit must not persist an earlier test's rows.
 		frappe.db.rollback()
-
-	def _purge_committed_code(self, code):
-		frappe.db.rollback()
-		frappe.db.delete("Scan Log", {"scan_code": code})
-		frappe.db.delete("Scan Code", {"name": code})
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit - purge what dispatch really committed
+		patcher = inline_enqueue_patcher()
+		patcher.start()
+		self.addCleanup(patcher.stop)
 
 	def test_second_claim_on_same_code_throws_already_used(self):
 		"""The conditional UPDATE changes exactly one row; the loser changes none."""
@@ -166,8 +163,6 @@ class TestAtomicScanClaim(FrappeTestCase):
 
 	def test_failed_handler_reverts_claim_and_code_is_rescannable(self):
 		code = _make_scan_code("claim_rollback_action")
-		# The failed dispatch commits its Failure Scan Log, and with it this code.
-		self.addCleanup(self._purge_committed_code, code)
 		observed = {}
 
 		def failing_handler(*args):

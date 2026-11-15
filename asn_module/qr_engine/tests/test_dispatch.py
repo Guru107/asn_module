@@ -1,22 +1,25 @@
 import secrets
 from contextlib import contextmanager
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from asn_module.qr_engine.dispatch import (
+	DISPATCH_RATE_LIMIT,
 	ActionNotFoundError,
 	PermissionDeniedError,
 	_latest_success_document,
 	_resolve_action,
 	dispatch,
+	record_failed_scan,
 )
 from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_ALPHABET,
 	SCAN_CODE_LENGTH,
 	_random_scan_code_value,
 )
+from asn_module.utils.test_setup import inline_enqueue_patcher
 
 SOURCE_DOCTYPE = "DocType"
 SOURCE_NAME = "User"
@@ -58,10 +61,9 @@ def patched_action(action_key, handler, *, source_doctype=SOURCE_DOCTYPE, roles=
 class TestDispatch(FrappeTestCase):
 	def setUp(self):
 		super().setUp()
-		# dispatch commits on failure; a real commit would persist these tests' Scan
-		# Codes past the class rollback. The real commit is covered by
-		# TestDispatchFailureCommit below.
-		patcher = patch.object(frappe.db, "commit")
+		# The failure log is a background job; run it in this transaction. The job
+		# itself is covered by TestDispatchFailureLog below.
+		patcher = inline_enqueue_patcher()
 		patcher.start()
 		self.addCleanup(patcher.stop)
 
@@ -143,7 +145,7 @@ class TestDispatch(FrappeTestCase):
 		self.assertEqual(log["device_info"], "Mobile")
 		self.assertEqual(log["result_doctype"], "ToDo")
 		self.assertEqual(log["result_name"], result["name"])
-		self.assertTrue(frappe.local.flags.commit)
+		self.assertFalse(frappe.local.flags.commit)
 		self.assertEqual(frappe.db.get_value("Scan Code", code, "status"), "Used")
 
 	def test_dispatch_used_scan_code_returns_existing_created_document(self):
@@ -334,7 +336,7 @@ class TestDispatch(FrappeTestCase):
 			with self.assertRaises(frappe.ValidationError):
 				dispatch(code=sc.name, device_info="Desktop")
 
-		commit.assert_called_once()
+		commit.assert_not_called()
 		log = frappe.get_all(
 			"Scan Log",
 			filters={
@@ -454,32 +456,64 @@ class TestDispatch(FrappeTestCase):
 		self.assertEqual(frappe.db.count("Scan Log", success_filters), success_logs_before + 1)
 		log = frappe.get_doc("Scan Log", result["name"])
 		self.assertEqual(log.device_info, "Handheld-Scanner-X")
-		self.assertTrue(frappe.local.flags.commit)
+		self.assertFalse(frappe.local.flags.commit)
 
 
-class TestDispatchFailureCommit(FrappeTestCase):
-	"""A failing dispatch commits so its Scan Log survives a rollback. Commits for real."""
+class TestDispatchFailureLog(FrappeTestCase):
+	"""A failing dispatch commits nothing; a separate job writes its Failure Scan Log."""
 
-	def setUp(self):
-		super().setUp()
-		self.codes = []
-		self.addCleanup(self._purge_committed_rows)
-
-	def _purge_committed_rows(self):
-		frappe.db.rollback()
-		frappe.db.delete("Scan Log", {"scan_code": ("in", self.codes)})
-		frappe.db.delete("Scan Code", {"name": ("in", self.codes)})
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit - purge what this class really committed
-
-	def _make_scan_code(self, action_key):
+	def _failing_dispatch(self, action_key, error):
 		code = _fresh_scan_code(action_key)
-		self.codes.append(code)
+		with (
+			patched_action(action_key, "asn_module.handlers.purchase_receipt.create_gate_pass_from_asn"),
+			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
+			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=error),
+			self.assertRaises(type(error)),
+		):
+			dispatch(code=code, device_info="Desktop")
 		return code
 
-	def test_dispatch_rejects_partial_handler_result_and_logs_failure(self):
-		code = self._make_scan_code("create_purchase_receipt_partial_result")
+	def test_failure_is_logged_by_a_separate_job_without_committing(self):
+		with patch("frappe.enqueue") as enqueue, patch.object(frappe.db, "commit") as commit:
+			code = self._failing_dispatch("create_purchase_receipt_failure", ValueError("handler failed"))
+
+		commit.assert_not_called()
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.args, ("asn_module.qr_engine.dispatch.record_failed_scan",))
+		kwargs = enqueue.call_args.kwargs
+		self.assertEqual(kwargs["scan_code"], code)
+		self.assertEqual(kwargs["device_info"], "Desktop")
+		self.assertIn("handler failed", kwargs["error_message"])
+		# Enqueued immediately: a job queued after commit would be dropped by the rollback.
+		self.assertFalse(kwargs.get("enqueue_after_commit"))
+		self.assertFalse(frappe.db.exists("Scan Log", {"scan_code": code}))
+
+	def test_record_failed_scan_writes_the_failure_log(self):
+		code = _fresh_scan_code("create_purchase_receipt_failure")
+
+		record_failed_scan(
+			action="create_purchase_receipt_failure",
+			source_doctype=SOURCE_DOCTYPE,
+			source_name=SOURCE_NAME,
+			device_info="Desktop",
+			scan_code=code,
+			error_message="handler failed",
+		)
+
+		log = frappe.get_all(
+			"Scan Log",
+			filters={"scan_code": code, "result": "Failure"},
+			fields=["device_info", "error_message", "source_doctype", "source_name"],
+		)[0]
+		self.assertEqual(log["device_info"], "Desktop")
+		self.assertIn("handler failed", log["error_message"])
+		self.assertEqual((log["source_doctype"], log["source_name"]), (SOURCE_DOCTYPE, SOURCE_NAME))
+
+	def test_rejected_partial_handler_result_is_logged_as_failure(self):
+		code = _fresh_scan_code("create_purchase_receipt_partial_result")
 
 		with (
+			inline_enqueue_patcher(),
 			patched_action(
 				"create_purchase_receipt_partial_result",
 				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
@@ -489,45 +523,57 @@ class TestDispatchFailureCommit(FrappeTestCase):
 				"asn_module.qr_engine.dispatch._call_handler",
 				return_value={"doctype": "ToDo", "name": "TODO-001"},
 			),
+			self.assertRaises(frappe.ValidationError),
 		):
-			with self.assertRaises(frappe.ValidationError):
-				dispatch(code=code, device_info="Desktop")
+			dispatch(code=code, device_info="Desktop")
 
-		frappe.db.rollback()
-		success_logs = frappe.get_all(
-			"Scan Log",
-			filters={"scan_code": code, "result": "Success"},
-			pluck="name",
-		)
-		self.assertFalse(success_logs)
-
+		self.assertFalse(frappe.db.exists("Scan Log", {"scan_code": code, "result": "Success"}))
 		failure_logs = frappe.get_all(
-			"Scan Log",
-			filters={"scan_code": code, "result": "Failure"},
-			fields=["error_message"],
+			"Scan Log", filters={"scan_code": code, "result": "Failure"}, fields=["error_message"]
 		)
 		self.assertEqual(len(failure_logs), 1)
 		self.assertIn("handler result", failure_logs[0]["error_message"].lower())
 
-	def test_dispatch_logs_failure_when_handler_raises(self):
-		code = self._make_scan_code("create_purchase_receipt_failure")
 
+class TestDispatchEndpointAccess(FrappeTestCase):
+	def test_dispatch_is_post_only(self):
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[dispatch], ["POST"])
+
+	def test_website_user_is_rejected_without_writing_a_scan_log(self):
+		email = f"portal.scan.{frappe.generate_hash(length=8)}@asn-module.test"
+		frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": email,
+				"first_name": "Portal",
+				"user_type": "Website User",
+				"send_welcome_email": 0,
+			}
+		).insert(ignore_permissions=True)
+		logs_before = frappe.db.count("Scan Log")
+		self.addCleanup(frappe.set_user, frappe.session.user)
+
+		frappe.set_user(email)
+		with patch("frappe.enqueue") as enqueue, self.assertRaises(frappe.PermissionError):
+			dispatch(code="garbage", device_info="Desktop")
+		frappe.set_user("Administrator")
+
+		enqueue.assert_not_called()
+		self.assertEqual(frappe.db.count("Scan Log"), logs_before)
+
+	def test_dispatch_is_rate_limited_per_ip(self):
+		# rate_limit is a no-op without a request, so fake one; the cache is callable (v15) or not (v16).
+		cache = MagicMock()
+		cache.return_value = cache
+		cache.get.return_value = None
+		cache.incrby.return_value = DISPATCH_RATE_LIMIT + 1
 		with (
-			patched_action(
-				"create_purchase_receipt_failure",
-				"asn_module.handlers.purchase_receipt.create_gate_pass_from_asn",
-			),
-			patch("asn_module.qr_engine.dispatch.frappe.get_roles", return_value=["System Manager"]),
-			patch("asn_module.qr_engine.dispatch._call_handler", side_effect=ValueError("handler failed")),
+			patch.object(frappe, "request", MagicMock(), create=True),
+			patch.object(frappe.local, "request_ip", "10.0.0.1", create=True),
+			patch.object(frappe, "cache", cache),
+			patch("frappe.enqueue") as enqueue,
+			self.assertRaises(frappe.RateLimitExceededError),
 		):
-			with self.assertRaises(ValueError):
-				dispatch(code=code, device_info="Desktop")
+			dispatch(code="garbage", device_info="Desktop")
 
-		frappe.db.rollback()
-		log = frappe.get_all(
-			"Scan Log",
-			filters={"scan_code": code, "result": "Failure"},
-			fields=["device_info", "error_message"],
-		)[0]
-		self.assertEqual(log["device_info"], "Desktop")
-		self.assertIn("handler failed", log["error_message"])
+		enqueue.assert_not_called()

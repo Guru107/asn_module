@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 import frappe
 
+from asn_module.utils.test_setup import inline_enqueue_patcher
+
 # Roles required together for create_purchase_receipt + create_purchase_invoice dispatch.
 DEFAULT_INTEGRATION_ROLES = (
 	"Stock User",
@@ -95,14 +97,13 @@ def pin_gate_pass_mode_for_tests(cls) -> None:
 	cls.addClassCleanup(patcher.stop)
 
 
-def block_commits_for_tests(cls) -> None:
-	"""Stop a class's deliberately failing dispatches from committing its fixtures.
+def run_failure_logs_inline_for_tests(cls) -> None:
+	"""Run a class's failure Scan Log jobs inside its test transaction.
 
-	``dispatch`` commits on failure so the failure Scan Log survives. In a test that
-	commit would outlive the class-level rollback. Call this last in ``setUpClass``,
-	after ``before_tests()``, whose own commit must stay real. The real failure-path
-	commit is covered in ``qr_engine/tests/test_dispatch.py``.
+	A failed ``dispatch`` hands its Failure Scan Log to a background job; unpatched, the
+	job would be queued for a worker and the class rollback would orphan it. Call this
+	in ``setUpClass``. The job itself is covered in ``qr_engine/tests/test_dispatch.py``.
 	"""
-	patcher = patch.object(frappe.db, "commit")
+	patcher = inline_enqueue_patcher()
 	patcher.start()
 	cls.addClassCleanup(patcher.stop)

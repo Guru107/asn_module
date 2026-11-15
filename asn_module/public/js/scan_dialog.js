@@ -13,7 +13,7 @@ asn_module.ScanDialog = class ScanDialog {
 					fieldtype: "Data",
 					label: __("Scan or paste code"),
 					description: __(
-						"Scan the QR/barcode or paste the dispatch URL (code=) or raw short code"
+						"Scan the QR/barcode or paste the Scan Station URL (code=) or raw short code"
 					),
 				},
 			],
