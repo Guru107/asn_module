@@ -1,3 +1,4 @@
+import re
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import call, patch
@@ -1589,3 +1590,27 @@ class TestSingleFormSavesDraft(FrappeTestCase):
 
 		self.assertEqual(len(result.asn_names), 1)
 		self.assertEqual(frappe.db.get_value("ASN", result.asn_names[0], "docstatus"), 0)
+
+
+class TestPortalTemplateEscapesServerText(FrappeTestCase):
+	PAYLOAD = "<img src=x onerror=alert(1)>"
+
+	def _render(self, **context) -> str:
+		path = frappe.get_app_path("asn_module", "templates", "pages", "asn_new.html")
+		with open(path) as f:
+			source = f.read()
+		# Drop the web.html layout so only the page body is rendered; Frappe's Jinja has no autoescape.
+		source = re.sub(r"{%\s*(extends|block|endblock)[^%]*%}", "", source)
+		return frappe.render_template(source, context)
+
+	def test_error_lists_escape_server_text(self):
+		html = self._render(
+			single_errors=[{"row_number": 1, "message": self.PAYLOAD}],
+			bulk_errors=[{"invoice_no": self.PAYLOAD, "row_number": 2, "message": self.PAYLOAD}],
+			bulk_submitted_names=self.PAYLOAD,
+			bulk_success=self.PAYLOAD,
+			asn_name=self.PAYLOAD,
+			supplier=self.PAYLOAD,
+		)
+		self.assertNotIn(self.PAYLOAD, html)
+		self.assertIn("&lt;img src=x onerror=alert(1)&gt;", html)

@@ -62,13 +62,16 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 
 				if (r.message && r.message.success) {
 					const doc_link = r.message.url
-						? ` <a href="${r.message.url}">${frappe.utils.escape_html(
-								r.message.name || r.message.url
-						  )}</a>`
+						? ` <a href="${frappe.utils.escape_html(
+								r.message.url
+						  )}">${frappe.utils.escape_html(r.message.name || r.message.url)}</a>`
 						: "";
 					frappe.show_alert(
 						{
-							message: __(r.message.message || "Document created") + doc_link,
+							message:
+								frappe.utils.escape_html(
+									r.message.message || __("Document created")
+								) + doc_link,
 							indicator: "green",
 						},
 						5

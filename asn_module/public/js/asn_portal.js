@@ -27,9 +27,9 @@ window.asnPortal =
 
 		function plainTextForAlert(raw) {
 			if (raw == null || raw === "") return null;
-			const d = document.createElement("div");
-			d.innerHTML = String(raw);
-			const t = (d.textContent || d.innerText || "").replace(/\s+/g, " ").trim();
+			// DOMParser builds an inert document: no scripts run and no <img onerror> fires.
+			const doc = new DOMParser().parseFromString(String(raw), "text/html");
+			const t = (doc.body.textContent || "").replace(/\s+/g, " ").trim();
 			return t || null;
 		}
 
