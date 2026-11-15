@@ -82,7 +82,6 @@ class TestUnitPricePurchaseOrderAsn(FrappeTestCase):
 			supplier=self.supplier,
 			qty=10,
 			warehouse=self.warehouse,
-			do_not_submit=True,
 		)
 		self.item_code = self.po.items[0].item_code
 		frappe.db.set_value(

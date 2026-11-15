@@ -230,7 +230,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		self.assertEqual(
 			pr.asn_items, '{"new-pr-row-1": {"asn_item_name": "ASN-ITEM-001", "original_qty": 3}}'
 		)
-		self.assertEqual(pr.insert_kwargs, {"ignore_permissions": True})
+		self.assertEqual(pr.insert_kwargs, {})  # inserted as the scanning user, permissions apply
 		set_value.assert_called_once_with(
 			"Purchase Receipt", "PR-UNIT-002", "asn_items", pr.asn_items, update_modified=False
 		)

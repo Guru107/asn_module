@@ -267,6 +267,8 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 		action = _resolve_action(action_key)
 		_validate_source_doctype(action["source_doctype"], source_doctype)
 		_check_permission(action["allowed_roles"])
+		# Roles alone ignore User Permissions (e.g. Company); handlers insert as this user.
+		frappe.has_permission(source_doctype, "read", source_name, throw=True)
 
 		if action["source_doctype"] == "ASN":
 			# The ASN handler reopens its own draft. A Used code is not rejected here.
@@ -280,6 +282,7 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 				scan_doc.name,
 			)
 			if logged is not None and not _is_cancelled(logged):
+				logged.check_permission("read")
 				existing_result = {
 					"doctype": logged.doctype,
 					"name": logged.name,

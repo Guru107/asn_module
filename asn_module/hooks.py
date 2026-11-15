@@ -182,6 +182,7 @@ doc_events = {
 	},
 	"Subcontracting Receipt": {
 		"before_insert": "asn_module.handlers.purchase_receipt.stamp_receipt_built_by_gate_pass",
+		"before_submit": "asn_module.handlers.subcontracting.on_subcontracting_receipt_before_submit",
 		"on_submit": "asn_module.handlers.subcontracting.on_subcontracting_receipt_submit",
 		"on_cancel": "asn_module.handlers.subcontracting.on_subcontracting_receipt_cancel",
 	},

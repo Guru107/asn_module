@@ -858,7 +858,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 				purchase_order="PO-0001",
 				sr_no="1",
 				item_code="ITEM-001",
-				uom="",
+				uom="Box",
 				qty=2,
 				rate=10,
 			)

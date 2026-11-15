@@ -3,6 +3,8 @@ from frappe import _
 
 from asn_module.handlers.utils import fill_custom_fiscal_year, store_scan_code
 from asn_module.qr_engine.scan_codes import void_scan_codes
+from asn_module.stock_cap.api import breaches_for_subcontracting_receipt
+from asn_module.stock_cap.messages import throw_stock_cap_exceeded
 
 SUBCONTRACTING_RECEIPT_ACTION_FROM_DISPATCH = "create_subcontracting_receipt_from_dispatch"
 SUBCONTRACTING_RECEIPT_PR_ACTION = "create_purchase_receipt_from_subcontracting_receipt"
@@ -24,7 +26,7 @@ def create_dispatch_from_subcontracting_order(source_doctype: str, source_name: 
 		order_doctype="Subcontracting Order",
 		target_doc=stock_entry,
 	)
-	stock_entry.insert(ignore_permissions=True)
+	stock_entry.insert()
 
 	return {
 		"doctype": "Stock Entry",
@@ -50,7 +52,7 @@ def create_receipt_from_subcontracting_order(source_doctype: str, source_name: s
 
 	scr = make_subcontracting_receipt(sco.name)
 	fill_custom_fiscal_year(scr)
-	scr.insert(ignore_permissions=True)
+	scr.insert()
 
 	return {
 		"doctype": "Subcontracting Receipt",
@@ -112,7 +114,7 @@ def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name:
 
 	pr = make_purchase_receipt(scr.name)
 	fill_custom_fiscal_year(pr)
-	pr.insert(ignore_permissions=True)
+	pr.insert()
 
 	return {
 		"doctype": "Purchase Receipt",
@@ -122,6 +124,17 @@ def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name:
 			pr.name, scr.name
 		),
 	}
+
+
+def on_subcontracting_receipt_before_submit(doc, method=None):
+	"""Block a receipt that would carry a finished good above its branch maximum.
+
+	Runs before_submit so no stock ledger entry is written before the block.
+	"""
+	del method
+	breaches = breaches_for_subcontracting_receipt(doc)
+	if breaches:
+		throw_stock_cap_exceeded(breaches)
 
 
 def on_subcontracting_receipt_submit(doc, method=None):

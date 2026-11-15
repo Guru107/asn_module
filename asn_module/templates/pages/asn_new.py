@@ -223,7 +223,7 @@ def _create_single_asn(supplier: str) -> CreateResult:
 					"purchase_order": row.purchase_order,
 					"purchase_order_item": po_item.name,
 					"item_code": row.item_code,
-					"uom": row.uom or po_item.uom,
+					"uom": po_item.uom,
 					"qty": row.qty,
 					"rate": flt(po_item.rate) if row.rate is None else row.rate,
 				}

@@ -83,6 +83,27 @@ def _ensure_supplier():
 	return supplier.name
 
 
+def _ensure_other_supplier():
+	supplier_name = "_Test ASN Other Supplier"
+	if frappe.db.exists("Supplier", supplier_name):
+		return supplier_name
+
+	supplier = frappe.get_doc(
+		{
+			"doctype": "Supplier",
+			"supplier_name": supplier_name,
+			"supplier_type": "Company",
+			"supplier_group": ensure_leaf_supplier_group(),
+		}
+	)
+	supplier.insert(ignore_permissions=True)
+	return supplier.name
+
+
+def _other_uom(uom: str) -> str:
+	return frappe.get_all("UOM", filters={"name": ["!=", uom]}, pluck="name", limit=1)[0]
+
+
 def _ensure_item(item_code: str = "_Test ASN Item") -> str:
 	if frappe.db.exists("Item", item_code):
 		# Keep the default ASN test item non-inspection to avoid cross-test leakage
@@ -184,7 +205,7 @@ def _normalize_po_dates_for_active_fiscal_year(
 
 
 def make_test_asn(*, purchase_order=None, supplier=None, supplier_invoice_no=None, qty=1):
-	po = purchase_order or create_purchase_order(do_not_submit=True)
+	po = purchase_order or create_purchase_order()
 	po_item = po.items[0]
 
 	return frappe.get_doc(
@@ -337,6 +358,81 @@ class TestASN(FrappeTestCase):
 		before_tests()
 		super().setUpClass()
 
+	def test_insert_rejects_a_row_whose_order_belongs_to_another_supplier(self):
+		asn = make_test_asn(supplier=_ensure_other_supplier())
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("Row 1: Supplier _Test ASN Other Supplier does not match", str(raised.exception))
+
+	def test_insert_rejects_a_line_that_belongs_to_another_purchase_order(self):
+		other_order = create_purchase_order()
+		asn = make_test_asn()
+		asn.items[0].purchase_order_item = other_order.items[0].name
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: Purchase Order line {other_order.items[0].name} belongs to {other_order.name}, not",
+			str(raised.exception),
+		)
+
+	def test_insert_rejects_an_item_that_differs_from_the_order_line(self):
+		asn = make_test_asn()
+		line_item = asn.items[0].item_code
+		asn.items[0].item_code = _ensure_item("_Test ASN Item 2")
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(f"Row 1: Item Code _Test ASN Item 2 does not match {line_item}", str(raised.exception))
+
+	def test_insert_rejects_a_uom_that_differs_from_the_order_line(self):
+		asn = make_test_asn()
+		line_uom = asn.items[0].uom
+		wrong_uom = _other_uom(line_uom)
+		asn.items[0].uom = wrong_uom
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(f"Row 1: UOM {wrong_uom} does not match {line_uom}", str(raised.exception))
+
+	def test_insert_rejects_a_line_of_a_cancelled_purchase_order(self):
+		purchase_order = create_purchase_order()
+		asn = make_test_asn(purchase_order=purchase_order)
+		purchase_order.cancel()
+
+		# Frappe's link check refuses a cancelled order before validate runs.
+		with self.assertRaises(frappe.CancelledLinkError):
+			asn.insert(ignore_permissions=True)
+
+	def test_insert_rejects_a_line_of_a_draft_purchase_order(self):
+		purchase_order = create_purchase_order(do_not_submit=True)
+		asn = make_test_asn(purchase_order=purchase_order)
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: Purchase Order {purchase_order.name} is Draft, not open", str(raised.exception)
+		)
+
+	def test_insert_rejects_a_line_of_a_closed_purchase_order(self):
+		purchase_order = create_purchase_order()
+		frappe.db.set_value("Purchase Order", purchase_order.name, "status", "Closed", update_modified=False)
+		# Zero qty keeps the remaining-qty check, which already refuses shipping, out of the way.
+		asn = make_test_asn(purchase_order=purchase_order, qty=0)
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: Purchase Order {purchase_order.name} is Closed, not open", str(raised.exception)
+		)
+
 	def test_insert_rejects_empty_items(self):
 		asn = make_test_asn()
 		asn.set("items", [])
@@ -393,7 +489,7 @@ class TestASN(FrappeTestCase):
 		duplicate.insert(ignore_permissions=True)
 
 	def test_insert_rejects_shipped_qty_above_remaining_po_qty(self):
-		po = create_purchase_order(qty=10, do_not_submit=True)
+		po = create_purchase_order(qty=10)
 		existing = make_test_asn(purchase_order=po, qty=7)
 		existing.insert(ignore_permissions=True)
 
@@ -403,7 +499,7 @@ class TestASN(FrappeTestCase):
 			over_limit.insert(ignore_permissions=True)
 
 	def test_insert_allows_duplicate_po_item_rows_within_remaining_po_qty(self):
-		po = create_purchase_order(qty=10, do_not_submit=True)
+		po = create_purchase_order(qty=10)
 		asn = make_test_asn(purchase_order=po, qty=4)
 		po_item = po.items[0]
 		asn.append(
@@ -421,7 +517,7 @@ class TestASN(FrappeTestCase):
 		asn.insert(ignore_permissions=True)
 
 	def test_insert_rejects_aggregate_po_qty_across_active_asns_and_duplicate_rows(self):
-		po = create_purchase_order(qty=10, do_not_submit=True)
+		po = create_purchase_order(qty=10)
 		existing = make_test_asn(purchase_order=po, qty=6)
 		existing.insert(ignore_permissions=True)
 
@@ -443,7 +539,7 @@ class TestASN(FrappeTestCase):
 			asn.insert(ignore_permissions=True)
 
 	def test_validate_leaves_a_blank_supplier_invoice_amount(self):
-		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
+		po = create_purchase_order(qty=2, rate=100)
 		asn = make_test_asn(purchase_order=po, qty=2)
 		asn.supplier_invoice_amount = 0
 		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
@@ -451,7 +547,7 @@ class TestASN(FrappeTestCase):
 		self.assertEqual(frappe.utils.flt(asn.supplier_invoice_amount), 0)
 
 	def test_validate_preserves_a_typed_supplier_invoice_amount(self):
-		po = create_purchase_order(qty=2, do_not_submit=True, rate=100)
+		po = create_purchase_order(qty=2, rate=100)
 		asn = make_test_asn(purchase_order=po, qty=2)
 		asn.supplier_invoice_amount = 250
 		asn.validate()
@@ -542,7 +638,6 @@ class TestASN(FrappeTestCase):
 			create_purchase_order,
 			tax_description="_Test ASN Zero Ordered Qty Tax",
 			qty=10,
-			do_not_submit=True,
 		)
 		frappe.db.set_value("Purchase Order Item", po.items[0].name, "qty", 0)
 
@@ -556,7 +651,6 @@ class TestASN(FrappeTestCase):
 			create_purchase_order,
 			tax_description="_Test ASN Missing PO Item Tax",
 			qty=10,
-			do_not_submit=True,
 		)
 		asn = make_test_asn(purchase_order=po, qty=1)
 		asn.items[0].purchase_order_item = "POI-MISSING"
@@ -794,7 +888,7 @@ class TestASN(FrappeTestCase):
 		self.assertEqual(amended.amended_from, asn.name)
 
 	def test_get_purchase_order_items_returns_only_remaining_quantities(self):
-		po = create_purchase_order(qty=10, do_not_submit=True)
+		po = create_purchase_order(qty=10)
 		existing = make_test_asn(purchase_order=po, qty=6)
 		existing.insert(ignore_permissions=True)
 
@@ -811,7 +905,6 @@ class TestASN(FrappeTestCase):
 			create_purchase_order,
 			tax_description="_Test ASN Remaining Qty Tax",
 			qty=10,
-			do_not_submit=True,
 		)
 		withdrawn = make_test_asn(purchase_order=po, qty=9)
 		withdrawn.insert(ignore_permissions=True)
@@ -832,7 +925,6 @@ class TestASN(FrappeTestCase):
 			create_purchase_order,
 			tax_description="_Test ASN Remaining Qty Tax",
 			qty=10,
-			do_not_submit=True,
 		)
 		make_test_asn(purchase_order=po, qty=10).insert(ignore_permissions=True)
 
