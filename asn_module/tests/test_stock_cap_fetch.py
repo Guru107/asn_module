@@ -462,7 +462,7 @@ class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
 	def _in_transit(self, item_code, po_item_receiving_qty=None) -> float:
 		context = fetch_cap_context(
 			[self._line(self.item_a), self._line(self.item_b)],
-			po_item_receiving_qty=po_item_receiving_qty,
+			order_item_receiving_qty=po_item_receiving_qty,
 		)
 		return context.in_transit.get((self.branch, item_code), 0.0)
 
