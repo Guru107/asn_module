@@ -26,7 +26,8 @@
 			"fieldtype": "Link",
 			"in_list_view": 1,
 			"label": "Purchase Order",
-			"options": "Purchase Order"
+			"options": "Purchase Order",
+			"search_index": 1
 		},
 		{
 			"fieldname": "purchase_order_item",
@@ -129,7 +130,7 @@
 	"index_web_pages_for_search": 0,
 	"istable": 1,
 	"links": [],
-	"modified": "2026-10-14 09:00:00.000000",
+	"modified": "2026-11-15 12:00:00.000000",
 	"modified_by": "Administrator",
 	"module": "ASN Module",
 	"name": "ASN Item",
