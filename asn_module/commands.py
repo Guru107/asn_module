@@ -2,6 +2,7 @@
 
 import frappe
 from frappe import _
+from pypika.terms import ExistsCriterion
 
 from asn_module.setup_actions import ACTIONS
 
@@ -18,27 +19,23 @@ def _orphan_scan_code_rows() -> list:
 	"""
 	registry_doctypes = sorted({action["source_doctype"] for action in ACTIONS.values()})
 	installed = set(frappe.get_all("DocType", filters={"name": ("in", registry_doctypes)}, pluck="name"))
-	branches = []
-	params = []
+	sc = frappe.qb.DocType("Scan Code")
+	source_exists = None
 	for doctype in registry_doctypes:
 		if doctype not in installed:
 			continue
-		branches.append(
-			f"(sc.source_doctype = %s"
-			f" AND EXISTS (SELECT 1 FROM `tab{doctype}` src WHERE src.name = sc.source_name))"
+		src = frappe.qb.DocType(doctype)
+		branch = (sc.source_doctype == doctype) & ExistsCriterion(
+			frappe.qb.from_(src).select(1).where(src.name == sc.source_name)
 		)
-		params.append(doctype)
-	if not branches:
+		source_exists = branch if source_exists is None else source_exists | branch
+	if source_exists is None:
 		return frappe.get_all("Scan Code", fields=["name", "scan_code", "source_doctype", "source_name"])
-	return frappe.db.sql(  # nosemgrep: frappe-sql-format-injection - doctypes are code-defined constants; every value is a %s parameter
-		f"""
-		SELECT sc.name, sc.scan_code, sc.source_doctype, sc.source_name
-		FROM `tabScan Code` sc
-		WHERE NOT ({" OR ".join(branches)})
-		""",
-		params,
-		as_dict=True,
-	)
+	return (
+		frappe.qb.from_(sc)
+		.select(sc.name, sc.scan_code, sc.source_doctype, sc.source_name)
+		.where(source_exists.negate())
+	).run(as_dict=True)
 
 
 def verify_scan_code_registry():

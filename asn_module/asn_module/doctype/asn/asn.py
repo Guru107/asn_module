@@ -119,10 +119,8 @@ class ASN(WebsiteGenerator):
 		"""Drop ASN link on cancelled receipts so deletion is not blocked by a stale Link field."""
 		if not frappe.db.has_column("Purchase Receipt", "asn"):
 			return
-		frappe.db.sql(
-			"UPDATE `tabPurchase Receipt` SET `asn` = NULL WHERE `asn` = %s AND `docstatus` = 2",
-			(self.name,),
-		)
+		pr = DocType("Purchase Receipt")
+		(frappe.qb.update(pr).set(pr.asn, None).where((pr.asn == self.name) & (pr.docstatus == 2))).run()
 
 	def _delete_linked_draft_purchase_receipts(self):
 		"""Remove draft PRs created from this ASN so the notice can be deleted after cancel without a manual PR delete."""
