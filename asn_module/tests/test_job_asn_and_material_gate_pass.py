@@ -20,8 +20,8 @@ from asn_module.handlers.purchase_receipt import (
 	ASN_GATE_PASS_SCAN_ACTION,
 	_apply_gate_pass_qty_to_subcontracting_receipt,
 	_apply_shipped_qty_to_subcontracting_receipt,
-	_ensure_gate_pass_asn_link,
 	_get_single_purchase_order,
+	_reopen_uncancelled_gate_pass,
 	_set_if_present,
 	asn_dispatch_action_key,
 	create_gate_pass_from_asn,
@@ -1255,25 +1255,40 @@ class TestMaterialGatePassScan(FrappeTestCase):
 
 		self.assertIn("not set up", str(raised.exception).lower())
 
-	def test_a_missing_asn_link_on_gate_pass_is_added_before_save(self):
-		real_has_column = frappe.db.has_column
-
-		def has_column(doctype, fieldname):
-			if doctype == "Gate Pass" and fieldname == "asn":
-				return False
-			return real_has_column(doctype, fieldname)
-
+	def test_gate_pass_setup_adds_a_missing_asn_link_before_scan_code(self):
+		meta = SimpleNamespace(get_field=lambda _name: None)
 		with (
-			patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", side_effect=has_column),
-			patch(
-				"frappe.custom.doctype.custom_field.custom_field.create_custom_fields"
-			) as create_custom_fields,
+			patch("asn_module.custom_fields.gate_pass.frappe.db.exists", return_value=True),
+			patch("asn_module.custom_fields.gate_pass.frappe.get_meta", return_value=meta),
+			patch("asn_module.custom_fields.gate_pass.create_custom_fields") as create_custom_fields,
 		):
-			_ensure_gate_pass_asn_link()
+			setup_gate_pass_fields()
 
 		fields = create_custom_fields.call_args.args[0]["Gate Pass"]
 		self.assertEqual(fields[0]["fieldname"], "asn")
 		self.assertEqual(fields[0]["options"], "ASN")
+		self.assertEqual(fields[1]["insert_after"], "asn")
+
+	def test_gate_pass_setup_rejects_a_native_asn_field_of_the_wrong_type(self):
+		meta = SimpleNamespace(get_field=lambda _name: SimpleNamespace(fieldtype="Data", options=None))
+		with (
+			patch("asn_module.custom_fields.gate_pass.frappe.db.exists", return_value=True),
+			patch("asn_module.custom_fields.gate_pass.frappe.get_meta", return_value=meta),
+			patch("asn_module.custom_fields.gate_pass.create_custom_fields") as create_custom_fields,
+			self.assertRaises(frappe.ValidationError),
+		):
+			setup_gate_pass_fields()
+		create_custom_fields.assert_not_called()
+
+	def test_scan_fails_clearly_when_gate_pass_has_no_asn_field(self):
+		meta = SimpleNamespace(has_field=lambda _name: False)
+		with (
+			patch("asn_module.handlers.purchase_receipt.frappe.db.exists", return_value=True),
+			patch("asn_module.handlers.purchase_receipt.frappe.get_meta", return_value=meta),
+			self.assertRaises(frappe.ValidationError) as raised,
+		):
+			_reopen_uncancelled_gate_pass(SimpleNamespace(name="ASN-1"))
+		self.assertIn("migrate", str(raised.exception).lower())
 
 	def test_optional_gate_pass_fields_are_left_unset(self):
 		gate_pass = frappe.new_doc("Gate Pass")
@@ -1444,35 +1459,3 @@ class TestReceiptHelpers(FrappeTestCase):
 		self.assertTrue(changed)
 		self.assertEqual(receipt.items[0].qty, 3)
 		self.assertEqual(receipt.items[0].received_qty, 3)
-
-	def test_stamp_installs_the_subcontracting_receipt_asn_link(self):
-		receipt = SimpleNamespace(
-			doctype="Subcontracting Receipt",
-			asn=None,
-			get=lambda field: "GP-1" if field == "custom_gate_pass_reference" else None,
-			meta=SimpleNamespace(has_field=lambda _name: False),
-		)
-
-		def has_column(doctype, fieldname):
-			if doctype == "Gate Pass" and fieldname == "asn":
-				return True
-			if doctype == "Subcontracting Receipt" and fieldname == "asn":
-				return False
-			return True
-
-		with (
-			patch("asn_module.handlers.purchase_receipt.frappe.db.exists", return_value=True),
-			patch("asn_module.handlers.purchase_receipt.frappe.db.has_column", side_effect=has_column),
-			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value="ASN-9"),
-			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=SimpleNamespace()),
-			patch("asn_module.custom_fields.subcontracting_receipt.setup") as setup,
-			patch("asn_module.handlers.purchase_receipt.frappe.clear_cache"),
-			patch(
-				"asn_module.handlers.purchase_receipt.frappe.get_meta",
-				return_value=SimpleNamespace(has_field=lambda name: name == "asn"),
-			),
-		):
-			stamp_receipt_built_by_gate_pass(receipt)
-
-		setup.assert_called_once()
-		self.assertEqual(receipt.asn, "ASN-9")
