@@ -1160,6 +1160,23 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		received = [flt(frappe.db.get_value("ASN Item", row.name, "received_qty")) for row in asn.items]
 		self.assertEqual(received, [0, 6])
 
+	def test_a_second_create_after_a_short_receipt_closed_the_asn_is_refused(self):
+		# The CI Gate Pass has no custom_gate_pass_reference, so only the ASN status stops a second receipt.
+		with with_gate_pass_mode(True):
+			with integration_user_context():
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				first_row = frappe.get_doc("Gate Pass", gate_pass_name).items[0]
+				frappe.db.set_value("Gate Pass Item", first_row.name, "receive_qty", 0, update_modified=False)
+				created = create_receipt_from_gate_pass(gate_pass_name)
+			with patch("asn_module.handlers.purchase_receipt.store_scan_code"):
+				frappe.get_doc("Purchase Receipt", created["name"]).submit()
+			self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Closed")
+
+			with integration_user_context(), self.assertRaises(frappe.ValidationError):
+				create_receipt_from_gate_pass(gate_pass_name)
+
+		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name, "docstatus": ["!=", 2]}), 1)
+
 	def test_desk_create_keeps_each_asn_lines_own_qty_on_insert(self):
 		with with_gate_pass_mode(True):
 			with integration_user_context():

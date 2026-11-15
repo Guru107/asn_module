@@ -632,7 +632,8 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 
 	from asn_module.handlers.gate_pass_create import map_purchase_receipt_draft_from_gate_pass
 
-	asn = frappe.get_doc("ASN", gate_pass.asn)
+	# A Received or Closed ASN takes no further receipt, whichever path filled it.
+	asn = _load_submitted_asn_for_scan(gate_pass.asn)
 	pr = map_purchase_receipt_draft_from_gate_pass(gate_pass)
 	_apply_asn_fields(pr, asn, gate_pass=gate_pass)
 	fill_custom_fiscal_year(pr)
