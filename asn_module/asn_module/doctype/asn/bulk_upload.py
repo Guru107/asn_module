@@ -11,13 +11,13 @@ from asn_module.templates.pages.asn_new_services import (
 )
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["GET"])
 def get_bulk_csv_headers() -> list[str]:
 	_require_desk_bulk_permissions()
 	return BULK_CSV_HEADERS
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_from_csv_file(file_url: str, supplier: str) -> dict:
 	_require_desk_bulk_permissions()
 	if not (file_url or "").strip():

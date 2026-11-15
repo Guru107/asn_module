@@ -62,6 +62,7 @@ frappe.ui.form.on("ASN", {
 			return;
 		}
 		frappe.call({
+			type: "GET",
 			method: "asn_module.asn_module.doctype.asn.asn.get_item_transition_summary",
 			args: { asn: frm.doc.name },
 			callback(r) {
@@ -118,6 +119,7 @@ frappe.ui.form.on("ASN Item", {
 		frm.__is_loading_po_items = true;
 
 		frappe.call({
+			type: "GET",
 			method: "asn_module.asn_module.doctype.asn.asn.get_purchase_order_items",
 			args: { purchase_order: row.purchase_order, asn_name: frm.doc.name },
 			callback(r) {

@@ -36,6 +36,7 @@ function show_asn_bulk_upload_dialog() {
 
 	function download_template() {
 		frappe.call({
+			type: "GET",
 			method: "asn_module.asn_module.doctype.asn.bulk_upload.get_bulk_csv_headers",
 			callback(r) {
 				const headers = r.message || [];
