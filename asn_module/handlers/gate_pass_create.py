@@ -49,21 +49,27 @@ def _row_value(row: Any, fieldname: str):
 	return getattr(row, fieldname, None)
 
 
-def collect_receive_qty_by_po_item(gate_pass: Any) -> tuple[dict[str, float], dict[str, Any]]:
-	qty_by_poi: dict[str, float] = {}
-	row_by_poi: dict[str, Any] = {}
+def gate_pass_receive_qty(row: Any) -> float:
+	receive_qty = flt(_row_value(row, "receive_qty"))
+	return receive_qty if receive_qty > 0 else flt(_row_value(row, "recieve_qty"))
+
+
+def collect_receive_rows_by_po_item(gate_pass: Any) -> dict[str, list[tuple[Any, float]]]:
+	"""Gate Pass rows with Receive Qty, in row order, grouped by Purchase Order Item.
+
+	An ASN may ship one order line as several lines (one per batch), so one order line
+	can have several Gate Pass rows; each keeps its own qty.
+	"""
+	rows_by_poi: dict[str, list[tuple[Any, float]]] = {}
 	for row in _child_rows(gate_pass, "items"):
 		poi = _row_value(row, "purchase_order_item")
 		if not poi:
 			continue
-		receive_qty = flt(_row_value(row, "receive_qty"))
-		if receive_qty <= 0:
-			receive_qty = flt(_row_value(row, "recieve_qty"))
+		receive_qty = gate_pass_receive_qty(row)
 		if receive_qty <= 0:
 			continue
-		qty_by_poi[poi] = receive_qty
-		row_by_poi[poi] = row
-	return qty_by_poi, row_by_poi
+		rows_by_poi.setdefault(poi, []).append((row, receive_qty))
+	return rows_by_poi
 
 
 def apply_item_branches(target: Any, gate_pass: Any) -> None:
@@ -92,20 +98,23 @@ def overlay_gate_pass_onto_mapped_pr(purchase_receipt: Any, gate_pass: Any) -> A
 	_set_field(purchase_receipt, "custom_gate_pass_reference", gate_pass.name)
 	apply_item_branches(purchase_receipt, gate_pass)
 
-	qty_by_poi, row_by_poi = collect_receive_qty_by_po_item(gate_pass)
+	rows_by_poi = collect_receive_rows_by_po_item(gate_pass)
 	for item in _child_rows(purchase_receipt, "items"):
-		poi = item.purchase_order_item
-		if poi not in qty_by_poi:
+		gp_rows = rows_by_poi.get(item.purchase_order_item)
+		if not gp_rows:
 			continue
-		qty = qty_by_poi[poi]
-		conversion = flt(item.conversion_factor) or 1.0
-		item.qty = qty
-		item.received_qty = qty
-		item.stock_qty = qty * conversion
-		gp_row = row_by_poi[poi]
-		_set_field(item, "custom_gate_pass", gate_pass.name)
-		gp_row_name = _row_value(gp_row, "name")
-		_set_field(item, "custom_gate_pass_item", gp_row_name)
+		# One receipt row per Gate Pass row: the mapper gives one row per order line.
+		template = (
+			item.as_dict(no_default_fields=True, no_child_table_fields=True) if len(gp_rows) > 1 else None
+		)
+		for pos, (gp_row, qty) in enumerate(gp_rows):
+			target = item if pos == 0 else purchase_receipt.append("items", dict(template))
+			conversion = flt(target.conversion_factor) or 1.0
+			target.qty = qty
+			target.received_qty = qty
+			target.stock_qty = qty * conversion
+			_set_field(target, "custom_gate_pass", gate_pass.name)
+			_set_field(target, "custom_gate_pass_item", _row_value(gp_row, "name"))
 
 	ensure_load_after_mapping(purchase_receipt)
 	return purchase_receipt
@@ -136,13 +145,13 @@ def throw_if_open_purchase_receipt_for_gate_pass(gate_pass_name: str) -> None:
 def map_purchase_receipt_draft_from_gate_pass(gate_pass: Any, *, recalculate_taxes: bool = False):
 	"""PO-mapped Purchase Receipt draft with Gate Pass qty and site overlays applied."""
 	validate_gate_pass_for_purchase_receipt(gate_pass)
-	qty_by_poi, _row_by_poi = collect_receive_qty_by_po_item(gate_pass)
-	if not qty_by_poi:
+	rows_by_poi = collect_receive_rows_by_po_item(gate_pass)
+	if not rows_by_poi:
 		frappe.throw(_("No Gate Pass lines with Receive Qty to create a Purchase Receipt"))
 
 	doc = make_purchase_receipt(
 		gate_pass.reference_number,
-		args={"filtered_children": list(qty_by_poi.keys())},
+		args={"filtered_children": list(rows_by_poi)},
 	)
 	overlay_gate_pass_onto_mapped_pr(doc, gate_pass)
 	if recalculate_taxes:

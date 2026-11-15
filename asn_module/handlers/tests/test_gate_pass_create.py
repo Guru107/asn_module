@@ -7,7 +7,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt
 
 from asn_module.handlers.gate_pass_create import (
-	collect_receive_qty_by_po_item,
+	collect_receive_rows_by_po_item,
 	create_from_gate_pass,
 	ensure_load_after_mapping,
 	map_purchase_receipt_draft_from_gate_pass,
@@ -45,17 +45,17 @@ def _row(**kwargs):
 
 
 class TestCollectReceiveQty(TestCase):
-	def test_skips_zero_and_maps_receive_qty(self):
+	def test_skips_zero_and_keeps_each_row_on_one_order_line(self):
 		gp = _gp(
 			items=[
-				_row(name="r1", purchase_order_item="poi-a", receive_qty=20),
+				_row(name="r1", purchase_order_item="poi-a", receive_qty=4),
 				_row(name="r2", purchase_order_item="poi-b", receive_qty=0),
-				_row(name="r3", purchase_order_item="poi-c", receive_qty=5),
+				_row(name="r3", purchase_order_item="poi-a", receive_qty=6),
 			],
 		)
-		qty_map, row_map = collect_receive_qty_by_po_item(gp)
-		self.assertEqual(qty_map, {"poi-a": 20.0, "poi-c": 5.0})
-		self.assertEqual(row_map["poi-a"].name, "r1")
+		rows = collect_receive_rows_by_po_item(gp)
+		self.assertEqual(list(rows), ["poi-a"])
+		self.assertEqual([(row.name, qty) for row, qty in rows["poi-a"]], [("r1", 4.0), ("r3", 6.0)])
 
 	def test_reads_recieve_qty_typo_and_dict_rows(self):
 		gp = {
@@ -64,9 +64,9 @@ class TestCollectReceiveQty(TestCase):
 				{"purchase_order_item": "", "receive_qty": 5},
 			]
 		}
-		qty_map, row_map = collect_receive_qty_by_po_item(gp)
-		self.assertEqual(qty_map, {"poi-a": 7.0})
-		self.assertEqual(row_map["poi-a"]["purchase_order_item"], "poi-a")
+		rows = collect_receive_rows_by_po_item(gp)
+		self.assertEqual([qty for _row, qty in rows["poi-a"]], [7.0])
+		self.assertEqual(rows["poi-a"][0][0]["purchase_order_item"], "poi-a")
 
 
 class TestEnsureLoadAfterMapping(TestCase):
