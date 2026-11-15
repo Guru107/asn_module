@@ -517,7 +517,7 @@
 				<div class="tab-pane {% if active_tab != 'bulk' %}active{% endif %}" id="single-pane" role="tabpanel">
 					<div class="asn-form-toolbar">
 						<div>
-							<h2 class="asn-form-title">{% if asn_name %}{{ asn_name }}{% else %}{{ _("New ASN") }}{% endif %}</h2>
+							<h2 class="asn-form-title">{% if asn_name %}{{ asn_name | e }}{% else %}{{ _("New ASN") }}{% endif %}</h2>
 							<div class="asn-indicator{% if asn_name %} asn-indicator-draft{% endif %}">{% if asn_name %}{{ _("Draft") }}{% else %}{{ _("Not Saved") }}{% endif %}</div>
 						</div>
 						<button type="submit" form="single-asn-form" class="btn btn-primary">{{ _("Save") }}</button>
@@ -529,9 +529,9 @@
 							{% for error in single_errors %}
 							<li>
 								{% if error.row_number %}
-								{{ _("Manual row {0}:").format(error.row_number) }}
+								{{ _("Manual row {0}:").format(error.row_number | e) }}
 								{% endif %}
-								{{ error.message }}
+								{{ error.message | e }}
 							</li>
 							{% endfor %}
 						</ul>
@@ -541,13 +541,13 @@
 					<form method="post" id="single-asn-form">
 						<input type="hidden" name="csrf_token" value="{{ frappe.session.csrf_token }}">
 						<input type="hidden" name="mode" value="single">
-						<input type="hidden" name="asn_name" value="{{ asn_name or '' }}">
+						<input type="hidden" name="asn_name" value="{{ (asn_name or '') | e }}">
 
 						<div class="asn-form-section">
 						<h3 class="asn-form-section-title">{{ _("Details") }}</h3>
 						<div class="mb-3">
 							<label class="form-label">{{ _("Supplier") }}</label>
-							<input class="form-control" value="{{ supplier }}" disabled>
+							<input class="form-control" value="{{ supplier | e }}" disabled>
 						</div>
 
 						<div class="row">
@@ -702,21 +702,21 @@
 
 				<div class="tab-pane {% if active_tab == 'bulk' %}active{% endif %}" id="bulk-pane" role="tabpanel">
 					{% if bulk_success %}
-					<div class="alert alert-success">{{ bulk_success }}</div>
+					<div class="alert alert-success">{{ bulk_success | e }}</div>
 					{% endif %}
 					{% if bulk_errors %}
 					<div class="alert alert-danger" role="alert">
 						{% if bulk_submitted_names %}
-						<strong>{{ _("Created and submitted {0}. The remaining invoices were not created.").format(bulk_submitted_names) }}</strong>
+						<strong>{{ _("Created and submitted {0}. The remaining invoices were not created.").format(bulk_submitted_names | e) }}</strong>
 						{% else %}
 						<strong>{{ _("Bulk upload failed. No ASNs created.") }}</strong>
 						{% endif %}
 						<ul class="mb-0 mt-2">
 							{% for error in bulk_errors %}
 							<li>
-								{% if error.invoice_no %}<strong>{{ _("Invoice") }} {{ error.invoice_no }}:</strong>{% endif %}
-								{% if error.row_number %}{{ _("Row {0}:").format(error.row_number) }}{% endif %}
-								{{ error.message }}
+								{% if error.invoice_no %}<strong>{{ _("Invoice") }} {{ error.invoice_no | e }}:</strong>{% endif %}
+								{% if error.row_number %}{{ _("Row {0}:").format(error.row_number | e) }}{% endif %}
+								{{ error.message | e }}
 							</li>
 							{% endfor %}
 						</ul>

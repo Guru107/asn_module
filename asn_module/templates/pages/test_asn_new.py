@@ -1589,3 +1589,14 @@ class TestSingleFormSavesDraft(FrappeTestCase):
 
 		self.assertEqual(len(result.asn_names), 1)
 		self.assertEqual(frappe.db.get_value("ASN", result.asn_names[0], "docstatus"), 0)
+
+
+class TestPortalTemplateEscapesServerText(FrappeTestCase):
+	def test_error_lists_escape_server_text(self):
+		path = frappe.get_app_path("asn_module", "templates", "pages", "asn_new.html")
+		with open(path) as f:
+			source = f.read()
+		# Frappe's Jinja env does not autoescape, so server text must be piped through |e.
+		self.assertNotIn("{{ error.message }}", source)
+		self.assertNotIn("{{ error.invoice_no }}", source)
+		self.assertNotIn("{{ bulk_success }}", source)
