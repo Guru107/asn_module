@@ -121,6 +121,12 @@ class TestHooks(FrappeTestCase):
 			"asn_module.qr_engine.scan_codes.purge_scan_registry_on_trash",
 		)
 
+	def test_subcontracting_receipt_before_submit_runs_the_stock_cap(self):
+		self.assertEqual(
+			hooks.doc_events["Subcontracting Receipt"]["before_submit"],
+			"asn_module.handlers.subcontracting.on_subcontracting_receipt_before_submit",
+		)
+
 	def test_purchase_receipt_doc_events_registers_all_handlers(self):
 		pr_events = hooks.doc_events.get("Purchase Receipt")
 		self.assertIsNotNone(pr_events, "Purchase Receipt entry missing from doc_events")

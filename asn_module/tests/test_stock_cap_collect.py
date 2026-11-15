@@ -7,6 +7,8 @@ from asn_module.stock_cap.collect import (
 	asn_rows_from_doc,
 	collect_lines_from_asn_rows,
 	collect_lines_from_purchase_receipt,
+	collect_lines_from_subcontracting_receipt,
+	subcontracting_order_item_receiving_qty,
 )
 from asn_module.utils.test_setup import (
 	before_tests,
@@ -120,6 +122,62 @@ class TestStockCapCollectPurchaseReceipt(FrappeTestCase):
 		self.assertEqual(lines[0].stock_qty, 4.0)
 
 
+def _subcontracting_receipt_row(**overrides):
+	defaults = {
+		"idx": 1,
+		"item_code": "FG-WIDGET",
+		"warehouse": "Main - MC",
+		"qty": 3.0,
+		"rejected_qty": 0.0,
+		"rejected_warehouse": None,
+		"conversion_factor": 1.0,
+		"subcontracting_order_item": "scoi-1",
+	}
+	defaults.update(overrides)
+	return SimpleNamespace(**defaults)
+
+
+class TestStockCapCollectSubcontractingReceipt(FrappeTestCase):
+	def test_accepted_and_rejected_qty_are_multiplied_by_the_conversion_factor(self):
+		doc = SimpleNamespace(
+			is_return=0,
+			items=[
+				_subcontracting_receipt_row(
+					qty=3.0, rejected_qty=1.0, rejected_warehouse="Quarantine - MC", conversion_factor=2.0
+				)
+			],
+		)
+		lines = collect_lines_from_subcontracting_receipt(doc)
+		self.assertEqual(
+			{line.warehouse: line.stock_qty for line in lines}, {"Main - MC": 6.0, "Quarantine - MC": 2.0}
+		)
+		self.assertEqual({line.branch for line in lines}, {""})
+
+	def test_return_produces_no_lines(self):
+		doc = SimpleNamespace(is_return=1, items=[_subcontracting_receipt_row(qty=-3.0)])
+		self.assertEqual(collect_lines_from_subcontracting_receipt(doc), [])
+
+	def test_scrap_and_secondary_rows_are_not_finished_goods(self):
+		doc = SimpleNamespace(
+			is_return=0,
+			items=[
+				_subcontracting_receipt_row(idx=1),
+				_subcontracting_receipt_row(idx=2, is_scrap_item=1),
+				_subcontracting_receipt_row(idx=3, secondary_item_type="Scrap"),
+			],
+		)
+		self.assertEqual([line.row_idx for line in collect_lines_from_subcontracting_receipt(doc)], [1])
+
+	def test_receiving_qty_is_keyed_by_subcontracting_order_item_only_when_linked_to_an_asn(self):
+		row = _subcontracting_receipt_row(qty=3.0, rejected_qty=1.0, conversion_factor=2.0)
+		linked = SimpleNamespace(is_return=0, asn="ASN-1", items=[row])
+		unlinked = SimpleNamespace(is_return=0, asn=None, items=[row])
+		returned = SimpleNamespace(is_return=1, asn="ASN-1", items=[row])
+		self.assertEqual(subcontracting_order_item_receiving_qty(linked), {"scoi-1": 8.0})
+		self.assertEqual(subcontracting_order_item_receiving_qty(unlinked), {})
+		self.assertEqual(subcontracting_order_item_receiving_qty(returned), {})
+
+
 def _ensure_branch(name: str) -> str:
 	if not frappe.db.exists("Branch", name):
 		frappe.get_doc({"doctype": "Branch", "branch": name}).insert(ignore_permissions=True)
@@ -176,6 +234,7 @@ class TestStockCapCollectASN(FrappeTestCase):
 					idx=1,
 					purchase_order="PO-0001",
 					purchase_order_item="poi-1",
+					subcontracting_order_item=None,
 					item_code="WIDGET",
 					qty=5.0,
 				)
@@ -188,6 +247,7 @@ class TestStockCapCollectASN(FrappeTestCase):
 					"idx": 1,
 					"purchase_order": "PO-0001",
 					"purchase_order_item": "poi-1",
+					"subcontracting_order_item": None,
 					"item_code": "WIDGET",
 					"qty": 5.0,
 				}
