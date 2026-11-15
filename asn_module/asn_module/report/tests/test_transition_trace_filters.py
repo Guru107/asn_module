@@ -126,7 +126,7 @@ class TestTransitionTraceFilters(_ReportTestBase):
 		self._emit(state="OK Status Test", transition_status="OK")
 		self._emit(state="Error Status Test", transition_status="Error", error_code="TEST-ERR")
 
-		_columns, rows = execute({"failures_only": True})
+		_columns, rows = execute({"transition_status": "Error"})
 
 		self.assertIsInstance(rows, list)
 		self.assertTrue(len(rows) > 0, "Expected at least one row with transition_status=Error")
@@ -138,7 +138,7 @@ class TestTransitionTraceFilters(_ReportTestBase):
 
 		self._emit(state="Search Test State", details=f"ASN-ITEM-{search_term}-DETAILS")
 
-		_columns, rows = execute({"search": search_term})
+		_columns, rows = execute({"asn": self._asn_name, "search": search_term})
 
 		self.assertIsInstance(rows, list)
 		self.assertTrue(len(rows) > 0, f"Expected at least one row matching search '{search_term}'")
@@ -149,3 +149,19 @@ class TestTransitionTraceFilters(_ReportTestBase):
 				found = True
 				break
 		self.assertTrue(found, f"Expected to find search term '{search_term}' in details")
+
+	def test_search_requires_asn_or_from_date(self):
+		with self.assertRaises(frappe.ValidationError):
+			execute({"search": "x"})
+
+	def test_search_treats_percent_as_literal(self):
+		self._emit(state="Like Escape Test", details="plain details")
+
+		_columns, rows = execute({"asn": self._asn_name, "search": "%"})
+
+		self.assertEqual(rows, [])
+
+	def test_bad_limit_input_falls_back_to_default(self):
+		_columns, rows = execute({"limit_page_length": "abc", "limit_start": "x"})
+
+		self.assertIsInstance(rows, list)

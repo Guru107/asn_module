@@ -4,7 +4,9 @@ from asn_module.stock_cap.collect import (
 	asn_rows_from_doc,
 	collect_lines_from_asn_rows,
 	collect_lines_from_purchase_receipt,
+	collect_lines_from_subcontracting_receipt,
 	purchase_order_item_receiving_qty,
+	subcontracting_order_item_receiving_qty,
 )
 from asn_module.stock_cap.evaluate import evaluate
 from asn_module.stock_cap.fetch import cap_branch_by_warehouse, fetch_cap_context
@@ -55,12 +57,26 @@ def breaches_for_purchase_receipt(doc) -> list[Breach]:
 	negative in-transit to a sibling. A sibling item on the same ASN that this receipt does
 	not cover is untouched, since it is keyed by a different Purchase Order Item entirely.
 	"""
-	lines = _lines_on_owning_branch(collect_lines_from_purchase_receipt(doc))
+	return _receipt_breaches(collect_lines_from_purchase_receipt(doc), purchase_order_item_receiving_qty(doc))
+
+
+def breaches_for_subcontracting_receipt(doc) -> list[Breach]:
+	"""breaches_for_purchase_receipt for a Subcontracting Receipt's finished goods.
+
+	The quantity a receipt linked to a Job ASN is receiving comes off that ASN's in-transit,
+	keyed by Subcontracting Order Item.
+	"""
+	return _receipt_breaches(
+		collect_lines_from_subcontracting_receipt(doc), subcontracting_order_item_receiving_qty(doc)
+	)
+
+
+def _receipt_breaches(lines: list[Line], receiving_qty: dict[str, float]) -> list[Breach]:
+	lines = _lines_on_owning_branch(lines)
 	if not lines:
 		return []
 
-	receiving_qty = purchase_order_item_receiving_qty(doc)
-	context = fetch_cap_context(lines, po_item_receiving_qty=receiving_qty)
+	context = fetch_cap_context(lines, order_item_receiving_qty=receiving_qty)
 	breaches, _accepted = evaluate(lines, context)
 	return breaches
 

@@ -91,7 +91,7 @@ def _create_receipt_from_asn(asn, source_name: str) -> dict:
 	_apply_asn_fields(pr, asn)
 	fill_custom_fiscal_year(pr)
 
-	pr.insert(ignore_permissions=True)
+	pr.insert()
 
 	for asn_item in asn.items:
 		emit_asn_item_transition(
@@ -298,9 +298,18 @@ def on_purchase_receipt_cancel(doc, method=None):
 	del method
 	if getattr(doc, "is_return", 0) or not getattr(doc, "asn", None):
 		return
-	_mapped, updated = _record_linked_received_qty(doc, sign=-1)
+	mapped_names, updated = _record_linked_received_qty(doc, sign=-1)
 	if updated and frappe.db.exists("ASN", doc.asn):
 		frappe.get_doc("ASN", doc.asn).update_receipt_status()
+	for asn_item_name, item_code in _asn_item_codes(mapped_names).items():
+		emit_asn_item_transition(
+			asn=doc.asn,
+			asn_item=asn_item_name,
+			item_code=item_code,
+			state="PR_CANCELLED",
+			ref_doctype="Purchase Receipt",
+			ref_name=doc.name,
+		)
 
 
 def on_purchase_receipt_before_submit(doc, method=None):
@@ -452,7 +461,7 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
 			gate_pass.append(items_fieldname, row)
 
-	gate_pass.insert(ignore_permissions=True)
+	gate_pass.insert()
 
 	return {
 		"doctype": "Gate Pass",
@@ -507,7 +516,7 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 	# material lines on gate_pass_table, so a Job draft that only fills the job
 	# line table would be rejected. Skip that validation for Job drafts.
 	gate_pass.flags.ignore_validate = True
-	gate_pass.insert(ignore_permissions=True, ignore_mandatory=True)
+	gate_pass.insert(ignore_mandatory=True)
 
 	return {
 		"doctype": "Gate Pass",
@@ -561,7 +570,6 @@ def _job_line_table(gate_pass) -> tuple[str | None, set[str]]:
 GATE_PASS_RECEIPT_ACTION = "create_receipt_from_gate_pass"
 
 
-@frappe.whitelist(methods=["POST"])
 def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 	"""Open the draft receipt for a submitted Gate Pass.
 
@@ -571,6 +579,7 @@ def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 	"""
 	frappe.only_for(("Stock User", "Stock Manager"))
 	gate_pass = frappe.get_doc("Gate Pass", gate_pass_name)
+	frappe.has_permission("Gate Pass", "read", gate_pass, throw=True)
 	if cint(gate_pass.docstatus) != 1:
 		frappe.throw(_("Submit the Gate Pass before creating a receipt."))
 	if not (getattr(gate_pass, "asn", None) or "").strip():
@@ -627,7 +636,7 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 	pr = map_purchase_receipt_draft_from_gate_pass(gate_pass)
 	_apply_asn_fields(pr, asn, gate_pass=gate_pass)
 	fill_custom_fiscal_year(pr)
-	pr.insert(ignore_permissions=True)
+	pr.insert()
 
 	for asn_item in asn.items:
 		emit_asn_item_transition(
@@ -653,7 +662,7 @@ def _create_subcontracting_receipt_from_gate_pass(gate_pass) -> dict:
 	result = _open_or_create_subcontracting_receipt(asn)
 	receipt = frappe.get_doc("Subcontracting Receipt", result["name"])
 	if _apply_gate_pass_qty_to_subcontracting_receipt(receipt, gate_pass):
-		receipt.save(ignore_permissions=True)
+		receipt.save()
 	return result
 
 
@@ -798,7 +807,7 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 	_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
 	receipt.asn = asn.name
 	fill_custom_fiscal_year(receipt)
-	receipt.insert(ignore_permissions=True)
+	receipt.insert()
 
 	return {
 		"doctype": "Subcontracting Receipt",
@@ -1024,14 +1033,7 @@ def on_purchase_receipt_submit(doc, method):
 	if not mapped_names:
 		return
 
-	asn_item_codes = {
-		row.name: row.item_code
-		for row in frappe.get_all(
-			"ASN Item",
-			filters={"name": ["in", mapped_names]},
-			fields=["name", "item_code"],
-		)
-	}
+	asn_item_codes = _asn_item_codes(mapped_names)
 
 	for asn_item_name in mapped_names:
 		emit_asn_item_transition(
@@ -1043,6 +1045,19 @@ def on_purchase_receipt_submit(doc, method):
 			ref_doctype="Purchase Receipt",
 			ref_name=doc.name,
 		)
+
+
+def _asn_item_codes(asn_item_names: list[str]) -> dict[str, str]:
+	if not asn_item_names:
+		return {}
+	return {
+		row.name: row.item_code
+		for row in frappe.get_all(
+			"ASN Item",
+			filters={"name": ["in", asn_item_names]},
+			fields=["name", "item_code"],
+		)
+	}
 
 
 def _store_invoice_code(doc) -> None:

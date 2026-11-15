@@ -117,6 +117,12 @@ class TestMapPurchaseReceiptDraftHelpers(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			map_purchase_receipt_draft_from_gate_pass(gp)
 
+	def test_create_from_gate_pass_is_get_only_and_the_receipt_creator_is_not_an_endpoint(self):
+		from asn_module.handlers.purchase_receipt import create_receipt_from_gate_pass
+
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[create_from_gate_pass], ["GET"])
+		self.assertNotIn(create_receipt_from_gate_pass, frappe.whitelisted)
+
 	def test_create_from_gate_pass_requires_name(self):
 		with self.assertRaises(frappe.ValidationError):
 			create_from_gate_pass("")
@@ -168,8 +174,10 @@ class TestMapPurchaseReceiptDraft(FrappeTestCase):
 		from asn_module.handlers.gate_pass_create import create_from_gate_pass
 		from asn_module.handlers.purchase_receipt import _open_or_create_material_gate_pass
 		from asn_module.tests.integration.fixtures import integration_user_context
+		from asn_module.tests.test_job_asn_and_material_gate_pass import ensure_gate_pass_for_tests
 
 		before_tests()
+		ensure_gate_pass_for_tests()
 		with integration_user_context():
 			purchase_order = create_purchase_order(qty=3)
 			asn = make_test_asn(

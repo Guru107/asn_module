@@ -159,14 +159,16 @@ def map_purchase_receipt_draft_from_gate_pass(gate_pass: Any, *, recalculate_tax
 	return doc
 
 
-@frappe.whitelist()
-def create_from_gate_pass(source_name: str):
+@frappe.whitelist(methods=["GET"])
+def create_from_gate_pass(source_name: str) -> None:
 	"""Desk-aligned Create from Gate Pass. Returns an unsaved Purchase Receipt draft."""
 	frappe.only_for(("Stock User", "Stock Manager"))
 	if not source_name:
 		frappe.throw(_("Gate Pass name is required"))
 
 	gate_pass = frappe.get_doc("Gate Pass", source_name)
+	frappe.has_permission("Gate Pass", "read", gate_pass, throw=True)
+	frappe.has_permission("Purchase Receipt", "create", throw=True)
 	if gate_pass.entry_type != "Gate In" or gate_pass.document_reference != "Purchase Order":
 		frappe.throw(
 			_("No Create mapping for {0} + {1}").format(gate_pass.entry_type, gate_pass.document_reference)

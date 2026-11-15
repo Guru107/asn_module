@@ -11,7 +11,7 @@ EXCLUDED_ASN_STATUSES = ("Received", "Closed")
 def fetch_cap_context(
 	lines: list[Line],
 	exclude_asn_name: str | None = None,
-	po_item_receiving_qty: dict[str, float] | None = None,
+	order_item_receiving_qty: dict[str, float] | None = None,
 ) -> CapContext:
 	"""Run every read the evaluator needs and return plain data. Makes no decisions.
 
@@ -21,15 +21,16 @@ def fetch_cap_context(
 	``exclude_asn_name`` drops the ASN currently being saved from its own in-transit total
 	(the ASN controller path, where the document being evaluated *is* the ASN).
 
-	``po_item_receiving_qty`` subtracts, per Purchase Order Item, the stock-UOM quantity a
-	Purchase Receipt is actually receiving from that Purchase Order Item's in-transit
-	total (the Purchase Receipt path). Only a receipt linked to an ASN passes any: one with
-	no link never fills an ASN, so the ASN stays in transit (see
+	``order_item_receiving_qty`` subtracts, per order line, the stock-UOM quantity a
+	receipt is actually receiving from that line's in-transit total (the receipt path). A
+	Purchase Receipt keys it by Purchase Order Item, a Subcontracting Receipt by
+	Subcontracting Order Item. Only a receipt linked to an ASN passes any: one with no link
+	never fills an ASN, so the ASN stays in transit (see
 	collect.py:purchase_order_item_receiving_qty). It subtracts a quantity rather than
-	dropping rows outright so a partial receipt, or a second ASN shipping the same Purchase
-	Order Item, keeps its own still-undelivered remainder counted (see _fetch_in_transit).
+	dropping rows outright so a partial receipt, or a second ASN shipping the same order
+	line, keeps its own still-undelivered remainder counted (see _fetch_in_transit).
 	They are separate parameters, not one overloaded to mean two things, because an ASN
-	save has no Purchase Order Items of its own to receive against.
+	save has no order lines of its own to receive against.
 	"""
 	if not lines:
 		return CapContext(cap_warehouses={}, max_stock={}, on_hand={}, in_transit={})
@@ -55,7 +56,7 @@ def fetch_cap_context(
 			all_warehouses,
 			branch_by_warehouse,
 			exclude_asn_name=exclude_asn_name,
-			po_item_receiving_qty=po_item_receiving_qty,
+			order_item_receiving_qty=order_item_receiving_qty,
 		),
 	)
 
@@ -197,71 +198,95 @@ def _fetch_in_transit(
 	warehouses: list[str],
 	branch_by_warehouse: dict[str, str],
 	exclude_asn_name: str | None = None,
-	po_item_receiving_qty: dict[str, float] | None = None,
+	order_item_receiving_qty: dict[str, float] | None = None,
 ) -> dict[tuple[str, str], float]:
 	"""Undelivered quantity on other submitted ASNs, converted to stock UOM.
 
-	One query returns the undelivered stock-UOM qty per (Purchase Order Item, item_code,
-	effective warehouse). Each ASN Item row is clamped at zero first, so an over-receipted
-	line cannot lend negative in-transit to its siblings.
+	One query returns the undelivered stock-UOM qty per (order line, item_code, effective
+	warehouse). The order line is the Purchase Order Item of a Material ASN row, or the
+	Subcontracting Order Item of a Job ASN row. Each ASN Item row is clamped at zero first,
+	so an over-receipted line cannot lend negative in-transit to its siblings.
 
-	``po_item_receiving_qty`` -- stock-UOM quantity a Purchase Receipt is actually
-	receiving, keyed by Purchase Order Item -- is subtracted from that Purchase Order
-	Item's subtotal and clamped at zero *per Purchase Order Item*, so an over-receipt of
-	one Purchase Order Item cannot eat into a different one's quantity even when both land
-	in the same item_code and warehouse. The remainders are then pooled to branch.
+	``order_item_receiving_qty`` -- stock-UOM quantity a receipt is actually receiving,
+	keyed by order line -- is subtracted from that line's subtotal and clamped at zero *per
+	order line*, so an over-receipt of one line cannot eat into a different one's quantity
+	even when both land in the same item_code and warehouse. The remainders are then
+	pooled to branch.
 
-	The effective warehouse is ``poi.warehouse`` when set, else ``po.set_warehouse``. It is
-	two ``UNION ALL`` legs rather than ``COALESCE`` in ``WHERE`` so each predicate can use
-	an index (see ``docs/CodingConventions.md`` MariaDB section).
+	For a Material ASN row the effective warehouse is ``poi.warehouse`` when set, else
+	``po.set_warehouse``. It is two ``UNION ALL`` legs rather than ``COALESCE`` in ``WHERE``
+	so each predicate can use an index (see ``docs/CodingConventions.md`` MariaDB section).
 	"""
 	asn_item = DocType("ASN Item")
 	asn = DocType("ASN")
 	po_item = DocType("Purchase Order Item")
 	po = DocType("Purchase Order")
+	sco_item = DocType("Subcontracting Order Item")
 
-	# GREATEST clamps over-receipts at zero; a missing or non-positive factor means 1.
-	conversion = Case().when(IfNull(po_item.conversion_factor, 0) > 0, po_item.conversion_factor).else_(1)
-	undelivered = Function("GREATEST", asn_item.qty - IfNull(asn_item.received_qty, 0), 0) * conversion
+	def undelivered(conversion_factor):
+		# GREATEST clamps over-receipts at zero; a missing or non-positive factor means 1.
+		factor = Case().when(IfNull(conversion_factor, 0) > 0, conversion_factor).else_(1)
+		return Function("GREATEST", asn_item.qty - IfNull(asn_item.received_qty, 0), 0) * factor
 
-	def leg(warehouse_field, warehouse_filter):
+	def open_asn_lines(order_line, order_line_link):
 		query = (
 			frappe.qb.from_(asn_item)
 			.inner_join(asn)
 			.on(asn.name == asn_item.parent)
-			.inner_join(po_item)
-			.on(po_item.name == asn_item.purchase_order_item)
-			.inner_join(po)
-			.on(po.name == po_item.parent)
-			.select(
-				asn_item.purchase_order_item.as_("purchase_order_item"),
-				po_item.item_code.as_("item_code"),
-				warehouse_field.as_("warehouse"),
-				Sum(undelivered).as_("qty"),
-			)
+			.inner_join(order_line)
+			.on(order_line.name == order_line_link)
 			.where(asn.docstatus == 1)
 			.where(asn.status.notin(EXCLUDED_ASN_STATUSES))
-			.where(po_item.item_code.isin(item_codes))
-			.where(warehouse_filter)
-			.groupby(asn_item.purchase_order_item, po_item.item_code, warehouse_field)
+			.where(order_line.item_code.isin(item_codes))
 		)
 		if exclude_asn_name:
 			query = query.where(asn.name != exclude_asn_name)
 		return query
 
+	def material_leg(warehouse_field, warehouse_filter):
+		return (
+			open_asn_lines(po_item, asn_item.purchase_order_item)
+			.inner_join(po)
+			.on(po.name == po_item.parent)
+			.select(
+				asn_item.purchase_order_item.as_("order_item"),
+				po_item.item_code.as_("item_code"),
+				warehouse_field.as_("warehouse"),
+				Sum(undelivered(po_item.conversion_factor)).as_("qty"),
+			)
+			.where(warehouse_filter)
+			.groupby(asn_item.purchase_order_item, po_item.item_code, warehouse_field)
+		)
+
+	# Subcontracting Order Item.warehouse is mandatory, so a Job ASN needs no fallback leg.
+	job_leg = (
+		open_asn_lines(sco_item, asn_item.subcontracting_order_item)
+		.select(
+			asn_item.subcontracting_order_item.as_("order_item"),
+			sco_item.item_code.as_("item_code"),
+			sco_item.warehouse.as_("warehouse"),
+			Sum(undelivered(sco_item.conversion_factor)).as_("qty"),
+		)
+		.where(sco_item.warehouse.isin(warehouses))
+		.groupby(asn_item.subcontracting_order_item, sco_item.item_code, sco_item.warehouse)
+	)
+
 	rows = (
-		leg(po_item.warehouse, po_item.warehouse.isin(warehouses))
-		.union_all(leg(po.set_warehouse, po_item.warehouse.isnull() & po.set_warehouse.isin(warehouses)))
+		material_leg(po_item.warehouse, po_item.warehouse.isin(warehouses))
+		.union_all(
+			material_leg(po.set_warehouse, po_item.warehouse.isnull() & po.set_warehouse.isin(warehouses))
+		)
+		.union_all(job_leg)
 		.run(as_dict=True)
 	)
 
-	receiving_qty = {item: qty for item, qty in (po_item_receiving_qty or {}).items() if qty and qty > 0}
+	receiving_qty = {item: qty for item, qty in (order_item_receiving_qty or {}).items() if qty and qty > 0}
 	totals: dict[tuple[str, str], float] = {}
 	for row in rows:
 		branch = branch_by_warehouse.get(row["warehouse"])
 		if not branch:
 			continue
-		remaining = max(flt(row["qty"]) - flt(receiving_qty.get(row["purchase_order_item"])), 0.0)
+		remaining = max(flt(row["qty"]) - flt(receiving_qty.get(row["order_item"])), 0.0)
 		key = (branch, row["item_code"])
 		totals[key] = totals.get(key, 0.0) + remaining
 	return totals
