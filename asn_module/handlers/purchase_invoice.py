@@ -91,7 +91,7 @@ def on_purchase_invoice_before_submit(doc, method=None):
 				stock_qty=row.get("stock_qty"),
 				conversion_factor=row.get("conversion_factor"),
 			)
-			for row in doc.items or []
+			for row in doc.get("items") or []
 			if row.get("po_detail") and not row.get("purchase_receipt")
 		]
 	)
