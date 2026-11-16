@@ -20,13 +20,17 @@ from asn_module.templates.pages.asn import (
 )
 
 
+# The portal dropdowns ask for 200; a client may not ask for more.
+MAX_PAGE_LEN = 200
+
+
 def _normalize_paging(start: int | str, page_len: int | str) -> tuple[int, int]:
 	try:
 		start_int = max(int(start), 0)
 	except (TypeError, ValueError):
 		start_int = 0
 	try:
-		page_len_int = max(int(page_len), 1)
+		page_len_int = min(max(int(page_len), 1), MAX_PAGE_LEN)
 	except (TypeError, ValueError):
 		page_len_int = 20
 	return start_int, page_len_int

@@ -23,6 +23,10 @@ class TestASNNewSearch(FrappeTestCase):
 		self.assertEqual(start, 0)
 		self.assertEqual(page_len, 1)
 
+	def test_normalize_paging_caps_page_len(self):
+		_, page_len = asn_new_search._normalize_paging(0, 10**6)
+		self.assertEqual(page_len, asn_new_search.MAX_PAGE_LEN)
+
 	def test_search_open_purchase_orders_returns_supplier_open_pos(self):
 		with (
 			patch(
