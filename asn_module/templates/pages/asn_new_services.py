@@ -870,17 +870,12 @@ def _claim_supplier_invoice(supplier: str, invoice_no: str | None) -> None:
 		"name",
 		for_update=True,
 	):
+		message = _(
+			"Invoice {0}: a notice with this supplier invoice number was already created, "
+			"possibly by an earlier upload. It was not created again."
+		).format(invoice_no)
 		raise PortalValidationError(
-			[
-				error_entry(
-					field="supplier_invoice_no",
-					invoice_no=invoice_no,
-					message=_(
-						"Invoice {0}: a notice with this supplier invoice number was already created, "
-						"possibly by an earlier upload. It was not created again."
-					).format(invoice_no),
-				)
-			]
+			[error_entry(field="supplier_invoice_no", invoice_no=invoice_no, message=message)]
 		)
 
 
