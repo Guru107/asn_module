@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import escape_html, flt
 
 from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
-from asn_module.stock_cap.api import breaches_for_asn_rows
+from asn_module.stock_cap.api import asn_rows_cap_check, breaches_for_asn_rows
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.templates.pages.asn import (
 	get_open_purchase_orders_for_supplier,
@@ -18,6 +19,11 @@ from asn_module.templates.pages.asn import (
 
 MAX_BULK_ROWS = 5000
 MAX_BULK_INVOICES = 500
+# Errors shown for one upload; the rest are summed up in one line.
+MAX_BULK_ERRORS = 50
+BULK_ASN_JOB = "asn_module.templates.pages.asn_new_services.create_bulk_asns_job"
+# Seconds: up to MAX_BULK_INVOICES inserts and submits, at most ~6 s each.
+BULK_ASN_JOB_TIMEOUT = MAX_BULK_INVOICES * 6
 BULK_CSV_HEADERS = [
 	"supplier_invoice_no",
 	"supplier_invoice_date",
@@ -49,7 +55,6 @@ INVOICE_GROUP_FIELDS = (
 @dataclass
 class PortalValidationError(Exception):
 	errors: list[dict]
-	created_asn_names: tuple[str, ...] = ()
 
 	def __str__(self):
 		return "\n".join(error.get("message", "") for error in self.errors)
@@ -125,6 +130,8 @@ def parse_bulk_csv_content(content: bytes) -> list[ParsedBulkRow]:
 	rows: list[ParsedBulkRow] = []
 	errors: list[dict] = []
 	for line_no, raw in enumerate(reader, start=2):
+		if line_no - 1 > MAX_BULK_ROWS:
+			_raise_too_many_rows()
 		invoice_no = (raw.get("supplier_invoice_no") or "").strip()
 		missing = []
 		for field in ("supplier_invoice_no", "purchase_order", "sr_no", "item_code", "qty"):
@@ -179,8 +186,22 @@ def parse_bulk_csv_content(content: bytes) -> list[ParsedBulkRow]:
 		)
 
 	if errors:
-		raise PortalValidationError(errors)
+		raise PortalValidationError(bounded_errors(errors))
 	return rows
+
+
+def bounded_errors(errors: list[dict]) -> list[dict]:
+	"""Keep the first MAX_BULK_ERRORS errors and say how many more there were."""
+	if len(errors) <= MAX_BULK_ERRORS:
+		return errors
+	hidden = len(errors) - MAX_BULK_ERRORS
+	return [
+		*errors[:MAX_BULK_ERRORS],
+		error_entry(
+			field="bulk",
+			message=_("{0} more errors are not shown. Fix the errors above and upload again.").format(hidden),
+		),
+	]
 
 
 def validate_supplier_invoices_not_reused(
@@ -417,28 +438,29 @@ def validate_qty_within_remaining(
 		qty=qty,
 		row_number=row_number,
 	)
-	if cap_message:
-		raise PortalValidationError(
-			[
-				error_entry(
-					row_number=row_number,
-					field="qty",
-					invoice_no=invoice_no,
-					message=cap_message,
-				)
-			]
-		)
 	raise PortalValidationError(
 		[
-			error_entry(
+			_over_remaining_error(
 				row_number=row_number,
-				field="qty",
 				invoice_no=invoice_no,
-				message=_("Row {0}: qty {1} exceeds remaining PO qty {2}.").format(
-					row_number, qty, remaining
-				),
+				qty=qty,
+				remaining=remaining,
+				cap_message=cap_message,
 			)
 		]
+	)
+
+
+def _over_remaining_error(
+	*, row_number: int, invoice_no: str | None, qty: float, remaining: float, cap_message: str | None
+) -> dict:
+	"""A Stock Cap refusal explains the excess better than the Remaining Qty figure, so it wins."""
+	return error_entry(
+		row_number=row_number,
+		field="qty",
+		invoice_no=invoice_no,
+		message=cap_message
+		or _("Row {0}: qty {1} exceeds remaining PO qty {2}.").format(row_number, qty, remaining),
 	)
 
 
@@ -493,14 +515,18 @@ def normalize_group_field(field: str, value: str | None) -> str:
 
 def enforce_bulk_limits(rows: list[ParsedBulkRow]):
 	if len(rows) > MAX_BULK_ROWS:
-		raise PortalValidationError(
-			[
-				error_entry(
-					field="items_csv",
-					message=_("Bulk upload supports up to {0} rows.").format(MAX_BULK_ROWS),
-				)
-			]
-		)
+		_raise_too_many_rows()
+
+
+def _raise_too_many_rows():
+	raise PortalValidationError(
+		[
+			error_entry(
+				field="items_csv",
+				message=_("Bulk upload supports up to {0} rows.").format(MAX_BULK_ROWS),
+			)
+		]
+	)
 
 
 def validate_bulk_group_count(invoice_groups: dict[str, list[ParsedBulkRow]]):
@@ -608,22 +634,12 @@ def _invoice_header(row: ParsedBulkRow) -> dict:
 	}
 
 
-def _accept_rows_within_remaining(
+def _resolve_bulk_rows(
 	rows: list[ParsedBulkRow],
-	*,
 	rows_by_key: dict[tuple[str, str], list[frappe._dict]],
-	remaining_qty_by_name: dict[str, float | None],
-	invoices_that_do_not_consume: set[str] | None = None,
-) -> tuple[dict[str, list[tuple[ParsedBulkRow, frappe._dict]]], list[dict]]:
-	"""Take Remaining Qty in file order. A row that does not fit leaves the figure unchanged.
-
-	``invoices_that_do_not_consume`` are groups the Stock Cap has already refused. Their
-	rows are still checked, so a real excess is reported, but they are not created and
-	must not reduce what a later row sees.
-	"""
-	running_remaining = dict(remaining_qty_by_name)
-	does_not_consume = invoices_that_do_not_consume or set()
-	accepted: dict[str, list[tuple[ParsedBulkRow, frappe._dict]]] = {}
+) -> tuple[list[tuple[ParsedBulkRow, frappe._dict]], list[dict]]:
+	"""Match each row to its Purchase Order Item, in file order."""
+	resolved: list[tuple[ParsedBulkRow, frappe._dict]] = []
 	errors: list[dict] = []
 	for row in sorted(rows, key=lambda item: item.row_number):
 		try:
@@ -635,17 +651,55 @@ def _accept_rows_within_remaining(
 				invoice_no=row.supplier_invoice_no,
 				rows_by_key=rows_by_key,
 			)
-			validate_qty_within_remaining(
-				purchase_order_item=po_item.name,
-				qty=row.qty,
-				row_number=row.row_number,
-				invoice_no=row.supplier_invoice_no,
-				remaining_qty_by_name=running_remaining,
-			)
 		except PortalValidationError as exc:
 			errors.extend(exc.errors)
 			continue
-		if row.supplier_invoice_no in does_not_consume:
+		resolved.append((row, po_item))
+	return resolved, errors
+
+
+def _cap_check_row(row: ParsedBulkRow, po_item: frappe._dict) -> dict:
+	# idx is the real CSV row_number, so a reported breach cites the row the supplier must fix.
+	return {
+		"idx": row.row_number,
+		"purchase_order": row.purchase_order,
+		"purchase_order_item": po_item.name,
+		"item_code": row.item_code,
+		"qty": row.qty,
+	}
+
+
+def _accept_rows_within_remaining(
+	resolved: list[tuple[ParsedBulkRow, frappe._dict]],
+	*,
+	remaining_qty_by_name: dict[str, float | None],
+	invoices_that_do_not_consume: set[str],
+	cap_refusal: Callable[[dict], str | None],
+) -> tuple[dict[str, list[tuple[ParsedBulkRow, frappe._dict]]], list[dict]]:
+	"""Take Remaining Qty in file order. A row that does not fit leaves the figure unchanged.
+
+	``invoices_that_do_not_consume`` are groups the Stock Cap has already refused. Their
+	rows are still checked, so a real excess is reported, but they are not created and
+	must not reduce what a later row sees. ``cap_refusal`` gives a row's own Stock Cap
+	breach, if any, for the error on a row that exceeds Remaining Qty.
+	"""
+	running_remaining = dict(remaining_qty_by_name)
+	accepted: dict[str, list[tuple[ParsedBulkRow, frappe._dict]]] = {}
+	errors: list[dict] = []
+	for row, po_item in resolved:
+		remaining = running_remaining.get(po_item.name, 0)
+		if remaining is not None and row.qty > flt(remaining):
+			errors.append(
+				_over_remaining_error(
+					row_number=row.row_number,
+					invoice_no=row.supplier_invoice_no,
+					qty=row.qty,
+					remaining=remaining,
+					cap_message=cap_refusal(_cap_check_row(row, po_item)),
+				)
+			)
+			continue
+		if row.supplier_invoice_no in invoices_that_do_not_consume:
 			continue
 		consume_remaining_qty(running_remaining, po_item.name, row.qty)
 		accepted.setdefault(row.supplier_invoice_no, []).append((row, po_item))
@@ -655,14 +709,13 @@ def _accept_rows_within_remaining(
 def _payloads_for_accepted_rows(
 	valid_groups: list[tuple[str, dict, list[ParsedBulkRow]]],
 	accepted_by_invoice: dict[str, list[tuple[ParsedBulkRow, frappe._dict]]],
-) -> list[tuple[dict, list[dict], list[dict]]]:
-	payloads: list[tuple[dict, list[dict], list[dict]]] = []
+) -> list[tuple[dict, list[dict]]]:
+	payloads: list[tuple[dict, list[dict]]] = []
 	for invoice_no, header, _invoice_rows in valid_groups:
 		accepted = accepted_by_invoice.get(invoice_no) or []
 		if not accepted:
 			continue
 		items = []
-		cap_check_rows = []
 		for row, po_item in accepted:
 			item_rate = flt(row.rate) if row.rate is not None else flt(getattr(po_item, "rate", None))
 			items.append(
@@ -675,18 +728,7 @@ def _payloads_for_accepted_rows(
 					"rate": item_rate,
 				}
 			)
-			# Keyed by the real CSV row_number, not a position within this invoice
-			# group -- see _collect_stock_cap_errors for why that distinction matters.
-			cap_check_rows.append(
-				{
-					"idx": row.row_number,
-					"purchase_order": row.purchase_order,
-					"purchase_order_item": po_item.name,
-					"item_code": row.item_code,
-					"qty": row.qty,
-				}
-			)
-		payloads.append((header, items, cap_check_rows))
+		payloads.append((header, items))
 	return payloads
 
 
@@ -695,6 +737,15 @@ def create_bulk_asns_for_supplier(
 	rows: list[ParsedBulkRow],
 	insert_asn=None,
 ) -> list[str]:
+	return insert_bulk_asns(supplier, validate_bulk_rows(supplier, rows), insert_asn=insert_asn)
+
+
+def validate_bulk_rows(supplier: str, rows: list[ParsedBulkRow]) -> list[tuple[dict, list[dict]]]:
+	"""Check a whole upload and return ``(header, items)`` for each ASN to create.
+
+	Raises PortalValidationError with the problems found, so nothing is created. The
+	number of queries does not grow with the number of rows or invoice groups.
+	"""
 	enforce_bulk_limits(rows)
 	if not rows:
 		raise PortalValidationError([error_entry(field="items_csv", message=_("Upload a CSV with rows."))])
@@ -728,84 +779,126 @@ def create_bulk_asns_for_supplier(
 		valid_groups.append((invoice_no, _invoice_header(invoice_rows[0]), invoice_rows))
 
 	candidate_rows = [row for _invoice_no, _header, invoice_rows in valid_groups for row in invoice_rows]
-	accepted_by_invoice, qty_errors = _accept_rows_within_remaining(
-		candidate_rows,
-		rows_by_key=rows_by_key,
-		remaining_qty_by_name=remaining_qty_by_name,
-	)
-	asn_payloads = _payloads_for_accepted_rows(valid_groups, accepted_by_invoice)
-	cap_errors = _collect_stock_cap_errors(asn_payloads)
+	resolved, resolve_errors = _resolve_bulk_rows(candidate_rows, rows_by_key)
+	errors.extend(resolve_errors)
+
+	# One set of cap reads for the whole upload; every check below evaluates against it.
+	cap_check = asn_rows_cap_check([_cap_check_row(row, po_item) for row, po_item in resolved])
+	# The caller's read permission on Item cannot change within one request.
+	detailed = may_see_stock_figures()
+
+	def cap_refusal(cap_row: dict) -> str | None:
+		breaches, _accepted = cap_check([cap_row])
+		return format_breaches(breaches, detailed=detailed) if breaches else None
+
+	cap_errors = _collect_stock_cap_errors(resolved, cap_check, detailed)
 	breaching_invoices = {error["invoice_no"] for error in cap_errors if error.get("invoice_no")}
-	if breaching_invoices:
-		qty_errors = _accept_rows_within_remaining(
-			candidate_rows,
-			rows_by_key=rows_by_key,
-			remaining_qty_by_name=remaining_qty_by_name,
-			invoices_that_do_not_consume=breaching_invoices,
-		)[1]
+	accepted_by_invoice, qty_errors = _accept_rows_within_remaining(
+		resolved,
+		remaining_qty_by_name=remaining_qty_by_name,
+		invoices_that_do_not_consume=breaching_invoices,
+		cap_refusal=cap_refusal,
+	)
 	errors.extend(qty_errors)
 	errors.extend(cap_errors)
 
 	if errors:
-		errors.append(error_entry(field="bulk", message=_("No ASNs created due to validation failures.")))
-		raise PortalValidationError(errors)
+		raise PortalValidationError(
+			[
+				*bounded_errors(errors),
+				error_entry(field="bulk", message=_("No ASNs created due to validation failures.")),
+			]
+		)
+	return _payloads_for_accepted_rows(valid_groups, accepted_by_invoice)
 
+
+def insert_bulk_asns(
+	supplier: str,
+	payloads: list[tuple[dict, list[dict]]],
+	insert_asn=None,
+) -> list[str]:
+	# Desk upload: a refusal propagates and rolls the whole request back.
 	insert_asn = insert_asn or insert_and_submit_asn
-	asn_names = []
-	for header, items, _cap_check_rows in asn_payloads:
+	return [insert_asn(supplier=supplier, header=header, items=items).name for header, items in payloads]
+
+
+def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]], notify_user: str) -> None:
+	"""Background half of a portal bulk upload: create the ASNs the request validated, then email the user.
+
+	The ASN controller checks each one again on submit. A refusal or an unexpected error
+	stops the run; the ASNs already submitted stay, and the email names them.
+	"""
+	asn_names: list[str] = []
+	errors: list[dict] = []
+	for header, items in payloads:
 		try:
-			asn = insert_asn(supplier=supplier, header=header, items=items)
+			asn = insert_and_submit_asn(supplier=supplier, header=header, items=items)
 		except PortalValidationError as exc:
-			# Names only. The portal commits this request and says which ASNs stayed.
-			# The desk caller rethrows, and that rolls the request back, so those
-			# ASNs do not stay submitted there.
-			if asn_names:
-				exc.created_asn_names = tuple(asn_names)
-			raise
+			errors = exc.errors
+			break
+		except Exception:
+			# Job entry point: a caught error is not rolled back for us. Undo this ASN only;
+			# the earlier ones are committed.
+			frappe.db.rollback()
+			frappe.log_error(title="ASN portal bulk upload job failed")
+			errors = [
+				error_entry(
+					field="bulk",
+					invoice_no=header.get("supplier_invoice_no"),
+					message=_("Invoice {0}: ASN creation failed unexpectedly.").format(
+						header.get("supplier_invoice_no")
+					),
+				)
+			]
+			break
+		# Batch job: commit each ASN so a later failure, timeout or killed worker cannot undo
+		# the ones already submitted, locks stay short, and a rerun sees their invoice numbers.
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit - per-ASN batch commit, see above
 		asn_names.append(asn.name)
-	return asn_names
+	_email_bulk_result(notify_user, asn_names, errors)
 
 
-def _collect_stock_cap_errors(asn_payloads: list[tuple[dict, list[dict], list[dict]]]) -> list[dict]:
-	"""Evaluate the cap across every parsed payload before any ASN is inserted.
+def _email_bulk_result(user: str, asn_names: list[str], errors: list[dict]) -> None:
+	lines = [_("Created and submitted {0} ASN(s): {1}").format(len(asn_names), ", ".join(asn_names) or "-")]
+	if errors:
+		lines.append(_("The remaining invoices were not created:"))
+		lines.extend(error.get("message") or "" for error in errors)
+	frappe.sendmail(
+		recipients=[frappe.db.get_value("User", user, "email")],
+		subject=_("Bulk ASN upload stopped") if errors else _("Bulk ASN upload finished"),
+		message="<br>".join(escape_html(line) for line in lines),
+	)
 
-	Returns the errors found rather than mutating a list the caller passes in: a return
-	value reads honestly, where an out-parameter can silently go unused by a caller that
-	forgets to pass one in.
 
-	Runs in the validation phase so a breach is refused before any ASN is inserted.
-	A submit that still fails after that rolls back only the group that failed.
-	Earlier groups in the same request stay submitted, and the error names them.
-	Headroom accepted by an earlier breach-free group is carried
-	forward so one upload cannot drive an item past its maximum across several ASNs,
-	mirroring how running_remaining already guards the PO quantity check. A group that
-	produced any breach contributes nothing to ``consumed`` -- only ``accepted``, the exact
-	incoming quantities ``evaluate()`` itself counted toward that group (same cap-warehouse,
-	cap-is-set, and positive-qty filters it uses to decide breaches), is folded in, and only
-	for groups that came back breach-free.
+def _collect_stock_cap_errors(
+	resolved: list[tuple[ParsedBulkRow, frappe._dict]],
+	cap_check: Callable[..., tuple[list, dict[tuple[str, str], float]]],
+	detailed: bool,
+) -> list[dict]:
+	"""Evaluate the cap per invoice group before any ASN is inserted.
 
-	Each cap-check row carries the real CSV ``row_number`` as its ``idx`` (not a position
-	within this invoice group), so a reported breach cites the row the supplier actually
-	needs to look at.
+	Headroom taken by an earlier breach-free group is carried forward so one upload
+	cannot drive an item past its maximum across several ASNs. Only ``accepted``, the
+	incoming quantities ``evaluate()`` itself counted, is folded in, and only for groups
+	that came back breach-free.
 
 	Message text goes through the same redaction gate as the ASN controller
-	(``format_breaches(..., detailed=...)``) rather than interpolating breach figures
-	directly: this endpoint is reached from the supplier portal, where the caller has no
-	``read`` permission on ``Item`` and must not see On Hand, In Transit, or Maximum Stock.
-	``may_see_stock_figures()`` is read once, before the loop, rather than once per payload:
-	the caller's own read permission on Item cannot change in the middle of one request.
+	(``format_breaches(..., detailed=...)``): portal suppliers have no ``read`` permission
+	on ``Item`` and must not see On Hand, In Transit, or Maximum Stock.
 	"""
-	detailed = may_see_stock_figures()
+	rows_by_invoice: dict[str, list[dict]] = {}
+	for row, po_item in resolved:
+		rows_by_invoice.setdefault(row.supplier_invoice_no, []).append(_cap_check_row(row, po_item))
+
 	consumed: dict[tuple[str, str], float] = {}
 	errors: list[dict] = []
-
-	for header, _items, cap_check_rows in asn_payloads:
-		breaches, accepted = breaches_for_asn_rows(cap_check_rows, consumed=consumed)
+	for invoice_no, cap_rows in rows_by_invoice.items():
+		breaches, accepted = cap_check(cap_rows, consumed=consumed)
 		for breach in breaches:
 			errors.append(
 				error_entry(
 					field="items_csv",
-					invoice_no=header.get("supplier_invoice_no"),
+					invoice_no=invoice_no,
 					message=format_breaches([breach], detailed=detailed),
 					row_number=breach.row_idxs[0] if breach.row_idxs else None,
 				)

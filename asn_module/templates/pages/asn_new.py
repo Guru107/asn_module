@@ -10,12 +10,13 @@ from frappe.utils import cint, cstr, flt
 from asn_module.templates.pages.asn import _get_supplier_for_user
 from asn_module.templates.pages.asn_new_search import supplier_draft_asn_name
 from asn_module.templates.pages.asn_new_services import (
+	BULK_ASN_JOB,
+	BULK_ASN_JOB_TIMEOUT,
 	BULK_CSV_HEADERS,
 	ParsedBulkRow,
 	ParsedSingleRow,
 	PortalValidationError,
 	consume_remaining_qty,
-	create_bulk_asns_for_supplier,
 	create_job_asn_for_supplier,
 	error_entry,
 	fetch_purchase_order_items,
@@ -23,6 +24,7 @@ from asn_module.templates.pages.asn_new_services import (
 	parse_bulk_csv_content,
 	parse_optional_non_negative_rate,
 	resolve_po_item,
+	validate_bulk_rows,
 	validate_qty_within_remaining,
 	validate_selected_purchase_orders,
 	validate_supplier_invoices_not_reused,
@@ -45,7 +47,6 @@ def get_context(context):
 	context.single_errors = []
 	context.bulk_errors = []
 	context.bulk_success = None
-	context.bulk_submitted_names = ""
 	context.bulk_csv_headers = BULK_CSV_HEADERS
 
 	user = frappe.session.user
@@ -75,18 +76,16 @@ def get_context(context):
 				frappe.local.flags.redirect_location = f"/{route}"
 			raise frappe.Redirect
 		if mode == "bulk":
-			result = _create_bulk_asns(supplier)
-			context.bulk_success = _("Created and submitted {0} ASN(s): {1}").format(
-				len(result.asn_names), ", ".join(result.asn_names)
-			)
+			queued = _queue_bulk_asns(supplier)
+			context.bulk_success = _(
+				"Your file passed validation. {0} ASN(s) are queued and will be created and submitted "
+				"in the background. We will email you the result."
+			).format(queued)
 			context.active_tab = "bulk"
 			return
 		raise PortalValidationError([error_entry(field="mode", message=_("Invalid submit mode."))])
 	except PortalValidationError as exc:
 		errors = list(exc.errors)
-		created = tuple(getattr(exc, "created_asn_names", ()) or ())
-		if context.active_tab == "bulk" and created:
-			context.bulk_submitted_names = ", ".join(created)
 		if context.active_tab == "bulk":
 			context.bulk_errors = errors
 		else:
@@ -412,10 +411,19 @@ def _date_input(value) -> str:
 	return str(value)[:10]
 
 
-def _create_bulk_asns(supplier: str) -> CreateResult:
-	rows = _parse_bulk_csv_rows()
-	asn_names = create_bulk_asns_for_supplier(supplier, rows, insert_asn=_insert_and_submit_asn)
-	return CreateResult(asn_names=asn_names)
+def _queue_bulk_asns(supplier: str) -> int:
+	"""Validate the upload here, so errors show on the page; create the ASNs in a job."""
+	payloads = validate_bulk_rows(supplier, _parse_bulk_csv_rows())
+	frappe.enqueue(
+		BULK_ASN_JOB,
+		queue="long",
+		timeout=BULK_ASN_JOB_TIMEOUT,
+		enqueue_after_commit=True,
+		supplier=supplier,
+		payloads=payloads,
+		notify_user=frappe.session.user,
+	)
+	return len(payloads)
 
 
 def _insert_and_submit_asn(

@@ -11,6 +11,7 @@ from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	PortalValidationError,
 	create_bulk_asns_for_supplier,
+	create_bulk_asns_job,
 	create_job_asn_for_supplier,
 	enforce_bulk_limits,
 	error_entry,
@@ -24,6 +25,7 @@ from asn_module.templates.pages.asn_new_services import (
 	parse_positive_qty,
 	parse_required_supplier_invoice_amount,
 	validate_bulk_group_count,
+	validate_bulk_rows,
 	validate_invoice_group_consistency,
 	validate_invoice_group_single_purchase_order,
 	validate_qty_within_remaining,
@@ -448,8 +450,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 		]
 		with (
 			patch(
-				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-				return_value=([], {}),
+				"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+				return_value=lambda *_args, **_kwargs: ([], {}),
 			),
 			self.assertRaises(PortalValidationError) as raised,
 		):
@@ -478,8 +480,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 		rows[2] = replace(rows[2], supplier_invoice_amount=1000)
 		with (
 			patch(
-				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-				return_value=([], {}),
+				"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+				return_value=lambda *_args, **_kwargs: ([], {}),
 			),
 			self.assertRaises(PortalValidationError) as raised,
 		):
@@ -503,8 +505,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 
 		with (
 			patch(
-				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-				side_effect=fake_breaches,
+				"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+				return_value=fake_breaches,
 			),
 			self.assertRaises(PortalValidationError) as raised,
 		):
@@ -539,8 +541,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 
 		with (
 			patch(
-				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-				side_effect=fake_breaches,
+				"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+				return_value=fake_breaches,
 			),
 			self.assertRaises(PortalValidationError) as raised,
 		):
@@ -558,8 +560,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 			return SimpleNamespace(name="ASN-TEST")
 
 		with patch(
-			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-			return_value=([self._breach()], {}),
+			"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+			return_value=lambda *_args, **_kwargs: ([self._breach()], {}),
 		):
 			with self.assertRaises(PortalValidationError) as ctx:
 				create_bulk_asns_for_supplier(
@@ -579,7 +581,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 			return SimpleNamespace(name=f"ASN-{len(inserted)}")
 
 		with patch(
-			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows", return_value=([], {})
+			"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+			return_value=lambda *_args, **_kwargs: ([], {}),
 		):
 			names = create_bulk_asns_for_supplier(
 				supplier=self.supplier, rows=self._one_group(), insert_asn=fake_insert
@@ -588,9 +591,9 @@ class TestBulkUploadStockCap(FrappeTestCase):
 		self.assertEqual(len(names), len(inserted))
 		self.assertTrue(names)
 
-	def test_a_later_submit_failure_names_the_asns_already_submitted(self):
-		"""Validation passed for both invoices. The second submit is refused. The first
-		ASN is already submitted, so the error must name it and must not say nothing was created.
+	def test_a_later_submit_failure_propagates_without_claiming_nothing_was_created(self):
+		"""Validation passed for both invoices. The second submit is refused. The refusal
+		propagates (the desk request rolls back), and it must not read as a validation failure.
 		"""
 
 		def insert_asn(**kwargs):
@@ -602,8 +605,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 
 		with (
 			patch(
-				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-				return_value=([], {}),
+				"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+				return_value=lambda *_args, **_kwargs: ([], {}),
 			),
 			self.assertRaises(PortalValidationError) as raised,
 		):
@@ -613,7 +616,6 @@ class TestBulkUploadStockCap(FrappeTestCase):
 				insert_asn=insert_asn,
 			)
 
-		self.assertEqual(raised.exception.created_asn_names, ("ASN-0001",))
 		messages = " ".join(error.get("message", "") for error in raised.exception.errors)
 		self.assertNotIn("No ASNs created", messages)
 		self.assertNotIn("ASN-0001", messages)
@@ -626,8 +628,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 			return [], {("Mumbai", self.po_item.item_code): 1.0}
 
 		with patch(
-			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-			side_effect=fake_breaches,
+			"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+			return_value=fake_breaches,
 		):
 			create_bulk_asns_for_supplier(
 				supplier=self.supplier,
@@ -661,8 +663,8 @@ class TestBulkUploadStockCap(FrappeTestCase):
 			return [], {}
 
 		with patch(
-			"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-			side_effect=fake_breaches,
+			"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+			return_value=fake_breaches,
 		):
 			with self.assertRaises(PortalValidationError):
 				create_bulk_asns_for_supplier(
@@ -831,6 +833,113 @@ class TestBulkUploadStockCapRealPipeline(FrappeTestCase):
 		row_numbers = [error.get("row_number") for error in ctx.exception.errors]
 		self.assertIn(9, row_numbers)
 		self.assertNotIn(1, row_numbers)
+
+	def test_validation_query_count_does_not_grow_with_row_count(self):
+		"""Every row after the first is over Remaining Qty, so the per-row Stock Cap check
+		runs for each one, and each row is its own invoice group, so the per-group check
+		does too. Neither may add queries per row (issue #137).
+		"""
+		po = self._po(warehouse=self.cap_warehouse, qty=10)
+
+		def validation_queries(count: int) -> int:
+			rows = [
+				_bulk_row(po, po.items[0], row_number=idx + 2, invoice_no=f"QC-{count}-{idx}", qty=6)
+				for idx in range(count)
+			]
+			with (
+				patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql,
+				self.assertRaises(PortalValidationError),
+			):
+				validate_bulk_rows(po.supplier, rows)
+			return sql.call_count
+
+		validation_queries(2)  # warm metadata and permission caches
+		self.assertEqual(validation_queries(40), validation_queries(2))
+
+
+class TestBulkUploadBounds(FrappeTestCase):
+	@staticmethod
+	def _invalid_rows(count: int) -> bytes:
+		# qty 0 fails each row on its own, without touching the database.
+		line = (
+			f"INV-1,{_test_dates()['supplier_invoice_date']},{_test_dates()['expected_delivery_date']},"
+			",,,,,250,PO-0001,1,ITEM-001,0,25"
+		)
+		return _bulk_csv_content("\n".join([line] * count))
+
+	def test_parse_stops_at_the_row_limit_with_one_error(self):
+		with (
+			patch("asn_module.templates.pages.asn_new_services.MAX_BULK_ROWS", 3),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			parse_bulk_csv_content(self._invalid_rows(10))
+
+		self.assertEqual(len(raised.exception.errors), 1)
+		self.assertIn("up to 3 rows", raised.exception.errors[0]["message"])
+
+	def test_parse_reports_a_bounded_error_list(self):
+		with (
+			patch("asn_module.templates.pages.asn_new_services.MAX_BULK_ERRORS", 2),
+			self.assertRaises(PortalValidationError) as raised,
+		):
+			parse_bulk_csv_content(self._invalid_rows(5))
+
+		errors = raised.exception.errors
+		self.assertEqual(len(errors), 3)
+		self.assertIn("3 more errors", errors[-1]["message"])
+
+
+class TestBulkUploadJob(FrappeTestCase):
+	PAYLOADS = (({"supplier_invoice_no": "JOB-INV-1"}, []), ({"supplier_invoice_no": "JOB-INV-2"}, []))
+
+	def _run(self, insert_side_effect):
+		with (
+			patch(
+				"asn_module.templates.pages.asn_new_services.insert_and_submit_asn",
+				side_effect=insert_side_effect,
+			),
+			patch("asn_module.templates.pages.asn_new_services.frappe.sendmail") as sendmail,
+			# The job commits each ASN; a real commit would break the test's rollback.
+			patch.object(frappe.db, "commit") as commit,
+		):
+			create_bulk_asns_job("Supp-001", self.PAYLOADS, "Administrator")
+		sendmail.assert_called_once()
+		self.commits = commit.call_count
+		return sendmail.call_args.kwargs
+
+	def test_emails_the_created_asns(self):
+		mail = self._run([SimpleNamespace(name="ASN-J1"), SimpleNamespace(name="ASN-J2")])
+
+		self.assertEqual(self.commits, 2)
+		self.assertEqual(mail["recipients"], [frappe.db.get_value("User", "Administrator", "email")])
+		self.assertIn("ASN-J1, ASN-J2", mail["message"])
+		self.assertEqual(mail["subject"], "Bulk ASN upload finished")
+
+	def test_a_refused_submit_keeps_earlier_asns_and_emails_the_escaped_reason(self):
+		refusal = PortalValidationError([error_entry(field="items_csv", message="<b>Stock Cap</b>")])
+		with patch.object(frappe.db, "rollback") as rollback:
+			mail = self._run([SimpleNamespace(name="ASN-J1"), refusal])
+
+		rollback.assert_not_called()
+		self.assertEqual(self.commits, 1)
+		self.assertIn("ASN-J1", mail["message"])
+		self.assertIn("&lt;b&gt;Stock Cap&lt;/b&gt;", mail["message"])
+		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
+
+	def test_an_unexpected_error_rolls_back_logs_and_emails(self):
+		with (
+			patch.object(frappe.db, "rollback") as rollback,
+			patch("asn_module.templates.pages.asn_new_services.frappe.log_error") as log_error,
+		):
+			mail = self._run([SimpleNamespace(name="ASN-J1"), RuntimeError("boom")])
+
+		# Only the failing ASN is undone; the one committed before it is kept and named.
+		rollback.assert_called_once_with()
+		log_error.assert_called_once()
+		self.assertEqual(self.commits, 1)
+		self.assertIn("Created and submitted 1 ASN(s): ASN-J1", mail["message"])
+		self.assertIn("Invoice JOB-INV-2: ASN creation failed unexpectedly", mail["message"])
+		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
 
 
 class TestCreateJobAsnForSupplier(FrappeTestCase):
