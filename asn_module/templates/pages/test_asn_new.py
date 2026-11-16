@@ -297,9 +297,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
 			asn_new.get_context(context)
@@ -325,9 +322,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 			patch("asn_module.templates.pages.asn_new._create_bulk_asns", side_effect=_boom),
 			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
@@ -351,9 +345,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 			patch("asn_module.templates.pages.asn_new._create_bulk_asns", side_effect=_boom),
 			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
@@ -378,9 +369,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 			patch("asn_module.templates.pages.asn_new._create_single_asn", side_effect=_boom),
 			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
@@ -401,9 +389,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 			patch(
 				"asn_module.templates.pages.asn_new._create_single_asn",
 				return_value=asn_new.CreateResult(asn_names=["ASN-0001"]),
@@ -428,9 +413,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 			patch(
 				"asn_module.templates.pages.asn_new._create_single_asn",
 				return_value=asn_new.CreateResult(asn_names=["ASN-0003"], incomplete=True),
@@ -470,9 +452,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 			patch("asn_module.templates.pages.asn_new._create_single_asn", side_effect=_boom),
 			patch(
 				"asn_module.templates.pages.asn_new.frappe.local", SimpleNamespace(flags=SimpleNamespace())
@@ -496,9 +475,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 			patch(
 				"asn_module.templates.pages.asn_new._create_bulk_asns",
 				return_value=asn_new.CreateResult(asn_names=["ASN-0001", "ASN-0002"]),
@@ -1143,9 +1119,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
 		):
 			asn_new.get_context(context)
 		self.assertEqual(context.title, "New ASN")

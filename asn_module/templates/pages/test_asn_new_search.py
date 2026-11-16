@@ -40,15 +40,11 @@ class TestASNNewSearch(FrappeTestCase):
 						status="To Receive",
 						transaction_date=_test_dates()["supplier_invoice_date"],
 					),
-					SimpleNamespace(
-						name="PO-0002",
-						status="To Receive and Bill",
-						transaction_date=_test_dates()["expected_delivery_date"],
-					),
 				],
-			),
+			) as open_orders,
 		):
-			rows = asn_new_search.search_open_purchase_orders(txt="PO-0001")
+			rows = asn_new_search.search_open_purchase_orders(txt=" PO-0001 ")
+		open_orders.assert_called_once_with("Supp-001", txt="PO-0001", start=0, page_len=20)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0]["value"], "PO-0001")
 
@@ -63,13 +59,7 @@ class TestASNNewSearch(FrappeTestCase):
 			),
 			patch(
 				"asn_module.templates.pages.asn_new_search.get_open_purchase_orders_for_supplier",
-				return_value=[
-					SimpleNamespace(
-						name="PO-0001",
-						status="To Receive",
-						transaction_date=_test_dates()["supplier_invoice_date"],
-					)
-				],
+				return_value=[],
 			),
 			self.assertRaises(frappe.PermissionError),
 		):

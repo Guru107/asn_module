@@ -11,7 +11,10 @@ from frappe.utils import flt
 from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
 from asn_module.stock_cap.api import breaches_for_asn_rows
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
-from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
+from asn_module.templates.pages.asn import (
+	get_open_purchase_orders_for_supplier,
+	get_open_subcontracting_orders_for_supplier,
+)
 
 MAX_BULK_ROWS = 5000
 MAX_BULK_INVOICES = 500
@@ -97,8 +100,8 @@ def error_entry(
 	}
 
 
-def get_supplier_open_purchase_orders(supplier: str) -> dict[str, frappe._dict]:
-	open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
+def get_supplier_open_purchase_orders(supplier: str, names: list[str]) -> dict[str, frappe._dict]:
+	open_purchase_orders = get_open_purchase_orders_for_supplier(supplier, names=names)
 	return {row.name: row for row in open_purchase_orders}
 
 
@@ -237,7 +240,7 @@ def validate_selected_purchase_orders(
 			]
 		)
 
-	open_po_map = get_supplier_open_purchase_orders(supplier)
+	open_po_map = get_supplier_open_purchase_orders(supplier, selected_purchase_orders)
 	invalid = sorted(po for po in selected_purchase_orders if po not in open_po_map)
 	if invalid:
 		raise PortalValidationError(
@@ -834,11 +837,11 @@ def create_job_asn_for_supplier(
 	if not order_name:
 		frappe.throw(_("Select one open Subcontracting Order."))
 
+	# One generic message: it must not reveal whether another supplier's order exists or is open.
+	if not get_open_subcontracting_orders_for_supplier(supplier, names=[order_name], page_len=1):
+		frappe.throw(_("Subcontracting Order is not available for this supplier."))
+
 	sco = frappe.get_doc("Subcontracting Order", order_name)
-	if sco.docstatus != 1 or (sco.status or "") in ("Completed", "Closed", "Cancelled"):
-		frappe.throw(_("Subcontracting Order {0} is not open.").format(order_name))
-	if sco.supplier != supplier:
-		frappe.throw(_("Subcontracting Order {0} is not for this supplier.").format(order_name))
 
 	finished_goods = {row.name: row for row in sco.items}
 	requested = lines
