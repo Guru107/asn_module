@@ -17,6 +17,7 @@ def setup():
 				"in_standard_filter": 1,
 				# A Duplicate must not book the same ASN a second time.
 				"no_copy": 1,
+				"search_index": 1,
 			},
 			scan_code_field("asn"),
 			{

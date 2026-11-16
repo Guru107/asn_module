@@ -32,7 +32,9 @@ def asn_dispatch_action_key() -> str:
 
 
 def _load_submitted_asn_for_scan(source_name: str):
-	asn = frappe.get_doc("ASN", source_name)
+	# Row lock: a concurrent scan of this ASN waits here until the first commits its draft.
+	# The draft lookups after it are locking reads too, so they see that draft.
+	asn = frappe.get_doc("ASN", source_name, for_update=True)
 	if asn.docstatus != 1:
 		frappe.throw(_("Purchase Receipt can only be created from a submitted ASN"))
 	if asn.status in ("Received", "Closed", "Cancelled"):
@@ -57,7 +59,9 @@ def create_gate_pass_from_asn(source_doctype: str, source_name: str, payload: di
 
 
 def _open_existing_draft_purchase_receipt_for_asn(asn_name: str) -> dict | None:
-	existing_pr = frappe.db.get_value("Purchase Receipt", {"asn": asn_name, "docstatus": 0}, "name")
+	existing_pr = frappe.db.get_value(
+		"Purchase Receipt", {"asn": asn_name, "docstatus": 0}, "name", for_update=True
+	)
 	if not existing_pr:
 		return None
 	return {
@@ -509,16 +513,15 @@ def _reopen_uncancelled_gate_pass(asn) -> dict | None:
 	if not frappe.get_meta("Gate Pass").has_field("asn"):
 		frappe.throw(_("Gate Pass has no ASN field on this site. Run bench migrate."))
 
-	existing = frappe.get_all(
+	name = frappe.db.get_value(
 		"Gate Pass",
-		filters={"asn": asn.name, "docstatus": ["!=", 2]},
-		pluck="name",
+		{"asn": asn.name, "docstatus": ["!=", 2]},
+		"name",
 		order_by="modified desc",
-		limit=1,
+		for_update=True,
 	)
-	if not existing:
+	if not name:
 		return None
-	name = existing[0]
 	return {
 		"doctype": "Gate Pass",
 		"name": name,
@@ -742,6 +745,7 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 		"Subcontracting Receipt",
 		{"asn": asn.name, "docstatus": 0},
 		"name",
+		for_update=True,
 	)
 	if existing:
 		return {

@@ -1085,8 +1085,8 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 			]
 			with (
 				patch(
-					"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-					return_value=([], {}),
+					"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+					return_value=lambda *_args, **_kwargs: ([], {}),
 				),
 				self.assertRaises(PortalValidationError) as raised,
 			):
@@ -1347,10 +1347,6 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 				SimpleNamespace(user="supplier@example.com"),
 			),
 			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value=supplier),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier",
-				return_value=[],
-			),
 			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"asn_name": asn_name}),
 		):
 			asn_new.get_context(context)
@@ -1645,8 +1641,8 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		]
 		with (
 			patch(
-				"asn_module.templates.pages.asn_new_services.breaches_for_asn_rows",
-				return_value=([], {}),
+				"asn_module.templates.pages.asn_new_services.asn_rows_cap_check",
+				return_value=lambda *_args, **_kwargs: ([], {}),
 			),
 			self.assertRaises(PortalValidationError) as raised,
 		):
