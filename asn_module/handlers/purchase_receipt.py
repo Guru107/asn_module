@@ -341,7 +341,7 @@ def on_purchase_receipt_before_submit(doc, method=None):
 
 
 def _pair_unmapped_rows(doc, order_line_field: str = "purchase_order_item") -> None:
-	"""Map receipt rows the ASN map does not know to free ASN lines on the same order line.
+	"""Map receipt rows the ASN map does not know to ASN lines with room on the same order line.
 
 	``order_line_field`` names the order line on both the receipt row and the ASN line:
 	the Purchase Order Item, or the Subcontracting Order Item on a Subcontracting Receipt.
@@ -350,6 +350,10 @@ def _pair_unmapped_rows(doc, order_line_field: str = "purchase_order_item") -> N
 	old map), and so does deleting and re-adding a row on a draft. Unpaired, submit records
 	nothing and the ASN stays in transit with the stock already on hand. Keys for rows no
 	longer on the receipt are dropped.
+
+	A line's room is its qty less what this receipt's rows already deliver on it: by now
+	refuse_repeat_asn_booking has refused an ASN another receipt booked, so no line holds
+	received qty. A row whose order line has no room left (one added at the gate) is refused.
 	"""
 	if not getattr(doc, "asn", None) or getattr(doc, "is_return", 0):
 		return
@@ -359,31 +363,46 @@ def _pair_unmapped_rows(doc, order_line_field: str = "purchase_order_item") -> N
 		for name, entry in json.loads(getattr(doc, "asn_items", None) or "{}").items()
 		if name in row_names
 	}
-	unmapped = [row for row in doc.items if row.name not in mapping]
-	if not unmapped:
+	if all(row.name in mapping for row in doc.items):
 		return
 
 	lines_by_po_item: dict[str, list] = {}
 	for asn_item in frappe.get_all(
 		"ASN Item",
 		filters={"parent": doc.asn, "parenttype": "ASN"},
-		fields=["name", order_line_field, "qty", "received_qty"],
+		fields=["name", order_line_field, "qty"],
 		order_by="idx asc",
 	):
 		lines_by_po_item.setdefault(getattr(asn_item, order_line_field), []).append(asn_item)
 
-	taken = {entry.get("asn_item_name") for entry in mapping.values()}
-	for row in unmapped:
+	delivered_by_line: dict[str, float] = {}
+	unmapped = []
+	for row, delivered in _lines_with_delivered_qty(doc):
+		if row.name not in mapping:
+			unmapped.append((row, delivered))
+			continue
+		line_name = mapping[row.name].get("asn_item_name")
+		delivered_by_line[line_name] = delivered_by_line.get(line_name, 0.0) + delivered
+
+	def room(line) -> float:
+		return flt_qty(flt(line.qty) - delivered_by_line.get(line.name, 0.0))
+
+	for row, delivered in unmapped:
 		lines = lines_by_po_item.get(getattr(row, order_line_field, None))
 		if not lines:
 			continue
-		# Room left beats everything: the ASN is Received only when every line is full. Among lines
-		# with room, prefer one this receipt has not mapped; sharing is fine, since linked
-		# recording sums every row mapped to a line.
+		# A line no row of this receipt holds has room; sharing a line with room is fine, since
+		# linked recording sums every row mapped to it.
 		# shortcut: a split line the gate skipped can still be picked; read the amended_from map
 		# if amended gate-pass receipts start landing on the wrong line.
-		asn_item = min(lines, key=lambda line: (flt(line.received_qty) >= flt(line.qty), line.name in taken))
-		taken.add(asn_item.name)
+		asn_item = min(lines, key=lambda line: (room(line) <= 0, line.name in delivered_by_line))
+		if room(asn_item) <= 0:
+			frappe.throw(
+				_(
+					"Row {0}: ASN {1} has no qty left for {2}, so the row's {3} would be received over what was shipped. Remove row {0}."
+				).format(row.idx, doc.asn, row.item_code, flt(row.qty))
+			)
+		delivered_by_line[asn_item.name] = delivered_by_line.get(asn_item.name, 0.0) + delivered
 		mapping[row.name] = {"asn_item_name": asn_item.name, "original_qty": asn_item.qty}
 	doc.asn_items = json.dumps(mapping)
 
@@ -592,6 +611,23 @@ def on_gate_pass_submit(doc, method=None):
 	if not (getattr(doc, "asn", None) or "").strip():
 		return
 	store_scan_code(doc, GATE_PASS_RECEIPT_ACTION)
+
+
+def refuse_repeated_asn_item(doc, method=None) -> None:
+	"""Refuse two Gate Pass rows on one ASN line: the desk's Duplicate row copies ``asn_item``."""
+	del method
+	row_idx_by_asn_item = {}
+	for row in doc.get("items") or []:
+		asn_item = row.get("asn_item")
+		if not asn_item:
+			continue
+		if asn_item in row_idx_by_asn_item:
+			frappe.throw(
+				_("Gate Pass rows {0} and {1} are both on ASN Item {2}. Remove row {1}.").format(
+					row_idx_by_asn_item[asn_item], row.idx, asn_item
+				)
+			)
+		row_idx_by_asn_item[asn_item] = row.idx
 
 
 def on_gate_pass_cancel(doc, method=None):

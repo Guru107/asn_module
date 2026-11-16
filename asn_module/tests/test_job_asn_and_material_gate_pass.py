@@ -1254,7 +1254,9 @@ class TestMaterialGatePassScan(IntegrationTestCase):
 		self.assertEqual(flt(receipt.items[0].qty), 1)
 		self.assertEqual(flt(receipt.items[0].received_qty), 1)
 
-	def _submitted_gate_pass_for_two_lines_on_one_order_line(self) -> tuple[Document, str]:
+	def _submitted_gate_pass_for_two_lines_on_one_order_line(
+		self, submit: bool = True
+	) -> tuple[Document, str]:
 		"""ASN with two lines (4 and 6) on one Purchase Order Item, through a submitted Gate Pass."""
 		purchase_order = create_purchase_order(qty=10)
 		po_item = purchase_order.items[0]
@@ -1283,7 +1285,8 @@ class TestMaterialGatePassScan(IntegrationTestCase):
 		asn.insert(ignore_permissions=True)
 		asn.submit()
 		opened = create_gate_pass_from_asn("ASN", asn.name, {})
-		frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
+		if submit:
+			frappe.db.set_value("Gate Pass", opened["name"], "docstatus", 1, update_modified=False)
 		return asn, opened["name"]
 
 	def _assert_each_asn_line_gets_its_own_qty(self, asn: Document, receipt: Document) -> None:
@@ -1365,6 +1368,49 @@ class TestMaterialGatePassScan(IntegrationTestCase):
 				with self.subTest(case), self.assertRaises(frappe.ValidationError) as raised:
 					create_receipt_from_gate_pass(gate_pass_name)
 				self.assertIn(expected, str(raised.exception))
+
+	def test_saving_a_gate_pass_with_two_rows_on_one_asn_line_is_refused(self):
+		with with_gate_pass_mode(True), integration_user_context():
+			_asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line(submit=False)
+			gate_pass = frappe.get_doc("Gate Pass", gate_pass_name)
+			first_row, second_row = gate_pass.items
+			# What the desk's Duplicate row leaves behind.
+			second_row.asn_item = first_row.asn_item
+			with self.assertRaises(frappe.ValidationError) as raised:
+				gate_pass.save(ignore_permissions=True)
+
+		self.assertIn(
+			f"Gate Pass rows 1 and 2 are both on ASN Item {first_row.asn_item}", str(raised.exception)
+		)
+
+	def test_a_row_added_at_the_gate_is_refused_only_when_the_asn_lines_are_full(self):
+		# Row 2 receives 6 (its line full) or 5 (room for the extra 1 at the gate).
+		for second_row_qty, expected in ((6, None), (5, [4, 6])):
+			with self.subTest(second_row_qty=second_row_qty):
+				with with_gate_pass_mode(True), integration_user_context():
+					asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+					gate_pass = frappe.get_doc("Gate Pass", gate_pass_name)
+					frappe.db.set_value(
+						"Gate Pass Item", gate_pass.items[1].name, "receive_qty", second_row_qty
+					)
+					extra = gate_pass.items[1].as_dict(no_default_fields=True)
+					extra.update(asn_item=None, receive_qty=1)
+					gate_pass.append("items", extra).db_insert()
+					created = create_receipt_from_gate_pass(gate_pass_name)
+
+				receipt = frappe.get_doc("Purchase Receipt", created["name"])
+				self.assertEqual([flt(row.qty) for row in receipt.items], [4, second_row_qty, 1])
+				with patch("asn_module.handlers.purchase_receipt.store_scan_code"):
+					if expected is None:
+						with self.assertRaises(frappe.ValidationError) as raised:
+							receipt.submit()
+						self.assertIn(f"Row 3: ASN {asn.name} has no qty left", str(raised.exception))
+						continue
+					receipt.submit()
+				received = [
+					flt(frappe.db.get_value("ASN Item", row.name, "received_qty")) for row in asn.items
+				]
+				self.assertEqual(received, expected)
 
 	def test_a_second_create_after_a_short_receipt_closed_the_asn_is_refused(self):
 		# The CI Gate Pass has no custom_gate_pass_reference, so only the ASN status stops a second receipt.
