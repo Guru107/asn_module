@@ -356,4 +356,11 @@ def dispatch(code: str | None = None, device_info: str = "Desktop") -> dict:
 			scan_code=scan_code_name,
 			error_message=str(exc),
 		)
+		if isinstance(exc, frappe.QueryDeadlockError):
+			# Lost a lock race with another scan or save (deadlock, or MariaDB 11.6+ snapshot
+			# isolation). Nothing was saved; a rescan reads the winner's committed draft.
+			frappe.throw(
+				_("This code was being processed by another scan or save. Scan it again."),
+				title=_("Scan Again"),
+			)
 		raise

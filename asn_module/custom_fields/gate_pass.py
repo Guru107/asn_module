@@ -22,7 +22,8 @@ def setup():
 				existing.fieldtype, existing.options
 			)
 		)
-	if not existing:
+	# Our own custom field is re-sent so an update (e.g. its index) reaches migrated sites.
+	if not existing or existing.get("is_custom_field"):
 		fields.append(
 			{
 				"fieldname": "asn",
@@ -30,6 +31,8 @@ def setup():
 				"label": "ASN",
 				"options": "ASN",
 				"insert_after": "supplier",
+				# The scan's locking draft lookup filters on it; unindexed, it would lock every row.
+				"search_index": 1,
 			}
 		)
 	fields.append(scan_code_field("asn"))
