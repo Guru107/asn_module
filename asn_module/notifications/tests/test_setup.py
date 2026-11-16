@@ -33,7 +33,7 @@ class _FakeNotificationDoc:
 
 class TestNotificationSetup(FrappeTestCase):
 	def test_create_notifications_called_twice_does_not_recreate(self):
-		# First run creates all four templates; a second run (install then migrate) creates none.
+		# First run creates every template; a second run (install then migrate) creates none.
 		new_doc = _FakeNotificationDoc()
 		with patch("asn_module.notifications.setup.frappe.db.exists", return_value=False):
 			with patch("asn_module.notifications.setup.frappe.get_doc", return_value=new_doc) as get_doc:
@@ -89,3 +89,15 @@ class TestNotificationSetup(FrappeTestCase):
 				):
 					with self.assertRaises(Exception):
 						notifications_setup.create_notifications()
+
+	def test_retired_notifications_are_deleted_and_not_recreated(self):
+		names = [t["name"] for t in notifications_setup.NOTIFICATION_TEMPLATES]
+		for retired in notifications_setup.RETIRED_NOTIFICATIONS:
+			self.assertNotIn(retired, names)
+
+		with patch("asn_module.notifications.setup.frappe.db.exists", return_value=True):
+			with patch("asn_module.notifications.setup.frappe.delete_doc") as delete_doc:
+				with patch("asn_module.notifications.setup.frappe.get_doc"):
+					notifications_setup.create_notifications()
+		deleted = [c.args[1] for c in delete_doc.call_args_list]
+		self.assertEqual(deleted, list(notifications_setup.RETIRED_NOTIFICATIONS))
