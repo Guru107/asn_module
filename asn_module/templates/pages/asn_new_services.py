@@ -832,8 +832,7 @@ def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]],
 	errors: list[dict] = []
 	for header, items in payloads:
 		try:
-			_claim_supplier_invoice(supplier, header.get("supplier_invoice_no"))
-			asn = insert_and_submit_asn(supplier=supplier, header=header, items=items)
+			asn = _create_claimed_asn(supplier, header, items)
 		except PortalValidationError as exc:
 			errors = exc.errors
 			break
@@ -857,6 +856,23 @@ def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]],
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit - per-ASN batch commit, see above
 		asn_names.append(asn.name)
 	_email_bulk_result(notify_user, asn_names, errors)
+
+
+def _create_claimed_asn(supplier: str, header: dict, items: list[dict]):
+	"""Claim the invoice number and create the ASN, once more if MariaDB picks this job to fail.
+
+	Two jobs' gap locks on the invoice number index can deadlock, and with snapshot isolation
+	(MariaDB 11.6+) the locking read fails when it meets an ASN another job committed after this
+	transaction's snapshot. A fresh transaction clears both; the claim then reports that ASN.
+	"""
+	try:
+		_claim_supplier_invoice(supplier, header.get("supplier_invoice_no"))
+		return insert_and_submit_asn(supplier=supplier, header=header, items=items)
+	except frappe.QueryDeadlockError:
+		# Earlier ASNs are committed, so this undoes only this attempt.
+		frappe.db.rollback()
+	_claim_supplier_invoice(supplier, header.get("supplier_invoice_no"))
+	return insert_and_submit_asn(supplier=supplier, header=header, items=items)
 
 
 def _claim_supplier_invoice(supplier: str, invoice_no: str | None) -> None:
