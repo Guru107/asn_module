@@ -1625,6 +1625,7 @@ class TestReceiptHelpers(FrappeTestCase):
 			batch_no=None,
 			serial_no=None,
 			idx=1,
+			custom_gate_pass_item="GPI-1",
 		)
 		receipt = SimpleNamespace(
 			doctype="Purchase Receipt",
@@ -1663,7 +1664,9 @@ class TestReceiptHelpers(FrappeTestCase):
 				)
 			],
 		)
-		gate_pass_row = SimpleNamespace(purchase_order_item="POI-1", receive_qty=8)
+		gate_pass_row = SimpleNamespace(
+			name="GPI-1", idx=1, purchase_order_item="POI-1", receive_qty=8, asn_item="ASNI-1"
+		)
 		gate_pass = SimpleNamespace(get=lambda field: [gate_pass_row] if field == "items" else None)
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.db.exists", return_value=True),

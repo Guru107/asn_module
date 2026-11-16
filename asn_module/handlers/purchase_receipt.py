@@ -886,13 +886,13 @@ def _asn_lines_received_at_gate(asn, gate_pass) -> dict:
 	# shortcut: a Gate Pass saved before asn_item existed pairs the k-th row on an order line
 	# with the k-th ASN line on it, so edited rows shift qty; drop once none of those is open.
 	by_position = {}
-	if not any(row.get("asn_item") for row in rows):
+	if not any(getattr(row, "asn_item", None) for row in rows):
 		for asn_item in asn.items:
 			by_position.setdefault(asn_item.purchase_order_item, []).append(asn_item)
 	received = {}
 	linked = set()
 	for row in rows:
-		asn_item_name = row.get("asn_item")
+		asn_item_name = getattr(row, "asn_item", None)
 		if asn_item_name:
 			if asn_item_name not in asn_lines:
 				frappe.throw(
