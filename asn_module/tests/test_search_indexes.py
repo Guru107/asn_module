@@ -5,6 +5,7 @@ INDEXED_FIELDS = {
 	"ASN": ("supplier", "supplier_invoice_no", "status"),
 	"ASN Item": ("purchase_order",),
 	"Purchase Receipt": ("asn",),
+	"Purchase Invoice": ("asn",),
 }
 
 

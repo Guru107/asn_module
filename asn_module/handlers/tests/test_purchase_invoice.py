@@ -186,6 +186,35 @@ class TestCreatePurchaseInvoice(FrappeTestCase):
 				payload={"action": "create_purchase_invoice"},
 			)
 
+	def test_a_second_invoice_for_a_fully_invoiced_asn_is_refused(self):
+		pr = self._make_submitted_purchase_receipt(qty=2)
+		first = self._invoice_from_receipt(pr)
+		first.items[0].qty = 1
+		first.save(ignore_permissions=True)
+		first.submit()
+
+		# The ASN is only half invoiced: an invoice for the rest submits.
+		rest = self._invoice_from_receipt(pr)
+		rest.submit()
+
+		# Amend copies the ASN link, so the copy is a third invoice for the same ASN.
+		extra = frappe.copy_doc(rest)
+		extra.docstatus = 0
+		extra.insert(ignore_permissions=True)
+		with self.assertRaises(frappe.ValidationError) as raised:
+			extra.submit()
+		message = str(raised.exception)
+		self.assertIn(f"ASN {pr.asn} is already fully invoiced on Purchase Invoice", message)
+		self.assertTrue(first.name in message or rest.name in message, message)
+
+	def _invoice_from_receipt(self, pr):
+		result = create_from_purchase_receipt(
+			source_doctype="Purchase Receipt",
+			source_name=pr.name,
+			payload={"action": "create_purchase_invoice"},
+		)
+		return frappe.get_doc("Purchase Invoice", result["name"])
+
 	def test_rejects_fully_billed_purchase_receipt(self):
 		pr = self._make_submitted_purchase_receipt(per_billed=100)
 

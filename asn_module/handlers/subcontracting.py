@@ -6,7 +6,7 @@ from asn_module.handlers.purchase_receipt import (
 	_pair_unmapped_rows,
 	_record_linked_received_qty,
 )
-from asn_module.handlers.utils import fill_custom_fiscal_year, store_scan_code
+from asn_module.handlers.utils import fill_custom_fiscal_year, refuse_repeat_asn_booking, store_scan_code
 from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_subcontracting_receipt
 from asn_module.stock_cap.messages import throw_stock_cap_exceeded
@@ -136,9 +136,11 @@ def on_subcontracting_receipt_before_submit(doc, method=None):
 	"""Block a receipt that would carry a finished good above its branch maximum.
 
 	Runs before_submit so no stock ledger entry is written before the block. Rows the ASN
-	map does not know (an amended receipt) are paired to their ASN lines first.
+	map does not know (an amended receipt) are paired to their ASN lines first. A Job ASN
+	another receipt already booked is refused.
 	"""
 	del method
+	refuse_repeat_asn_booking(doc)
 	_pair_unmapped_rows(doc, "subcontracting_order_item")
 	breaches = breaches_for_subcontracting_receipt(doc)
 	if breaches:
