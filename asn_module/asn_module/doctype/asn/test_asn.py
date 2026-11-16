@@ -1152,12 +1152,49 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		asn.reload()
 		self.assertEqual(flt(asn.items[0].received_qty), 0)
 
+	def test_a_second_receipt_for_a_booked_asn_is_refused_until_the_first_is_cancelled(self):
+		for received, status in ((10, "Received"), (8, "Closed")):
+			with self.subTest(status=status):
+				po = self._submitted_purchase_order(qty=10)
+				asn = make_test_asn(purchase_order=po, qty=10)
+				asn.insert(ignore_permissions=True)
+				asn.submit()
+				first = self._purchase_receipt(po, asn, qty=received)
+				self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), status)
+
+				second = self._purchase_receipt(po, asn, qty=received, submit=False)
+				with self.assertRaises(frappe.ValidationError) as raised:
+					self._submit_purchase_receipt(second)
+				self.assertIn(f"ASN {asn.name} is already {status}", str(raised.exception))
+				self.assertIn(first.name, str(raised.exception))
+
+				first.cancel()
+				second.reload()
+				self._submit_purchase_receipt(second)
+				self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), status)
+
+	def test_a_duplicated_receipt_carries_no_asn_link(self):
+		po = self._submitted_purchase_order(qty=10)
+		asn = make_test_asn(purchase_order=po, qty=10)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		receipt = self._purchase_receipt(po, asn, qty=10, submit=False)
+		receipt.reload()
+
+		# Desk Duplicate drops no_copy fields; Amend keeps them.
+		duplicate = frappe.copy_doc(receipt, ignore_no_copy=False)
+		self.assertFalse(duplicate.asn)
+		self.assertFalse(duplicate.asn_items)
+		for doctype in ("Purchase Receipt", "Subcontracting Receipt", "Purchase Invoice"):
+			self.assertTrue(frappe.get_meta(doctype).get_field("asn").no_copy, doctype)
+
 	def test_an_unmapped_row_skips_the_split_line_another_receipt_filled(self):
 		po = self._submitted_purchase_order(qty=10)
 		asn = make_test_asn_with_two_items(purchase_order=po, qty=5)
 		asn.insert(ignore_permissions=True)
 		asn.submit()
-		self._purchase_receipt(po, asn, qty=5)
+		# A filled line stands in for an earlier receipt: a second receipt for a booked ASN is refused.
+		frappe.db.set_value("ASN Item", asn.items[0].name, "received_qty", 5, update_modified=False)
 
 		second = self._purchase_receipt(po, asn, qty=5, submit=False)
 		second.db_set("asn_items", None, notify=False)
@@ -1173,14 +1210,8 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		asn = make_test_asn_with_two_items(purchase_order=po, qty=5)
 		asn.insert(ignore_permissions=True)
 		asn.submit()
-		first = self._purchase_receipt(po, asn, qty=5, submit=False)
-		first.db_set(
-			"asn_items",
-			json.dumps({first.items[0].name: {"asn_item_name": asn.items[1].name}}),
-			notify=False,
-		)
-		first.reload()
-		self._submit_purchase_receipt(first)
+		# A filled line stands in for an earlier receipt: a second receipt for a booked ASN is refused.
+		frappe.db.set_value("ASN Item", asn.items[1].name, "received_qty", 5, update_modified=False)
 
 		second = self._purchase_receipt(po, asn, qty=3, submit=False)
 		second.reload()
