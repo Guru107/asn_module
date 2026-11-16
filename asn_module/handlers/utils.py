@@ -145,26 +145,28 @@ def refuse_repeat_asn_booking(doc) -> None:
 	submitted invoices. Cancelling that document frees the ASN again. A return is its own
 	transaction and is never refused here.
 	"""
-	if not doc.get("asn") or cint(doc.get("is_return")):
+	asn = getattr(doc, "asn", None)
+	if not asn or cint(getattr(doc, "is_return", 0)):
 		return
+	doctype = getattr(doc, "doctype", None)
 	# Locking read: two drafts submitted together are checked one after the other.
-	status = frappe.db.get_value("ASN", doc.asn, "status", for_update=True)
-	if doc.doctype == "Purchase Invoice" and not cint(doc.get("update_stock")):
-		invoice = _invoice_billing_asn_in_full(doc.asn)
+	status = frappe.db.get_value("ASN", asn, "status", for_update=True)
+	if doctype == "Purchase Invoice" and not cint(getattr(doc, "update_stock", 0)):
+		invoice = _invoice_billing_asn_in_full(asn)
 		if invoice:
 			frappe.throw(
 				_(
 					"ASN {0} is already fully invoiced on Purchase Invoice {1}. Cancel {1} to invoice it again."
-				).format(doc.asn, invoice)
+				).format(asn, invoice)
 			)
 		return
 	if status not in BOOKED_ASN_STATUSES:
 		return
-	booking_doctype = doc.doctype if doc.doctype == "Subcontracting Receipt" else "Purchase Receipt"
-	receipt = frappe.db.get_value(booking_doctype, {"asn": doc.asn, "docstatus": 1, "is_return": 0}, "name")
+	booking_doctype = doctype if doctype == "Subcontracting Receipt" else "Purchase Receipt"
+	receipt = frappe.db.get_value(booking_doctype, {"asn": asn, "docstatus": 1, "is_return": 0}, "name")
 	frappe.throw(
 		_("ASN {0} is already {1}, booked on {2}. Cancel that document to book the ASN again.").format(
-			doc.asn, _(status), f"{_(booking_doctype)} {receipt}" if receipt else _("another receipt")
+			asn, _(status), f"{_(booking_doctype)} {receipt}" if receipt else _("another receipt")
 		)
 	)
 
