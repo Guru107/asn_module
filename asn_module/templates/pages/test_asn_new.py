@@ -10,10 +10,11 @@ from frappe.tests.utils import FrappeTestCase
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 from asn_module.templates.pages import asn_new
 from asn_module.templates.pages.asn_new_services import (
+	BULK_ASN_JOB,
+	BULK_ASN_JOB_TIMEOUT,
 	ParsedBulkRow,
 	ParsedSingleRow,
 	PortalValidationError,
-	error_entry,
 	resolve_po_item,
 	validate_no_duplicate_po_sr_no,
 	validate_supplier_invoices_not_reused,
@@ -307,35 +308,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 		self.assertTrue(context.single_errors)
 		self.assertEqual(context.single_errors[0]["field"], "mode")
 
-	def test_get_context_names_asns_already_submitted_when_a_later_bulk_group_fails(self):
-		context = SimpleNamespace()
-
-		def _boom(*_a, **_k):
-			raise PortalValidationError(
-				[error_entry(field="items_csv", message="Stock Cap Exceeded for WIDGET")],
-				created_asn_names=("ASN-0001",),
-			)
-
-		request = SimpleNamespace(method="POST", files={})
-		with (
-			patch("asn_module.templates.pages.asn_new.frappe.request", request),
-			patch("asn_module.templates.pages.asn_new.frappe.form_dict", {"mode": "bulk"}),
-			patch(
-				"asn_module.templates.pages.asn_new.frappe.session",
-				SimpleNamespace(user="supplier@example.com"),
-			),
-			patch("asn_module.templates.pages.asn_new._get_supplier_for_user", return_value="Supp-001"),
-			patch(
-				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
-			),
-			patch("asn_module.templates.pages.asn_new._create_bulk_asns", side_effect=_boom),
-			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
-		):
-			asn_new.get_context(context)
-
-		self.assertEqual(context.bulk_submitted_names, "ASN-0001")
-		self.assertIn("Stock Cap Exceeded", context.bulk_errors[0]["message"])
-
 	def test_get_context_maps_frappe_validation_error_to_bulk_errors(self):
 		context = SimpleNamespace()
 
@@ -354,7 +326,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
 			),
-			patch("asn_module.templates.pages.asn_new._create_bulk_asns", side_effect=_boom),
+			patch("asn_module.templates.pages.asn_new._queue_bulk_asns", side_effect=_boom),
 			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
 			asn_new.get_context(context)
@@ -499,17 +471,13 @@ class TestASNNewPortalPage(FrappeTestCase):
 			patch(
 				"asn_module.templates.pages.asn_new.get_open_purchase_orders_for_supplier", return_value=[]
 			),
-			patch(
-				"asn_module.templates.pages.asn_new._create_bulk_asns",
-				return_value=asn_new.CreateResult(asn_names=["ASN-0001", "ASN-0002"]),
-			),
+			patch("asn_module.templates.pages.asn_new._queue_bulk_asns", return_value=2),
 			patch("asn_module.templates.pages.asn_new.frappe.local", _fake_frappe_local()),
 		):
 			asn_new.get_context(context)
 
 		self.assertEqual(context.active_tab, "bulk")
-		self.assertIn("ASN-0001", context.bulk_success)
-		self.assertIn("ASN-0002", context.bulk_success)
+		self.assertIn("2 ASN(s) are queued", context.bulk_success)
 
 	def test_validate_supplier_invoices_not_reused_raises_portal_error(self):
 		with patch("asn_module.templates.pages.asn_new_services.frappe.get_all", return_value=["INV-DUP"]):
@@ -979,7 +947,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 			),
 		):
 			with self.assertRaises(PortalValidationError) as ctx:
-				asn_new._create_bulk_asns("Supp-001")
+				asn_new._queue_bulk_asns("Supp-001")
 		messages = " ".join(error.get("message", "") for error in ctx.exception.errors)
 		self.assertIn("single Purchase Order", messages)
 
@@ -1025,8 +993,6 @@ class TestASNNewPortalPage(FrappeTestCase):
 			("PO-0002", "1"): [SimpleNamespace(name="POI-2", item_code="ITEM-002", uom="Nos", rate=20)],
 		}
 		remaining_qty = {"POI-1": 10, "POI-2": 10}
-		mock_asn_1 = SimpleNamespace(name="ASN-0001")
-		mock_asn_2 = SimpleNamespace(name="ASN-0002")
 
 		with (
 			patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=rows),
@@ -1037,15 +1003,25 @@ class TestASNNewPortalPage(FrappeTestCase):
 				"asn_module.templates.pages.asn_new_services.fetch_purchase_order_items",
 				return_value=(rows_by_key, remaining_qty),
 			),
-			patch(
-				"asn_module.templates.pages.asn_new._insert_and_submit_asn",
-				side_effect=[mock_asn_1, mock_asn_2],
-			) as mock_insert_submit,
+			patch("asn_module.templates.pages.asn_new.frappe.enqueue") as enqueue,
+			patch("asn_module.templates.pages.asn_new_services.insert_and_submit_asn") as insert_submit,
 		):
-			result = asn_new._create_bulk_asns("Supp-001")
+			queued = asn_new._queue_bulk_asns("Supp-001")
 
-		self.assertEqual(result.asn_names, ["ASN-0001", "ASN-0002"])
-		self.assertEqual(mock_insert_submit.call_count, 2)
+		# Validation runs in the request; creation is left to the long-queue job, after commit.
+		self.assertEqual(queued, 2)
+		insert_submit.assert_not_called()
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.args, (BULK_ASN_JOB,))
+		kwargs = enqueue.call_args.kwargs
+		self.assertEqual(kwargs["queue"], "long")
+		self.assertEqual(kwargs["timeout"], BULK_ASN_JOB_TIMEOUT)
+		self.assertTrue(kwargs["enqueue_after_commit"])
+		self.assertEqual(kwargs["supplier"], "Supp-001")
+		self.assertEqual(kwargs["notify_user"], frappe.session.user)
+		self.assertEqual(
+			[header["supplier_invoice_no"] for header, _items in kwargs["payloads"]], ["INV-1", "INV-2"]
+		)
 
 	def test_create_bulk_asn_rejects_empty_csv(self):
 		with (
@@ -1053,7 +1029,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 			patch("asn_module.templates.pages.asn_new_services.enforce_bulk_limits"),
 			self.assertRaises(PortalValidationError) as ctx,
 		):
-			asn_new._create_bulk_asns("Supp-001")
+			asn_new._queue_bulk_asns("Supp-001")
 
 		self.assertEqual(ctx.exception.errors[0]["field"], "items_csv")
 
@@ -1088,7 +1064,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 			),
 			self.assertRaises(PortalValidationError) as ctx,
 		):
-			asn_new._create_bulk_asns("Supp-001")
+			asn_new._queue_bulk_asns("Supp-001")
 
 		fields = [error["field"] for error in ctx.exception.errors]
 		self.assertIn("sr_no", fields)
@@ -1564,7 +1540,6 @@ class TestPortalTemplateEscapesServerText(FrappeTestCase):
 		html = self._render(
 			single_errors=[{"row_number": 1, "message": self.PAYLOAD}],
 			bulk_errors=[{"invoice_no": self.PAYLOAD, "row_number": 2, "message": self.PAYLOAD}],
-			bulk_submitted_names=self.PAYLOAD,
 			bulk_success=self.PAYLOAD,
 			asn_name=self.PAYLOAD,
 			supplier=self.PAYLOAD,
