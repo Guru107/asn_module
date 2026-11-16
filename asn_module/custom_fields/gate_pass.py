@@ -6,7 +6,7 @@ from asn_module.custom_fields.scan_code import scan_code_field
 
 
 def setup():
-	"""Add the ASN link and read-only Scan Code to Gate Pass; Gate Pass belongs to another app.
+	"""Add the ASN link and read-only Scan Code to Gate Pass, and the ASN Item to its rows.
 
 	Skipped where that app is not installed (CI): its tests create their own Gate Pass.
 	"""
@@ -33,4 +33,17 @@ def setup():
 			}
 		)
 	fields.append(scan_code_field("asn"))
-	create_custom_fields({"Gate Pass": fields})
+	custom_fields = {"Gate Pass": fields}
+	if frappe.db.exists("DocType", "Gate Pass Item"):
+		# Receipts pair each Gate Pass row with its ASN line on this, not on row position.
+		custom_fields["Gate Pass Item"] = [
+			{
+				"fieldname": "asn_item",
+				"fieldtype": "Data",
+				"label": "ASN Item",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "receive_qty",
+			}
+		]
+	create_custom_fields(custom_fields)

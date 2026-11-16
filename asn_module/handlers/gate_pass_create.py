@@ -114,7 +114,8 @@ def overlay_gate_pass_onto_mapped_pr(purchase_receipt: Any, gate_pass: Any) -> A
 			target.received_qty = qty
 			target.stock_qty = qty * conversion
 			_set_field(target, "custom_gate_pass", gate_pass.name)
-			_set_field(target, "custom_gate_pass_item", _row_value(gp_row, "name"))
+			# Set even where the site lacks the field: the ASN stamp pairs ASN lines on it.
+			target.custom_gate_pass_item = _row_value(gp_row, "name")
 
 	ensure_load_after_mapping(purchase_receipt)
 	return purchase_receipt
