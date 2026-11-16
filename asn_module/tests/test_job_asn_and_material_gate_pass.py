@@ -12,6 +12,7 @@ from frappe.utils import flt, today
 
 from asn_module.asn_module.doctype.asn.asn import ASN
 from asn_module.asn_module.doctype.asn.test_asn import (
+	_ensure_item,
 	_ensure_other_supplier,
 	_other_uom,
 	create_purchase_order,
@@ -1449,10 +1450,11 @@ class TestMaterialGatePassScan(IntegrationTestCase):
 	def test_create_on_a_submitted_material_gate_pass_opens_a_purchase_receipt_carrying_the_asn(self):
 		with with_gate_pass_mode(True):
 			with integration_user_context():
-				purchase_order = create_purchase_order(qty=4)
-				batch_id = f"BATCH-{frappe.generate_hash(length=6)}"
-				item_code = purchase_order.items[0].item_code
+				# Its own item: a batch flag on the shared _Test ASN Item leaks into other tests (#190).
+				item_code = _ensure_item("_Test ASN Batch Item")
 				frappe.db.set_value("Item", item_code, "has_batch_no", 1, update_modified=False)
+				purchase_order = create_purchase_order(qty=4, item_code=item_code)
+				batch_id = f"BATCH-{frappe.generate_hash(length=6)}"
 				frappe.get_doc({"doctype": "Batch", "batch_id": batch_id, "item": item_code}).insert(
 					ignore_permissions=True
 				)
