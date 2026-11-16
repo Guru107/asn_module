@@ -188,6 +188,7 @@ doc_events = {
 		"on_cancel": "asn_module.handlers.subcontracting.on_subcontracting_receipt_cancel",
 	},
 	"Gate Pass": {
+		"validate": "asn_module.handlers.purchase_receipt.refuse_repeated_asn_item",
 		"on_submit": "asn_module.handlers.purchase_receipt.on_gate_pass_submit",
 		"on_cancel": "asn_module.handlers.purchase_receipt.on_gate_pass_cancel",
 	},
