@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 from asn_module.templates.pages.asn_new_services import (
@@ -13,6 +12,7 @@ from asn_module.templates.pages.asn_new_services import (
 	validate_no_duplicate_po_sr_no,
 	validate_qty_within_remaining,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import before_tests
 
@@ -21,7 +21,7 @@ def _test_dates():
 	return get_fiscal_year_test_dates()
 
 
-class TestAsnNewServicesIntegration(FrappeTestCase):
+class TestAsnNewServicesIntegration(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()

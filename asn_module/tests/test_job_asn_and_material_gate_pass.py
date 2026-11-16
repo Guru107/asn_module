@@ -8,7 +8,6 @@ from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
 from frappe.permissions import add_permission, update_permission_property
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
 
 from asn_module.asn_module.doctype.asn.asn import ASN
@@ -48,6 +47,7 @@ from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.stock_cap.fetch import _fetch_in_transit
 from asn_module.templates.pages import asn_new
 from asn_module.templates.pages.asn_new_services import PortalValidationError, create_job_asn_for_supplier
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.fixtures import (
 	ensure_integration_user,
 	integration_user_context,
@@ -56,7 +56,7 @@ from asn_module.tests.integration.fixtures import (
 from asn_module.utils.test_setup import before_tests
 
 
-class TestAsnOrderIdentity(FrappeTestCase):
+class TestAsnOrderIdentity(IntegrationTestCase):
 	def test_save_refuses_a_notice_that_mixes_a_purchase_order_and_a_subcontracting_order(self):
 		purchase_order = create_purchase_order(qty=2)
 		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
@@ -242,7 +242,7 @@ class TestAsnOrderIdentity(FrappeTestCase):
 		self.assertIn("order line", str(raised.exception).lower())
 
 
-class TestJobAsnPortal(FrappeTestCase):
+class TestJobAsnPortal(IntegrationTestCase):
 	def test_supplier_portal_raises_a_job_asn_against_one_open_subcontracting_order(self):
 		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
 		finished_good = subcontracting_order.items[0]
@@ -466,7 +466,7 @@ class _PostedForm(dict):
 		return [value]
 
 
-class TestJobAsnScan(FrappeTestCase):
+class TestJobAsnScan(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -522,7 +522,7 @@ def submit_subcontracting_receipt_hooks(receipt) -> None:
 	on_subcontracting_receipt_submit(receipt)
 
 
-class TestJobAsnReceiptTracking(FrappeTestCase):
+class TestJobAsnReceiptTracking(IntegrationTestCase):
 	"""A Subcontracting Receipt updates its Job ASN as a linked Purchase Receipt does."""
 
 	@classmethod
@@ -673,7 +673,7 @@ def ensure_mandatory_fiscal_year_custom_field() -> None:
 	frappe.clear_cache(doctype="Subcontracting Receipt")
 
 
-class TestJobAsnScanWithMandatoryFiscalYear(FrappeTestCase):
+class TestJobAsnScanWithMandatoryFiscalYear(IntegrationTestCase):
 	"""The scan must satisfy a site's mandatory Fiscal Year on the receipts it builds.
 
 	Deleting the draft receipt used to be enough to expose this: while a draft exists
@@ -938,7 +938,7 @@ def _second_scan_with_a_stale_snapshot():
 		yield get_doc
 
 
-class TestMaterialGatePassScan(FrappeTestCase):
+class TestMaterialGatePassScan(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -1650,7 +1650,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertFalse(gate_pass.vehicle_number)
 
 
-class TestReceiptHelpers(FrappeTestCase):
+class TestReceiptHelpers(IntegrationTestCase):
 	def test_shipped_qty_skips_a_receipt_line_that_is_not_on_the_notice(self):
 		asn = SimpleNamespace(
 			items=[

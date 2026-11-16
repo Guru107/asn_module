@@ -3,10 +3,10 @@
 import secrets
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.commands import verify_scan_code_registry
 from asn_module.qr_engine.scan_codes import SCAN_CODE_ALPHABET, SCAN_CODE_LENGTH
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
 from asn_module.tests.integration.fixtures import (
 	ensure_integration_user,
@@ -16,7 +16,7 @@ from asn_module.tests.integration.fixtures import (
 from asn_module.utils.test_setup import before_tests
 
 
-class TestRegistryCommandIntegration(FrappeTestCase):
+class TestRegistryCommandIntegration(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()

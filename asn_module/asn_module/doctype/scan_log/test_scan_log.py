@@ -1,8 +1,9 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
+
+from asn_module.tests.compat import IntegrationTestCase
 
 
-class TestScanLog(FrappeTestCase):
+class TestScanLog(IntegrationTestCase):
 	def test_insert_uses_scan_prefix(self):
 		log = frappe.get_doc(
 			{

@@ -1,16 +1,15 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from frappe.tests.utils import FrappeTestCase
-
 import asn_module.custom_fields.purchase_invoice as purchase_invoice_fields
 import asn_module.custom_fields.purchase_receipt as purchase_receipt_fields
 import asn_module.custom_fields.subcontracting_receipt as subcontracting_receipt_fields
 import asn_module.hooks as hooks
 import asn_module.setup as setup_module
+from asn_module.tests.compat import IntegrationTestCase
 
 
-class TestHooks(FrappeTestCase):
+class TestHooks(IntegrationTestCase):
 	def test_app_include_js_registers_global_scan_assets(self):
 		self.assertEqual(
 			hooks.app_include_js,

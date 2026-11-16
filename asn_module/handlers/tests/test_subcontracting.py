@@ -1,7 +1,6 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import nowdate
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
@@ -15,6 +14,7 @@ from asn_module.handlers.subcontracting import (
 	on_subcontracting_order_submit,
 	on_subcontracting_receipt_submit,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import apply_item_site_requirements, resolve_test_company
 
 
@@ -43,7 +43,7 @@ class _FakeDoc:
 		return self
 
 
-class TestSubcontractingHandlers(FrappeTestCase):
+class TestSubcontractingHandlers(IntegrationTestCase):
 	def _ensure_item(self, item_code: str, *, is_stock_item: int = 1):
 		if frappe.db.exists("Item", item_code):
 			return item_code

@@ -1,12 +1,12 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import _ensure_item, make_test_asn
 from asn_module.patches.backfill_asn_routes import execute
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import before_tests
 
 
-class TestBackfillAsnRoutes(FrappeTestCase):
+class TestBackfillAsnRoutes(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

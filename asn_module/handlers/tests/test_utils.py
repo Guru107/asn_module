@@ -2,13 +2,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.handlers.utils import (
 	apply_site_document_requirements,
 	fill_custom_fiscal_year,
 	fiscal_year_for_date,
 )
+from asn_module.tests.compat import IntegrationTestCase
 
 
 def _doc_with_fiscal_year_field(reqd: int = 1, **values) -> frappe._dict:
@@ -25,7 +25,7 @@ def _doc_with_fiscal_year_field(reqd: int = 1, **values) -> frappe._dict:
 	return doc
 
 
-class TestFillCustomFiscalYear(FrappeTestCase):
+class TestFillCustomFiscalYear(IntegrationTestCase):
 	def test_fills_a_mandatory_field_from_the_posting_date(self):
 		doc = _doc_with_fiscal_year_field(posting_date="2026-10-19")
 
@@ -109,7 +109,7 @@ def _doc_with_taxes_field(reqd: int = 1, **values) -> frappe._dict:
 	return doc
 
 
-class TestApplySiteDocumentRequirements(FrappeTestCase):
+class TestApplySiteDocumentRequirements(IntegrationTestCase):
 	def test_refuses_to_guess_between_several_purchase_orders(self):
 		doc = _doc_with_taxes_field(items=[{"purchase_order": "PO-1"}, {"purchase_order": "PO-2"}])
 
@@ -150,7 +150,7 @@ class TestApplySiteDocumentRequirements(FrappeTestCase):
 		self.assertEqual(doc.taxes, [])
 
 
-class TestFiscalYearForDate(FrappeTestCase):
+class TestFiscalYearForDate(IntegrationTestCase):
 	def test_picks_the_latest_start_date_when_years_overlap(self):
 		with patch.object(
 			frappe,

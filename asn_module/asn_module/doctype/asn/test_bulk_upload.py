@@ -2,7 +2,6 @@ from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn import bulk_upload
 from asn_module.templates.pages.asn_new_services import (
@@ -10,6 +9,7 @@ from asn_module.templates.pages.asn_new_services import (
 	ParsedBulkRow,
 	PortalValidationError,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import before_tests
 
@@ -48,7 +48,7 @@ def _allow_desk_permissions():
 	return patch(f"{_BULK_UPLOAD_MODULE}.frappe.has_permission", return_value=True)
 
 
-class TestDeskBulkASNUpload(FrappeTestCase):
+class TestDeskBulkASNUpload(IntegrationTestCase):
 	def test_get_bulk_csv_headers_requires_permission_and_returns_headers(self):
 		with _allow_desk_permissions():
 			self.assertEqual(bulk_upload.get_bulk_csv_headers(), BULK_CSV_HEADERS)
@@ -218,7 +218,7 @@ def _as_user(email: str):
 		frappe.set_user(previous)
 
 
-class TestDeskBulkUploadFilePermission(FrappeTestCase):
+class TestDeskBulkUploadFilePermission(IntegrationTestCase):
 	"""Issue #65 regression: the desk bulk-upload endpoint must check read permission
 	on the referenced File before reading its content, using the real Frappe permission
 	engine (a private File owned by someone else, a plain enabled User).

@@ -1,17 +1,16 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from frappe.tests.utils import FrappeTestCase
-
 from asn_module.supplier_asn_portal import (
 	asn_eligible_for_supplier_portal_cancel,
 	asn_eligible_for_supplier_portal_delete,
 	purchase_receipt_exists_for_asn,
 	purchase_receipt_linked_to_asn,
 )
+from asn_module.tests.compat import IntegrationTestCase
 
 
-class TestSupplierAsnPortal(FrappeTestCase):
+class TestSupplierAsnPortal(IntegrationTestCase):
 	def test_purchase_receipt_exists_for_asn_returns_false_for_blank_asn(self):
 		with patch("frappe.db.has_column") as has_column:
 			self.assertFalse(purchase_receipt_exists_for_asn(""))

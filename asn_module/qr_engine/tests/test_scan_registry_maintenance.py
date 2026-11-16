@@ -1,8 +1,8 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from asn_module.asn_module.doctype.scan_log.scan_log import LOG_RETENTION_DAYS, ScanLog
+from asn_module.tests.compat import IntegrationTestCase
 
 
 def _index_column_orders(table: str) -> list[list[str]]:
@@ -30,7 +30,7 @@ def _assert_index_leading_columns(test_case, table: str, columns: tuple[str, ...
 	)
 
 
-class TestScanRegistryIndexes(FrappeTestCase):
+class TestScanRegistryIndexes(IntegrationTestCase):
 	"""The on-trash hook filters must be served by index-leading columns."""
 
 	def test_scan_code_source_index(self):
@@ -43,7 +43,7 @@ class TestScanRegistryIndexes(FrappeTestCase):
 		_assert_index_leading_columns(self, "Scan Log", ("source_doctype", "source_name"))
 
 
-class TestScanLogClearing(FrappeTestCase):
+class TestScanLogClearing(IntegrationTestCase):
 	def test_clear_old_logs_deletes_only_expired_rows(self):
 		old_log = frappe.get_doc(
 			{

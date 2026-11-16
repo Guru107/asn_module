@@ -1,11 +1,10 @@
 from importlib import import_module
 
-from frappe.tests.utils import FrappeTestCase
-
 from asn_module.setup_actions import ACTIONS, get_action
+from asn_module.tests.compat import IntegrationTestCase
 
 
-class TestActionsMap(FrappeTestCase):
+class TestActionsMap(IntegrationTestCase):
 	def test_map_defines_eight_actions(self):
 		self.assertEqual(len(ACTIONS), 8)
 

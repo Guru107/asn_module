@@ -1,13 +1,13 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order, make_test_asn
 from asn_module.asn_module.report.asn_item_transition_trace.asn_item_transition_trace import execute
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.traceability import emit_asn_item_transition, get_latest_transition_rows_for_asn
 from asn_module.utils.test_setup import before_tests
 
 
-class _ReportTestBase(FrappeTestCase):
+class _ReportTestBase(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()

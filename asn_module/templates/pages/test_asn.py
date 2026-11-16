@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.templates.pages.asn import (
 	_get_supplier_for_user,
@@ -12,6 +11,7 @@ from asn_module.templates.pages.asn import (
 	get_context,
 	has_website_permission,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 
@@ -19,7 +19,7 @@ def _test_dates():
 	return get_fiscal_year_test_dates()
 
 
-class TestASNPortalRouting(FrappeTestCase):
+class TestASNPortalRouting(IntegrationTestCase):
 	"""The /asn route must reach this app's portal page, not Frappe's generic list view.
 
 	The ASN DocType has has_web_view, so Frappe turns its doctype-level `route` into a
@@ -63,7 +63,7 @@ class TestASNPortalRouting(FrappeTestCase):
 		)
 
 
-class TestASNPortalPageAgainstRealDatabase(FrappeTestCase):
+class TestASNPortalPageAgainstRealDatabase(IntegrationTestCase):
 	"""Executes get_context's real queries instead of mocking frappe.get_all.
 
 	Every other test in this file mocks get_all, so none of them can catch a `fields`
@@ -87,7 +87,7 @@ class TestASNPortalPageAgainstRealDatabase(FrappeTestCase):
 		self.assertEqual(context.asn_list, [])
 
 
-class TestASNPortalPage(FrappeTestCase):
+class TestASNPortalPage(IntegrationTestCase):
 	def test_templates_use_website_route_and_gate_desk_create_action(self):
 		asn_page = Path(__file__).with_name("asn.html").read_text()
 		asn_row = Path(__file__).with_name("asn_row.html").read_text()

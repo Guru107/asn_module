@@ -1,6 +1,6 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import apply_item_site_requirements, before_tests, disable_hsn_validation
 
 BRANCH = "_Test Cap Branch Item"
@@ -46,7 +46,7 @@ def _make_cap(branch: str, item: str, max_qty: int = 100):
 	).insert(ignore_permissions=True)
 
 
-class TestASNItemBranchCap(FrappeTestCase):
+class TestASNItemBranchCap(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

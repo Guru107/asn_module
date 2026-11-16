@@ -1,9 +1,9 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
 
 from asn_module.stock_cap.fetch import fetch_cap_context
 from asn_module.stock_cap.models import Line
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import (
 	apply_item_site_requirements,
 	before_tests,
@@ -30,7 +30,7 @@ def _warehouse(name: str) -> str:
 	return full_name
 
 
-class TestStockCapFetch(FrappeTestCase):
+class TestStockCapFetch(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -213,7 +213,7 @@ def _create_purchase_order(create_purchase_order, **kwargs):
 	)
 
 
-class TestStockCapFetchInTransit(FrappeTestCase):
+class TestStockCapFetchInTransit(IntegrationTestCase):
 	"""In-transit behaviour needs real submitted ASNs, so it lives in its own class."""
 
 	@classmethod
@@ -311,7 +311,7 @@ class TestStockCapFetchInTransit(FrappeTestCase):
 		self.assertEqual(self._in_transit(), 0.0)
 
 
-class TestStockCapFetchPoItemReceivingQty(FrappeTestCase):
+class TestStockCapFetchPoItemReceivingQty(IntegrationTestCase):
 	"""po_item_receiving_qty is the Purchase Receipt path's correction mechanism (see
 	breaches_for_purchase_receipt). Unlike exclude_asn_name -- which drops every ASN Item
 	belonging to the excluded ASN -- it subtracts only the stock-UOM quantity a receipt is

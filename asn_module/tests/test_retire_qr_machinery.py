@@ -1,7 +1,7 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.patches.retire_qr_machinery import execute
+from asn_module.tests.compat import IntegrationTestCase
 
 
 def _forget_scan_code_columns() -> None:
@@ -12,7 +12,7 @@ def _forget_scan_code_columns() -> None:
 		frappe.cache().hdel("table_columns", "tabScan Code")
 
 
-class TestRetireQrMachinery(FrappeTestCase):
+class TestRetireQrMachinery(IntegrationTestCase):
 	def test_patch_drops_the_scan_code_expiry_column(self):
 		if not frappe.db.has_column("Scan Code", "expires_on"):
 			frappe.db.sql_ddl("ALTER TABLE `tabScan Code` ADD COLUMN `expires_on` datetime(6) NULL")

@@ -1,14 +1,14 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.commands import verify_scan_code_registry
 from asn_module.qr_engine.scan_codes import _random_scan_code_value
 from asn_module.setup_actions import ACTIONS
+from asn_module.tests.compat import IntegrationTestCase
 
 
-class TestVerifyScanCodeRegistry(FrappeTestCase):
+class TestVerifyScanCodeRegistry(IntegrationTestCase):
 	def _make_orphan_scan_code(self):
 		doc = frappe.get_doc(
 			{

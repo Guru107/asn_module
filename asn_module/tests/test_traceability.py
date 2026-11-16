@@ -1,7 +1,7 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order, make_test_asn
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.traceability import (
 	_idempotency_key,
 	emit_asn_item_transition,
@@ -10,7 +10,7 @@ from asn_module.traceability import (
 from asn_module.utils.test_setup import before_tests
 
 
-class _TraceabilityTestBase(FrappeTestCase):
+class _TraceabilityTestBase(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()
@@ -35,7 +35,7 @@ class _TraceabilityTestBase(FrappeTestCase):
 		return emit_asn_item_transition(**defaults)
 
 
-class TestIdempotencyKey(FrappeTestCase):
+class TestIdempotencyKey(IntegrationTestCase):
 	def test_deterministic(self):
 		k1 = _idempotency_key("ASN-001", "ASN-ITEM-001", "Received", "Purchase Receipt", "PR-001")
 		k2 = _idempotency_key("ASN-001", "ASN-ITEM-001", "Received", "Purchase Receipt", "PR-001")

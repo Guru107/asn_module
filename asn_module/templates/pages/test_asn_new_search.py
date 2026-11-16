@@ -2,9 +2,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.templates.pages import asn_new_search
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 
 
@@ -12,7 +12,7 @@ def _test_dates():
 	return get_fiscal_year_test_dates()
 
 
-class TestASNNewSearch(FrappeTestCase):
+class TestASNNewSearch(IntegrationTestCase):
 	def test_normalize_paging_falls_back_for_invalid_values(self):
 		start, page_len = asn_new_search._normalize_paging("not-a-number", None)
 		self.assertEqual(start, 0)

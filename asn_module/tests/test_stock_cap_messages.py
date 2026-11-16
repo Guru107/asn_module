@@ -1,7 +1,6 @@
-from frappe.tests.utils import FrappeTestCase
-
 from asn_module.stock_cap.messages import format_breaches
 from asn_module.stock_cap.models import Breach
+from asn_module.tests.compat import IntegrationTestCase
 
 BREACH = Breach(
 	branch="Mumbai",
@@ -16,7 +15,7 @@ BREACH = Breach(
 )
 
 
-class TestStockCapMessages(FrappeTestCase):
+class TestStockCapMessages(IntegrationTestCase):
 	def test_detailed_message_includes_stock_figures(self):
 		message = format_breaches([BREACH], detailed=True)
 		self.assertIn("WIDGET", message)

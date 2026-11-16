@@ -1,18 +1,18 @@
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase as UnitTestCase
 
 from asn_module.qr_engine.generate import (
 	InvalidScanImageRequest,
 	scan_image,
 )
+from asn_module.tests.compat import IntegrationTestCase
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 CODE = "ABCDEFGH23456789"
 
 
-class TestScanImageEndpoint(UnitTestCase):
+class TestScanImageEndpoint(IntegrationTestCase):
 	def test_canonical_code_returns_png_for_each_kind_with_immutable_cache(self):
 		for kind in ("barcode", "qr"):
 			response = scan_image(code=CODE, kind=kind)

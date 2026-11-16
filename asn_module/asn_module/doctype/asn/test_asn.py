@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, flt, nowdate, today
 
 from asn_module.asn_module.doctype.asn.asn import (
@@ -20,6 +19,7 @@ from asn_module.templates.pages.asn_new_services import (
 	create_bulk_asns_for_supplier,
 	fetch_purchase_order_items,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import (
 	TEST_COMPANY_NAME,
@@ -41,6 +41,7 @@ IGNORE_TEST_RECORD_DEPENDENCIES = [
 	"Item Group",
 	"Purchase Order",
 	"Purchase Order Item",
+	"Subcontracting Order",
 	"Supplier",
 	"Supplier Group",
 	"UOM",
@@ -352,7 +353,7 @@ def create_purchase_order_with_fiscal_dates(**kwargs):
 	return create_purchase_order(**kwargs)
 
 
-class TestASN(FrappeTestCase):
+class TestASN(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()
@@ -964,7 +965,7 @@ class TestASN(FrappeTestCase):
 			get_item_transition_summary("ASN-0001")
 
 
-class TestRemainingQtyAfterReturn(FrappeTestCase):
+class TestRemainingQtyAfterReturn(IntegrationTestCase):
 	"""A return frees further Shipped Qty on the same Purchase Order line.
 
 	The seam is saving an ASN, plus the quantity the desk picker, the supplier
@@ -1859,7 +1860,7 @@ def _create_purchase_order_with_mandatory_fields(**kwargs):
 	)
 
 
-class TestASNStockCap(FrappeTestCase):
+class TestASNStockCap(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
