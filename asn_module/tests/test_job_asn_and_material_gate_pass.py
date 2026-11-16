@@ -1318,6 +1318,54 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		received = [flt(frappe.db.get_value("ASN Item", row.name, "received_qty")) for row in asn.items]
 		self.assertEqual(received, [0, 6])
 
+	def test_a_row_deleted_at_the_gate_does_not_shift_qty_onto_another_asn_line(self):
+		with with_gate_pass_mode(True):
+			with integration_user_context():
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				first_row = frappe.get_doc("Gate Pass", gate_pass_name).items[0]
+				frappe.db.delete("Gate Pass Item", first_row.name)
+				created = create_receipt_from_gate_pass(gate_pass_name)
+
+		receipt = frappe.get_doc("Purchase Receipt", created["name"])
+		mapping = json.loads(receipt.asn_items)
+		self.assertEqual(
+			[(flt(row.qty), mapping[row.name]["asn_item_name"]) for row in receipt.items],
+			[(6, asn.items[1].name)],
+		)
+		with patch("asn_module.handlers.purchase_receipt.store_scan_code"):
+			receipt.submit()
+		received = [flt(frappe.db.get_value("ASN Item", row.name, "received_qty")) for row in asn.items]
+		self.assertEqual(received, [0, 6])
+
+	def test_reordered_gate_pass_rows_keep_each_asn_lines_own_qty(self):
+		with with_gate_pass_mode(True):
+			with integration_user_context():
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				first_row, second_row = frappe.get_doc("Gate Pass", gate_pass_name).items
+				frappe.db.set_value("Gate Pass Item", first_row.name, "idx", 2, update_modified=False)
+				frappe.db.set_value("Gate Pass Item", second_row.name, "idx", 1, update_modified=False)
+				created = create_receipt_from_gate_pass(gate_pass_name)
+
+		self._assert_each_asn_line_gets_its_own_qty(asn, frappe.get_doc("Purchase Receipt", created["name"]))
+
+	def test_a_gate_pass_row_naming_a_foreign_or_repeated_asn_line_is_refused(self):
+		with with_gate_pass_mode(True), integration_user_context():
+			for case in ("foreign", "repeated"):
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				first_row, second_row = frappe.get_doc("Gate Pass", gate_pass_name).items
+				asn_item = first_row.asn_item if case == "repeated" else "NOT-AN-ASN-ITEM"
+				expected = (
+					f"row 2: ASN Item {asn_item} is already on row 1"
+					if case == "repeated"
+					else f"row 2: ASN Item {asn_item} is not on ASN {asn.name}"
+				)
+				frappe.db.set_value(
+					"Gate Pass Item", second_row.name, "asn_item", asn_item, update_modified=False
+				)
+				with self.subTest(case), self.assertRaises(frappe.ValidationError) as raised:
+					create_receipt_from_gate_pass(gate_pass_name)
+				self.assertIn(expected, str(raised.exception))
+
 	def test_a_second_create_after_a_short_receipt_closed_the_asn_is_refused(self):
 		# The CI Gate Pass has no custom_gate_pass_reference, so only the ASN status stops a second receipt.
 		with with_gate_pass_mode(True):
@@ -1684,6 +1732,7 @@ class TestReceiptHelpers(FrappeTestCase):
 			batch_no=None,
 			serial_no=None,
 			idx=1,
+			custom_gate_pass_item="GPI-1",
 		)
 		receipt = SimpleNamespace(
 			doctype="Purchase Receipt",
@@ -1722,7 +1771,9 @@ class TestReceiptHelpers(FrappeTestCase):
 				)
 			],
 		)
-		gate_pass_row = SimpleNamespace(purchase_order_item="POI-1", receive_qty=8)
+		gate_pass_row = SimpleNamespace(
+			name="GPI-1", idx=1, purchase_order_item="POI-1", receive_qty=8, asn_item="ASNI-1"
+		)
 		gate_pass = SimpleNamespace(get=lambda field: [gate_pass_row] if field == "items" else None)
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.db.exists", return_value=True),

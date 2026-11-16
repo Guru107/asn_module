@@ -440,6 +440,7 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 			"rate": asn_item.rate,
 			"purchase_order_item": asn_item.purchase_order_item,
 			"receive_qty": flt(asn_item.qty),
+			"asn_item": asn_item.name,
 		}
 		if order_line:
 			row["qty"] = flt(order_line.qty)
@@ -850,21 +851,24 @@ def _apply_asn_fields(pr, asn, *, gate_pass=None) -> None:
 
 	if gate_pass is None:
 		_preserve_asn_item_rows(pr, asn.items)
-		asn_lines = asn.items
+		asn_items_by_po_item = {}
+		for asn_item in asn.items:
+			asn_items_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
 	else:
 		# Receipt rows are already one per Gate Pass row; cloning would copy one row's qty.
-		asn_lines = _asn_lines_received_at_gate(asn, gate_pass)
-	asn_items_by_po_item = {}
-	for asn_item in asn_lines:
-		asn_items_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
+		asn_line_by_gate_row = _asn_lines_received_at_gate(asn, gate_pass)
 
 	# Row names do not exist until insert, so the map is stamped afterwards, keyed by
 	# name: the desk renumbers rows (idx) when a draft is edited, which would silently
 	# re-credit quantities to the wrong ASN lines on submit.
 	asn_item_pairs = []
 	for pr_item in pr.items:
-		matching_asn_items = asn_items_by_po_item.get(pr_item.purchase_order_item) or []
-		asn_item = matching_asn_items.pop(0) if matching_asn_items else None
+		if gate_pass is None:
+			matching_asn_items = asn_items_by_po_item.get(pr_item.purchase_order_item) or []
+			asn_item = matching_asn_items.pop(0) if matching_asn_items else None
+		else:
+			# A row with no Gate Pass row link (added on the desk) is paired on submit.
+			asn_item = asn_line_by_gate_row.get(getattr(pr_item, "custom_gate_pass_item", None))
 		if not asn_item:
 			continue
 
@@ -879,25 +883,46 @@ def _apply_asn_fields(pr, asn, *, gate_pass=None) -> None:
 	pr._asn_item_pairs = asn_item_pairs
 
 
-def _asn_lines_received_at_gate(asn, gate_pass) -> list:
-	"""ASN lines whose Gate Pass row has Receive Qty, in order.
+def _asn_lines_received_at_gate(asn, gate_pass) -> dict:
+	"""ASN line of each Gate Pass row that has Receive Qty, keyed by the row name.
 
-	The Gate Pass is built one row per ASN line in ASN order, so the k-th row on an order
-	line is the k-th ASN line on it. A row left at 0 drops its own line, not a sibling's.
-	shortcut: pairs by position, so deleting or reordering Gate Pass rows shifts it; upgrade
-	to an ASN Item link on the Gate Pass row if the gate starts editing rows.
+	Each row names its ASN line in ``asn_item``, so deleting or reordering rows moves no qty.
+	A row without one (added at the gate) pairs with no ASN line.
 	"""
-	asn_lines_by_po_item = {}
-	for asn_item in asn.items:
-		asn_lines_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
-	received = []
-	for row in gate_pass.get("items") or []:
-		siblings = asn_lines_by_po_item.get(row.purchase_order_item)
-		if not siblings:
-			continue
-		asn_item = siblings.pop(0)
+	asn_lines = {asn_item.name: asn_item for asn_item in asn.items}
+	rows = gate_pass.get("items") or []
+	# shortcut: a Gate Pass saved before asn_item existed pairs the k-th row on an order line
+	# with the k-th ASN line on it, so edited rows shift qty; drop once none of those is open.
+	by_position = {}
+	if not any(getattr(row, "asn_item", None) for row in rows):
+		for asn_item in asn.items:
+			by_position.setdefault(asn_item.purchase_order_item, []).append(asn_item)
+	received = {}
+	row_idx_by_asn_item = {}
+	for row in rows:
+		asn_item_name = getattr(row, "asn_item", None)
+		if asn_item_name:
+			if asn_item_name not in asn_lines:
+				frappe.throw(
+					_("Gate Pass {0} row {1}: ASN Item {2} is not on ASN {3}.").format(
+						gate_pass.name, row.idx, asn_item_name, asn.name
+					)
+				)
+			if asn_item_name in row_idx_by_asn_item:
+				frappe.throw(
+					_("Gate Pass {0} row {1}: ASN Item {2} is already on row {3}.").format(
+						gate_pass.name, row.idx, asn_item_name, row_idx_by_asn_item[asn_item_name]
+					)
+				)
+			row_idx_by_asn_item[asn_item_name] = row.idx
+			asn_item = asn_lines[asn_item_name]
+		else:
+			siblings = by_position.get(row.purchase_order_item)
+			if not siblings:
+				continue
+			asn_item = siblings.pop(0)
 		if gate_pass_receive_qty(row) > 0:
-			received.append(asn_item)
+			received[row.name] = asn_item
 	return received
 
 
