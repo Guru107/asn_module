@@ -706,11 +706,7 @@
 					{% endif %}
 					{% if bulk_errors %}
 					<div class="alert alert-danger" role="alert">
-						{% if bulk_submitted_names %}
-						<strong>{{ _("Created and submitted {0}. The remaining invoices were not created.").format(bulk_submitted_names | e) }}</strong>
-						{% else %}
 						<strong>{{ _("Bulk upload failed. No ASNs created.") }}</strong>
-						{% endif %}
 						<ul class="mb-0 mt-2">
 							{% for error in bulk_errors %}
 							<li>
@@ -731,7 +727,7 @@
 							<div class="asn-new-bulk-intro">
 								<h5 class="asn-new-bulk-title">{{ _("Bulk upload from CSV") }}</h5>
 								<p class="lead-in text-muted mb-0">
-									{{ _("Upload a single CSV file. Rows with the same supplier invoice number are grouped into one ASN. The file is validated in full before any ASN is created.") }}
+									{{ _("Upload a single CSV file. Rows with the same supplier invoice number are grouped into one ASN. The file is validated in full before any ASN is created. The ASNs are then created in the background and we email you the result.") }}
 								</p>
 								<ul class="asn-new-bulk-hints text-muted mt-2">
 									<li>{{ _("Download the template for the correct column order and a sample header row.") }}</li>
@@ -772,7 +768,7 @@
 							</div>
 
 							<div class="asn-new-bulk-footer">
-								<button type="submit" class="btn btn-primary btn-submit-bulk">{{ _("Validate, create and submit ASNs") }}</button>
+								<button type="submit" class="btn btn-primary btn-submit-bulk">{{ _("Validate and queue ASNs") }}</button>
 							</div>
 						</div>
 					</form>

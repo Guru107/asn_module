@@ -336,8 +336,11 @@ def on_purchase_receipt_before_submit(doc, method=None):
 	throw_stock_cap_exceeded(breaches)
 
 
-def _pair_unmapped_rows(doc) -> None:
-	"""Map receipt rows the ASN map does not know to free ASN lines on the same PO Item.
+def _pair_unmapped_rows(doc, order_line_field: str = "purchase_order_item") -> None:
+	"""Map receipt rows the ASN map does not know to free ASN lines on the same order line.
+
+	``order_line_field`` names the order line on both the receipt row and the ASN line:
+	the Purchase Order Item, or the Subcontracting Order Item on a Subcontracting Receipt.
 
 	The map is keyed by row name. Amend gives every row a new name (the desk still copies the
 	old map), and so does deleting and re-adding a row on a draft. Unpaired, submit records
@@ -360,14 +363,14 @@ def _pair_unmapped_rows(doc) -> None:
 	for asn_item in frappe.get_all(
 		"ASN Item",
 		filters={"parent": doc.asn, "parenttype": "ASN"},
-		fields=["name", "purchase_order_item", "qty", "received_qty"],
+		fields=["name", order_line_field, "qty", "received_qty"],
 		order_by="idx asc",
 	):
-		lines_by_po_item.setdefault(asn_item.purchase_order_item, []).append(asn_item)
+		lines_by_po_item.setdefault(getattr(asn_item, order_line_field), []).append(asn_item)
 
 	taken = {entry.get("asn_item_name") for entry in mapping.values()}
 	for row in unmapped:
-		lines = lines_by_po_item.get(row.purchase_order_item)
+		lines = lines_by_po_item.get(getattr(row, order_line_field, None))
 		if not lines:
 			continue
 		# Room left beats everything: the ASN is Received only when every line is full. Among lines
@@ -632,7 +635,8 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 
 
 def _create_subcontracting_receipt_from_gate_pass(gate_pass) -> dict:
-	asn = frappe.get_doc("ASN", gate_pass.asn)
+	# A Received or Closed ASN takes no further receipt, whichever path filled it.
+	asn = _load_submitted_asn_for_scan(gate_pass.asn)
 	result = _open_or_create_subcontracting_receipt(asn)
 	receipt = frappe.get_doc("Subcontracting Receipt", result["name"])
 	if _apply_gate_pass_qty_to_subcontracting_receipt(receipt, gate_pass):
@@ -785,6 +789,7 @@ def _apply_shipped_qty_to_subcontracting_receipt(receipt, asn) -> None:
 			continue
 		pending.setdefault(row.subcontracting_order_item, []).append(row)
 
+	asn_item_pairs = []
 	for receipt_item in receipt.items:
 		matches = pending.get(receipt_item.subcontracting_order_item) or []
 		asn_item = matches.pop(0) if matches else None
@@ -798,6 +803,10 @@ def _apply_shipped_qty_to_subcontracting_receipt(receipt, asn) -> None:
 		if hasattr(receipt_item, "process_loss_qty"):
 			receipt_item.process_loss_qty = 0
 		receipt_item.amount = flt(receipt_item.qty) * flt(receipt_item.rate)
+		asn_item_pairs.append((receipt_item, asn_item))
+
+	# stamp_asn_item_mapping stores these once insert has named the rows.
+	receipt._asn_item_pairs = asn_item_pairs
 
 
 def _get_single_purchase_order(asn) -> tuple[str, list[str]]:

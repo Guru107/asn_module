@@ -1,3 +1,4 @@
+import json
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -32,6 +33,11 @@ from asn_module.handlers.purchase_receipt import (
 	create_receipt_from_gate_pass,
 	stamp_receipt_built_by_gate_pass,
 )
+from asn_module.handlers.subcontracting import (
+	on_subcontracting_receipt_before_submit,
+	on_subcontracting_receipt_cancel,
+	on_subcontracting_receipt_submit,
+)
 from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
 	patch_subcontracting_incoming_rate,
@@ -39,6 +45,7 @@ from asn_module.handlers.tests.test_subcontracting import (
 from asn_module.handlers.utils import fill_custom_fiscal_year
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
+from asn_module.stock_cap.fetch import _fetch_in_transit
 from asn_module.templates.pages import asn_new
 from asn_module.templates.pages.asn_new_services import PortalValidationError, create_job_asn_for_supplier
 from asn_module.tests.integration.fixtures import (
@@ -502,6 +509,111 @@ class TestJobAsnScan(FrappeTestCase):
 			frappe.db.count("Subcontracting Receipt", {"asn": asn.name, "docstatus": 0}),
 			1,
 		)
+
+
+def submit_subcontracting_receipt_hooks(receipt) -> None:
+	"""Run the module's submit hooks on a draft receipt and mark it submitted.
+
+	A real submit needs raw materials at the supplier; the hooks are what is under test.
+	"""
+	on_subcontracting_receipt_before_submit(receipt)
+	frappe.db.set_value("Subcontracting Receipt", receipt.name, "docstatus", 1, update_modified=False)
+	receipt.docstatus = 1
+	on_subcontracting_receipt_submit(receipt)
+
+
+class TestJobAsnReceiptTracking(FrappeTestCase):
+	"""A Subcontracting Receipt updates its Job ASN as a linked Purchase Receipt does."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		before_tests()
+		ensure_integration_user()
+
+	def _scanned_receipt(self, shipped_qty: float):
+		"""A submitted Job ASN shipping ``shipped_qty`` and the draft receipt its scan opens."""
+		order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		finished_good = order.items[0]
+		# The fixture orders 2; raise it so the ASN can ship the qty under test.
+		frappe.db.set_value(
+			"Subcontracting Order Item", finished_good.name, "qty", shipped_qty, update_modified=False
+		)
+		asn = create_job_asn_for_supplier(
+			supplier=order.supplier,
+			subcontracting_order=order.name,
+			header={
+				"supplier_invoice_no": f"JOB-RCV-{frappe.generate_hash(length=8)}",
+				"supplier_invoice_date": today(),
+				"vehicle_number": "MH12AB1234",
+				"supplier_invoice_amount": shipped_qty * finished_good.rate,
+			},
+			lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
+		)
+		asn.submit()
+		code = get_or_create_scan_code("create_purchase_receipt", "ASN", asn.name)
+		with with_gate_pass_mode(False), integration_user_context(), patch_subcontracting_incoming_rate(5):
+			result = dispatch(code=code, device_info="job-asn-receipt")
+		return asn, code, finished_good, frappe.get_doc("Subcontracting Receipt", result["name"])
+
+	def _in_transit(self, finished_good) -> float:
+		branch_by_warehouse = {finished_good.warehouse: "_Test Job ASN Branch"}
+		totals = _fetch_in_transit([finished_good.item_code], [finished_good.warehouse], branch_by_warehouse)
+		return flt(totals.get(("_Test Job ASN Branch", finished_good.item_code)))
+
+	def test_a_full_receipt_marks_the_job_asn_received_and_a_rescan_creates_nothing(self):
+		asn, code, finished_good, receipt = self._scanned_receipt(shipped_qty=10)
+		asn_item = asn.items[0].name
+		self.assertEqual(
+			json.loads(receipt.asn_items)[receipt.items[0].name]["asn_item_name"],
+			asn_item,
+			"the scan stores the receipt row to ASN line map",
+		)
+		in_transit_before = self._in_transit(finished_good)
+
+		submit_subcontracting_receipt_hooks(receipt)
+
+		self.assertEqual(flt(frappe.db.get_value("ASN Item", asn_item, "received_qty")), 10)
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Received")
+		self.assertEqual(self._in_transit(finished_good), in_transit_before - 10)
+		self.assertTrue(
+			frappe.db.exists(
+				"ASN Transition Log",
+				{"asn_item": asn_item, "state": "SCR_SUBMITTED", "ref_name": receipt.name},
+			)
+		)
+		with with_gate_pass_mode(False), integration_user_context():
+			with self.assertRaises(frappe.ValidationError):
+				dispatch(code=code, device_info="job-asn-rescan")
+		self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name}), 1)
+
+	def test_cancelling_the_receipt_takes_the_qty_back_and_reopens_the_job_asn(self):
+		asn, _code, finished_good, receipt = self._scanned_receipt(shipped_qty=10)
+		in_transit_before = self._in_transit(finished_good)
+		submit_subcontracting_receipt_hooks(receipt)
+
+		frappe.db.set_value("Subcontracting Receipt", receipt.name, "docstatus", 2, update_modified=False)
+		receipt.docstatus = 2
+		on_subcontracting_receipt_cancel(receipt)
+
+		self.assertEqual(flt(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty")), 0)
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Submitted")
+		self.assertEqual(self._in_transit(finished_good), in_transit_before)
+
+	def test_a_short_receipt_closes_the_job_asn(self):
+		asn, _code, finished_good, receipt = self._scanned_receipt(shipped_qty=10)
+		in_transit_before = self._in_transit(finished_good)
+		receipt.items[0].qty = 8
+		receipt.items[0].received_qty = 8
+		with patch_subcontracting_incoming_rate(5):
+			receipt.save()
+
+		submit_subcontracting_receipt_hooks(receipt)
+
+		self.assertEqual(flt(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty")), 8)
+		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Closed")
+		# A Closed ASN holds nothing in transit, not even the 2 that never arrived.
+		self.assertEqual(self._in_transit(finished_good), in_transit_before - 10)
 
 
 def ensure_mandatory_fiscal_year_custom_field() -> None:
@@ -1346,6 +1458,22 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(receipt.docstatus, 0)
 		self.assertEqual(receipt.asn, asn.name)
 		self.assertEqual(flt(receipt.items[0].qty), 2)
+
+	def test_create_after_the_subcontracting_receipt_is_submitted_is_refused(self):
+		with with_gate_pass_mode(True):
+			with integration_user_context(), patch_subcontracting_incoming_rate(5):
+				_order, asn = self._submitted_job_asn(shipped_qty=1)
+				code = get_or_create_scan_code(ASN_GATE_PASS_SCAN_ACTION, "ASN", asn.name)
+				gate_pass_name = dispatch(code=code, device_info="job-gate-pass-receipt")["name"]
+				frappe.db.set_value("Gate Pass", gate_pass_name, "docstatus", 1, update_modified=False)
+				created = create_receipt_from_gate_pass(gate_pass_name)
+			submit_subcontracting_receipt_hooks(frappe.get_doc("Subcontracting Receipt", created["name"]))
+			self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Received")
+
+			with integration_user_context(), self.assertRaises(frappe.ValidationError):
+				create_receipt_from_gate_pass(gate_pass_name)
+
+		self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name}), 1)
 
 	def test_a_gate_pass_draft_runs_gate_pass_validation(self):
 		# The custom Gate Pass DocType has no validate method; create=True adds one.

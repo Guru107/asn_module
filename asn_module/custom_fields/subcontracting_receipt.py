@@ -18,6 +18,16 @@ def setup():
 				"search_index": 1,
 			},
 			scan_code_field("asn"),
+			{
+				"fieldname": "asn_items",
+				"fieldtype": "JSON",
+				"label": "ASN Items Mapping",
+				"hidden": 1,
+				# Hidden, so placed after the Scan Code to keep that directly below the ASN link.
+				"insert_after": "scan_code",
+				# Row names belong to one inserted document; an amend or return must not carry it.
+				"no_copy": 1,
+			},
 		]
 	}
 

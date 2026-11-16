@@ -1,10 +1,16 @@
 import frappe
 from frappe import _
 
+from asn_module.handlers.purchase_receipt import (
+	_asn_item_codes,
+	_pair_unmapped_rows,
+	_record_linked_received_qty,
+)
 from asn_module.handlers.utils import fill_custom_fiscal_year, store_scan_code
 from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_subcontracting_receipt
 from asn_module.stock_cap.messages import throw_stock_cap_exceeded
+from asn_module.traceability import emit_asn_item_transition
 
 SUBCONTRACTING_RECEIPT_ACTION_FROM_DISPATCH = "create_subcontracting_receipt_from_dispatch"
 SUBCONTRACTING_RECEIPT_PR_ACTION = "create_purchase_receipt_from_subcontracting_receipt"
@@ -129,26 +135,53 @@ def create_receipt_from_subcontracting_receipt(source_doctype: str, source_name:
 def on_subcontracting_receipt_before_submit(doc, method=None):
 	"""Block a receipt that would carry a finished good above its branch maximum.
 
-	Runs before_submit so no stock ledger entry is written before the block.
+	Runs before_submit so no stock ledger entry is written before the block. Rows the ASN
+	map does not know (an amended receipt) are paired to their ASN lines first.
 	"""
 	del method
+	_pair_unmapped_rows(doc, "subcontracting_order_item")
 	breaches = breaches_for_subcontracting_receipt(doc)
 	if breaches:
 		throw_stock_cap_exceeded(breaches)
 
 
 def on_subcontracting_receipt_submit(doc, method=None):
-	"""Store the Purchase Receipt scan code when a Subcontracting Receipt is submitted."""
+	"""Store the Purchase Receipt scan code and record the receipt on its Job ASN.
+
+	Mirrors a linked Purchase Receipt: received qty goes onto the mapped ASN lines and the
+	ASN becomes Received or Closed. A return records nothing against the ASN.
+	"""
 	del method
 	if getattr(doc, "is_return", 0):
 		return
 	store_scan_code(doc, SUBCONTRACTING_RECEIPT_PR_ACTION)
+	if getattr(doc, "asn", None):
+		_record_receipt_on_asn(doc, sign=1, state="SCR_SUBMITTED")
 
 
 def on_subcontracting_receipt_cancel(doc, method=None):
-	"""Void the receipt scan code so a cancelled receipt cannot be scanned."""
+	"""Void the receipt scan code and take back the qty submit recorded on the Job ASN."""
 	del method
 	void_scan_codes(SUBCONTRACTING_RECEIPT_PR_ACTION, "Subcontracting Receipt", doc.name)
+	if getattr(doc, "is_return", 0) or not getattr(doc, "asn", None):
+		return
+	_record_receipt_on_asn(doc, sign=-1, state="SCR_CANCELLED")
+
+
+def _record_receipt_on_asn(doc, sign: int, state: str) -> None:
+	"""Add (sign 1) or take back (sign -1) the receipt's qty on its ASN lines, then set the status."""
+	mapped_names, updated = _record_linked_received_qty(doc, sign=sign)
+	if updated:
+		frappe.get_doc("ASN", doc.asn).update_receipt_status()
+	for asn_item_name, item_code in _asn_item_codes(mapped_names).items():
+		emit_asn_item_transition(
+			asn=doc.asn,
+			asn_item=asn_item_name,
+			item_code=item_code,
+			state=state,
+			ref_doctype="Subcontracting Receipt",
+			ref_name=doc.name,
+		)
 
 
 def on_subcontracting_order_submit(doc, method):
