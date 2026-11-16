@@ -2,6 +2,9 @@ import frappe
 
 from asn_module.tests.compat import IntegrationTestCase
 
+# The test links only Administrator; walking these links pulls in ERPNext's Company test records.
+IGNORE_TEST_RECORD_DEPENDENCIES = ["DocType", "Scan Code", "User"]
+
 
 class TestScanLog(IntegrationTestCase):
 	def test_insert_uses_scan_prefix(self):
