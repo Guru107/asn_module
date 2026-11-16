@@ -85,6 +85,22 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 					dispatch(code=code, device_info="test")
 				self.assertIn("missing", str(cm.exception).lower())
 
+	def test_handler_losing_a_lock_race_asks_to_scan_again(self):
+		code = self._create_scan_code("create_purchase_receipt", "ASN", "Fake-ASN-For-Test")
+		self.addCleanup(self._cleanup_scan_code, code)
+
+		with integration_user_context():
+			with (
+				patch("asn_module.qr_engine.dispatch.frappe.has_permission", return_value=True),
+				patch(
+					"asn_module.qr_engine.dispatch._call_handler",
+					side_effect=frappe.QueryDeadlockError("(1020, 'Record has changed since last read')"),
+				),
+			):
+				with self.assertRaises(frappe.ValidationError) as cm:
+					dispatch(code=code, device_info="test")
+				self.assertIn("Scan it again", str(cm.exception))
+
 	def test_dispatch_missing_scan_code_raises(self):
 		with integration_user_context():
 			with self.assertRaises(ScanCodeNotFoundError) as cm:

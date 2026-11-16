@@ -19,6 +19,9 @@ from asn_module.templates.pages.asn import (
 	get_open_subcontracting_orders_for_supplier,
 )
 
+# The portal dropdowns ask for 200; a client may not ask for more.
+MAX_PAGE_LEN = 200
+
 
 def _normalize_paging(start: int | str, page_len: int | str) -> tuple[int, int]:
 	try:
@@ -26,7 +29,7 @@ def _normalize_paging(start: int | str, page_len: int | str) -> tuple[int, int]:
 	except (TypeError, ValueError):
 		start_int = 0
 	try:
-		page_len_int = max(int(page_len), 1)
+		page_len_int = min(max(int(page_len), 1), MAX_PAGE_LEN)
 	except (TypeError, ValueError):
 		page_len_int = 20
 	return start_int, page_len_int
@@ -72,28 +75,20 @@ def _unit_price_po_item_names(purchase_order: str) -> set[str]:
 def search_open_purchase_orders(txt: str = "", start: int = 0, page_len: int = 20) -> list[dict]:
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
-	txt = (txt or "").strip().lower()
-	entries = get_open_purchase_orders_for_supplier(supplier)
-	filtered = [
-		{"value": po.name, "description": f"{po.status} | {po.transaction_date}"}
-		for po in entries
-		if not txt or txt in po.name.lower()
-	]
-	return filtered[start : start + page_len]
+	entries = get_open_purchase_orders_for_supplier(
+		supplier, txt=(txt or "").strip(), start=start, page_len=page_len
+	)
+	return [{"value": po.name, "description": f"{po.status} | {po.transaction_date}"} for po in entries]
 
 
 @frappe.whitelist(methods=["GET"])
 def search_open_subcontracting_orders(txt: str = "", start: int = 0, page_len: int = 20) -> list[dict]:
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
-	txt = (txt or "").strip().lower()
-	entries = get_open_subcontracting_orders_for_supplier(supplier)
-	filtered = [
-		{"value": row.name, "description": f"{row.status} | {row.transaction_date}"}
-		for row in entries
-		if not txt or txt in row.name.lower()
-	]
-	return filtered[start : start + page_len]
+	entries = get_open_subcontracting_orders_for_supplier(
+		supplier, txt=(txt or "").strip(), start=start, page_len=page_len
+	)
+	return [{"value": row.name, "description": f"{row.status} | {row.transaction_date}"} for row in entries]
 
 
 def _unreceived_qty_by_subcontracting_order_item(
@@ -145,8 +140,7 @@ def search_subcontracting_order_items(
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
 	order_name = (subcontracting_order or "").strip()
-	open_names = {row.name for row in get_open_subcontracting_orders_for_supplier(supplier)}
-	if order_name not in open_names:
+	if not get_open_subcontracting_orders_for_supplier(supplier, names=[order_name], page_len=1):
 		frappe.throw(_("Subcontracting Order is not available for this supplier."), frappe.PermissionError)
 
 	txt = (txt or "").strip().lower()
@@ -201,9 +195,8 @@ def search_purchase_order_items(
 	"""PO lines still open for ASN create; uses ``get_all`` — see module docstring."""
 	supplier = _get_supplier()
 	start, page_len = _normalize_paging(start, page_len)
-	open_po_names = {po.name for po in get_open_purchase_orders_for_supplier(supplier)}
 	purchase_order = (purchase_order or "").strip()
-	if purchase_order not in open_po_names:
+	if not get_open_purchase_orders_for_supplier(supplier, names=[purchase_order], page_len=1):
 		frappe.throw(_("Purchase Order is not available for this supplier."), frappe.PermissionError)
 
 	txt = (txt or "").strip().lower()
