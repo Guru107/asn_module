@@ -15,6 +15,8 @@ def setup():
 				"insert_after": "supplier",
 				"read_only": 1,
 				"in_standard_filter": 1,
+				# A Duplicate must not book the same ASN a second time.
+				"no_copy": 1,
 			},
 			scan_code_field("asn"),
 			{

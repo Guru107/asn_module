@@ -599,6 +599,31 @@ class TestJobAsnReceiptTracking(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Submitted")
 		self.assertEqual(self._in_transit(finished_good), in_transit_before)
 
+	def test_a_second_receipt_for_a_booked_job_asn_is_refused_until_the_first_is_cancelled(self):
+		for received, status in ((10, "Received"), (8, "Closed")):
+			with self.subTest(status=status):
+				asn, _code, _finished_good, receipt = self._scanned_receipt(shipped_qty=10)
+				receipt.items[0].qty = received
+				receipt.items[0].received_qty = received
+				with patch_subcontracting_incoming_rate(5):
+					receipt.save()
+				submit_subcontracting_receipt_hooks(receipt)
+				self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), status)
+
+				# Amend copies the ASN link, so the copy is a second receipt for the same ASN.
+				second = frappe.copy_doc(receipt)
+				with self.assertRaises(frappe.ValidationError) as raised:
+					on_subcontracting_receipt_before_submit(second)
+				self.assertIn(f"ASN {asn.name} is already {status}", str(raised.exception))
+				self.assertIn(receipt.name, str(raised.exception))
+
+				frappe.db.set_value(
+					"Subcontracting Receipt", receipt.name, "docstatus", 2, update_modified=False
+				)
+				receipt.docstatus = 2
+				on_subcontracting_receipt_cancel(receipt)
+				on_subcontracting_receipt_before_submit(second)
+
 	def test_a_short_receipt_closes_the_job_asn(self):
 		asn, _code, finished_good, receipt = self._scanned_receipt(shipped_qty=10)
 		in_transit_before = self._in_transit(finished_good)

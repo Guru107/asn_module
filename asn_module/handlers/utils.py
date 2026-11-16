@@ -1,6 +1,10 @@
 import frappe
 from frappe import _
-from frappe.utils import flt, today
+from frappe.query_builder import DocType
+from frappe.utils import cint, flt, today
+
+# Since #134 the first linked receipt leaves its ASN in one of these: the ASN is fully booked.
+BOOKED_ASN_STATUSES = ("Received", "Closed")
 
 
 def fiscal_year_for_date(date: str, company: str | None = None) -> str | None:
@@ -130,3 +134,62 @@ def store_scan_code(doc, action: str) -> None:
 		return
 	code = resolve_scan_code(action, doc.doctype, doc.name)
 	doc.db_set("scan_code", code, update_modified=False)
+
+
+def refuse_repeat_asn_booking(doc) -> None:
+	"""Refuse submitting ``doc`` when another submitted document already fully booked its ASN.
+
+	A receipt (Purchase Receipt, Subcontracting Receipt, a stock-updating Purchase Invoice)
+	books the ASN's qty, and the first one leaves the ASN Received or Closed. A Purchase
+	Invoice that only bills is refused once the ASN's receipt is fully billed by other
+	submitted invoices. Cancelling that document frees the ASN again. A return is its own
+	transaction and is never refused here.
+	"""
+	if not doc.get("asn") or cint(doc.get("is_return")):
+		return
+	# Locking read: two drafts submitted together are checked one after the other.
+	status = frappe.db.get_value("ASN", doc.asn, "status", for_update=True)
+	if doc.doctype == "Purchase Invoice" and not cint(doc.get("update_stock")):
+		invoice = _invoice_billing_asn_in_full(doc.asn)
+		if invoice:
+			frappe.throw(
+				_(
+					"ASN {0} is already fully invoiced on Purchase Invoice {1}. Cancel {1} to invoice it again."
+				).format(doc.asn, invoice)
+			)
+		return
+	if status not in BOOKED_ASN_STATUSES:
+		return
+	booking_doctype = doc.doctype if doc.doctype == "Subcontracting Receipt" else "Purchase Receipt"
+	receipt = frappe.db.get_value(booking_doctype, {"asn": doc.asn, "docstatus": 1, "is_return": 0}, "name")
+	frappe.throw(
+		_("ASN {0} is already {1}, booked on {2}. Cancel that document to book the ASN again.").format(
+			doc.asn, _(status), f"{_(booking_doctype)} {receipt}" if receipt else _("another receipt")
+		)
+	)
+
+
+def _invoice_billing_asn_in_full(asn: str) -> str | None:
+	"""A submitted Purchase Invoice for ``asn`` once the ASN's receipt is fully billed, else None.
+
+	Locking read, so it sees an invoice another request submitted while this one waited on the ASN.
+	"""
+	invoice = DocType("Purchase Invoice")
+	receipt = DocType("Purchase Receipt")
+	rows = (
+		frappe.qb.from_(invoice)
+		.join(receipt)
+		.on(receipt.asn == invoice.asn)
+		.select(invoice.name)
+		.where(
+			(invoice.asn == asn)
+			& (invoice.docstatus == 1)
+			& (invoice.is_return == 0)
+			& (receipt.docstatus == 1)
+			& (receipt.is_return == 0)
+			& (receipt.per_billed >= 100)
+		)
+		.limit(1)
+		.for_update()
+	).run()
+	return rows[0][0] if rows else None

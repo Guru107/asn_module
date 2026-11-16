@@ -8,7 +8,7 @@ from frappe import _
 from frappe.utils import cint, flt
 
 from asn_module.handlers.purchase_receipt import refuse_qty_declared_on_open_asns
-from asn_module.handlers.utils import fill_custom_fiscal_year
+from asn_module.handlers.utils import fill_custom_fiscal_year, refuse_repeat_asn_booking
 from asn_module.traceability import emit_asn_item_transition
 
 
@@ -73,12 +73,13 @@ def create_from_purchase_receipt(source_doctype: str, source_name: str, payload:
 
 
 def on_purchase_invoice_before_submit(doc, method=None):
-	"""Refuse a stock-updating invoice row that takes quantity an open ASN declares.
+	"""Refuse an invoice for a fully booked ASN, or a stock row that takes qty an open ASN declares.
 
 	Such a row receives goods the way a receipt with no ASN link does. A row billed against
 	a Purchase Receipt is skipped: that receipt brought the goods in and was checked then.
 	"""
 	del method
+	refuse_repeat_asn_booking(doc)
 	if not cint(doc.get("update_stock")) or cint(doc.get("is_return")):
 		return
 	refuse_qty_declared_on_open_asns(

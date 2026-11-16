@@ -11,6 +11,7 @@ from frappe.utils import cint, flt
 from asn_module.handlers.gate_pass_create import gate_pass_receive_qty
 from asn_module.handlers.utils import (
 	fill_custom_fiscal_year,
+	refuse_repeat_asn_booking,
 	store_scan_code,
 )
 from asn_module.qr_engine.scan_codes import void_scan_codes
@@ -320,8 +321,10 @@ def on_purchase_receipt_before_submit(doc, method=None):
 	Order Items this receipt is itself receiving are excluded from the in-transit figure
 	inside breaches_for_purchase_receipt when this receipt is linked to an ASN.
 
-	A receipt with no ASN link may only take quantity no open ASN declares.
+	A receipt with no ASN link may only take quantity no open ASN declares, and one with a
+	link may not book an ASN another receipt already booked.
 	"""
+	refuse_repeat_asn_booking(doc)
 	_pair_unmapped_rows(doc)
 	if not getattr(doc, "asn", None) and not getattr(doc, "is_return", 0):
 		refuse_qty_declared_on_open_asns(doc.items)
