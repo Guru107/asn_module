@@ -399,8 +399,8 @@ def _pair_unmapped_rows(doc, order_line_field: str = "purchase_order_item") -> N
 		if room(asn_item) <= 0:
 			frappe.throw(
 				_(
-					"Row {0}: ASN {1} has no qty left for {2}; its lines are already covered by other rows. Remove row {0}."
-				).format(row.idx, doc.asn, row.item_code)
+					"Row {0}: ASN {1} has no qty left for {2}, so the row's {3} would be received over what was shipped. Remove row {0}."
+				).format(row.idx, doc.asn, row.item_code, flt(row.qty))
 			)
 		delivered_by_line[asn_item.name] = delivered_by_line.get(asn_item.name, 0.0) + delivered
 		mapping[row.name] = {"asn_item_name": asn_item.name, "original_qty": asn_item.qty}
