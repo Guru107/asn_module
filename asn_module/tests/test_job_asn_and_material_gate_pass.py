@@ -583,7 +583,7 @@ class TestJobAsnReceiptTracking(FrappeTestCase):
 			)
 		)
 		with with_gate_pass_mode(False), integration_user_context():
-			with self.assertRaises(frappe.ValidationError):
+			with self.assertRaisesRegex(frappe.ValidationError, "Cannot create Subcontracting Receipt"):
 				dispatch(code=code, device_info="job-asn-rescan")
 		self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name}), 1)
 
@@ -1305,7 +1305,10 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				frappe.get_doc("Purchase Receipt", created["name"]).submit()
 			self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Closed")
 
-			with integration_user_context(), self.assertRaises(frappe.ValidationError):
+			with (
+				integration_user_context(),
+				self.assertRaisesRegex(frappe.ValidationError, "Cannot create Purchase Receipt"),
+			):
 				create_receipt_from_gate_pass(gate_pass_name)
 
 		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name, "docstatus": ["!=", 2]}), 1)
@@ -1470,7 +1473,10 @@ class TestMaterialGatePassScan(FrappeTestCase):
 			submit_subcontracting_receipt_hooks(frappe.get_doc("Subcontracting Receipt", created["name"]))
 			self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Received")
 
-			with integration_user_context(), self.assertRaises(frappe.ValidationError):
+			with (
+				integration_user_context(),
+				self.assertRaisesRegex(frappe.ValidationError, "Cannot create Subcontracting Receipt"),
+			):
 				create_receipt_from_gate_pass(gate_pass_name)
 
 		self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name}), 1)

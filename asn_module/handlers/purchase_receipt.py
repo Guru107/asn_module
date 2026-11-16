@@ -34,11 +34,12 @@ def _load_submitted_asn_for_scan(source_name: str):
 	# Row lock: a concurrent scan of this ASN waits here until the first commits its draft.
 	# The draft lookups after it are locking reads too, so they see that draft.
 	asn = frappe.get_doc("ASN", source_name, for_update=True)
+	receipt_label = _("Subcontracting Receipt") if _is_job_asn(asn) else _("Purchase Receipt")
 	if asn.docstatus != 1:
-		frappe.throw(_("Purchase Receipt can only be created from a submitted ASN"))
+		frappe.throw(_("{0} can only be created from a submitted ASN").format(receipt_label))
 	if asn.status in ("Received", "Closed", "Cancelled"):
 		frappe.throw(
-			_("Cannot create Purchase Receipt from ASN {0} with status {1}").format(source_name, asn.status)
+			_("Cannot create {0} from ASN {1} with status {2}").format(receipt_label, source_name, asn.status)
 		)
 	return asn
 
