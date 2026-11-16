@@ -5,11 +5,14 @@ import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
+from frappe.permissions import add_permission, update_permission_property
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
 
 from asn_module.asn_module.doctype.asn.asn import ASN
 from asn_module.asn_module.doctype.asn.test_asn import (
+	_ensure_other_supplier,
+	_other_uom,
 	create_purchase_order,
 	make_test_asn,
 )
@@ -111,6 +114,103 @@ class TestAsnOrderIdentity(FrappeTestCase):
 			asn.insert(ignore_permissions=True)
 
 		self.assertIn("order line", str(raised.exception).lower())
+
+	def _job_asn_row(self, subcontracting_order):
+		finished_good = subcontracting_order.items[0]
+		asn = make_test_asn()
+		asn.supplier = subcontracting_order.supplier
+		asn.items = []
+		asn.append(
+			"items",
+			{
+				"subcontracting_order": subcontracting_order.name,
+				"subcontracting_order_item": finished_good.name,
+				"item_code": finished_good.item_code,
+				"qty": 1,
+				"uom": finished_good.stock_uom,
+				"rate": finished_good.rate,
+			},
+		)
+		return asn, finished_good
+
+	def test_save_refuses_a_job_line_of_another_suppliers_order(self):
+		asn, _finished_good = self._job_asn_row(
+			TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		)
+		asn.supplier = _ensure_other_supplier()
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("Row 1: Supplier _Test ASN Other Supplier does not match", str(raised.exception))
+
+	def test_save_refuses_a_job_line_that_belongs_to_another_order(self):
+		first_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		other_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		asn, _finished_good = self._job_asn_row(first_order)
+		asn.items[0].subcontracting_order = other_order.name
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn("Row 1: Subcontracting Order line", str(raised.exception))
+		self.assertIn(f"belongs to {first_order.name}, not {other_order.name}", str(raised.exception))
+
+	def test_save_refuses_a_job_line_whose_item_differs_from_the_order_line(self):
+		asn, finished_good = self._job_asn_row(
+			TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		)
+		asn.items[0].item_code = make_test_asn().items[0].item_code
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(f"does not match {finished_good.item_code}", str(raised.exception))
+
+	def test_save_refuses_a_job_line_whose_uom_differs_from_the_order_line(self):
+		asn, finished_good = self._job_asn_row(
+			TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		)
+		wrong_uom = _other_uom(finished_good.stock_uom)
+		asn.items[0].uom = wrong_uom
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: UOM {wrong_uom} does not match {finished_good.stock_uom}", str(raised.exception)
+		)
+
+	def test_save_refuses_a_job_line_of_a_draft_order(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		asn, _finished_good = self._job_asn_row(subcontracting_order)
+		frappe.db.set_value(
+			"Subcontracting Order",
+			subcontracting_order.name,
+			{"docstatus": 0, "status": "Draft"},
+			update_modified=False,
+		)
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: Subcontracting Order {subcontracting_order.name} is Draft, not open",
+			str(raised.exception),
+		)
+
+	def test_save_refuses_a_job_line_of_a_closed_order(self):
+		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		asn, _finished_good = self._job_asn_row(subcontracting_order)
+		frappe.db.set_value("Subcontracting Order", subcontracting_order.name, "status", "Closed")
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			asn.insert(ignore_permissions=True)
+
+		self.assertIn(
+			f"Row 1: Subcontracting Order {subcontracting_order.name} is Closed, not open",
+			str(raised.exception),
+		)
 
 	def test_save_refuses_a_subcontracting_order_line_that_is_missing_the_order(self):
 		subcontracting_order = TestSubcontractingHandlers()._make_integration_subcontracting_order()
@@ -490,9 +590,8 @@ class TestJobAsnScanWithMandatoryFiscalYear(FrappeTestCase):
 def ensure_gate_pass_for_tests() -> None:
 	"""Give the scan a Gate Pass to save.
 
-	CI has no Gate Pass. This bench has the gate_entry DocType, which has no
-	``gate_pass_type`` and no ``items`` table. Missing fields are custom fields
-	on that DocType. The gate_entry controller is left as it is.
+	CI has no Gate Pass, so this builds the production custom DocType's shape:
+	its required fields, link types and the ``items`` / ``item`` tables.
 	"""
 	if not frappe.db.exists("DocType", "Gate Pass Item"):
 		frappe.get_doc(
@@ -581,15 +680,27 @@ def ensure_gate_pass_for_tests() -> None:
 						"fieldtype": "Select",
 						"options": "\nGate In\nGate Out",
 						"label": "Entry Type",
+						"reqd": 1,
 					},
 					{
 						"fieldname": "gate_pass_type",
 						"fieldtype": "Link",
 						"options": "Gate Pass Type",
 						"label": "Gate Pass Type",
+						"reqd": 1,
 					},
-					{"fieldname": "document_reference", "fieldtype": "Data", "label": "Document Reference"},
-					{"fieldname": "reference_number", "fieldtype": "Data", "label": "Reference Number"},
+					{
+						"fieldname": "document_reference",
+						"fieldtype": "Link",
+						"options": "DocType",
+						"label": "Document Reference",
+					},
+					{
+						"fieldname": "reference_number",
+						"fieldtype": "Dynamic Link",
+						"options": "document_reference",
+						"label": "Reference Number",
+					},
 					{"fieldname": "company", "fieldtype": "Link", "options": "Company", "label": "Company"},
 					{
 						"fieldname": "supplier",
@@ -597,7 +708,12 @@ def ensure_gate_pass_for_tests() -> None:
 						"options": "Supplier",
 						"label": "Supplier",
 					},
-					{"fieldname": "vehicle_number", "fieldtype": "Data", "label": "Vehicle Number"},
+					{
+						"fieldname": "vehicle_number",
+						"fieldtype": "Data",
+						"label": "Vehicle Number",
+						"reqd": 1,
+					},
 					{"fieldname": "invoice_number", "fieldtype": "Data", "label": "Invoice Number"},
 					{"fieldname": "invoice_date", "fieldtype": "Date", "label": "Invoice Date"},
 					{"fieldname": "challan_number", "fieldtype": "Data", "label": "Challan Number"},
@@ -626,52 +742,6 @@ def ensure_gate_pass_for_tests() -> None:
 
 	meta = frappe.get_meta("Gate Pass")
 	custom_fields = []
-	if not meta.has_field("gate_pass_type"):
-		custom_fields.append(
-			{
-				"fieldname": "gate_pass_type",
-				"fieldtype": "Link",
-				"options": "Gate Pass Type",
-				"label": "Gate Pass Type",
-				"insert_after": "entry_type",
-			}
-		)
-	if not meta.has_field("invoice_number"):
-		custom_fields.append(
-			{
-				"fieldname": "invoice_number",
-				"fieldtype": "Data",
-				"label": "Invoice Number",
-				"insert_after": "supplier",
-			}
-		)
-	if not meta.has_field("invoice_date"):
-		custom_fields.append(
-			{
-				"fieldname": "invoice_date",
-				"fieldtype": "Date",
-				"label": "Invoice Date",
-				"insert_after": "invoice_number",
-			}
-		)
-	if not meta.has_field("challan_number"):
-		custom_fields.append(
-			{
-				"fieldname": "challan_number",
-				"fieldtype": "Data",
-				"label": "Challan Number",
-				"insert_after": "invoice_date",
-			}
-		)
-	if not meta.has_field("challan_date"):
-		custom_fields.append(
-			{
-				"fieldname": "challan_date",
-				"fieldtype": "Date",
-				"label": "Challan Date",
-				"insert_after": "challan_number",
-			}
-		)
 	if not meta.has_field("asn"):
 		custom_fields.append(
 			{
@@ -682,29 +752,15 @@ def ensure_gate_pass_for_tests() -> None:
 				"insert_after": "supplier",
 			}
 		)
-	if not meta.has_field("items"):
-		custom_fields.append(
-			{
-				"fieldname": "items",
-				"fieldtype": "Table",
-				"options": "Gate Pass Item",
-				"label": "Items",
-				"insert_after": "supplier",
-			}
-		)
-	if not meta.has_field("item"):
-		custom_fields.append(
-			{
-				"fieldname": "item",
-				"fieldtype": "Table",
-				"options": "Gate Pass Item Table",
-				"label": "Item",
-				"insert_after": "items",
-			}
-		)
 	if custom_fields:
 		create_custom_fields({"Gate Pass": custom_fields})
 		frappe.clear_cache(doctype="Gate Pass")
+	# The scan inserts the Gate Pass as the scanning user. Production grants Stock User via Custom DocPerm.
+	for role in ("Stock User", "Stock Manager"):
+		if not any(perm.role == role and perm.create for perm in meta.permissions):
+			add_permission("Gate Pass", role)
+			for ptype in ("write", "create"):
+				update_permission_property("Gate Pass", role, 0, ptype, 1)
 	# The module's own Scan Code field, as after_migrate adds it on a real site.
 	setup_gate_pass_fields()
 	frappe.clear_cache(doctype="Gate Pass")
@@ -1054,6 +1110,23 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		received = [flt(frappe.db.get_value("ASN Item", row.name, "received_qty")) for row in asn.items]
 		self.assertEqual(received, [0, 6])
 
+	def test_a_second_create_after_a_short_receipt_closed_the_asn_is_refused(self):
+		# The CI Gate Pass has no custom_gate_pass_reference, so only the ASN status stops a second receipt.
+		with with_gate_pass_mode(True):
+			with integration_user_context():
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				first_row = frappe.get_doc("Gate Pass", gate_pass_name).items[0]
+				frappe.db.set_value("Gate Pass Item", first_row.name, "receive_qty", 0, update_modified=False)
+				created = create_receipt_from_gate_pass(gate_pass_name)
+			with patch("asn_module.handlers.purchase_receipt.store_scan_code"):
+				frappe.get_doc("Purchase Receipt", created["name"]).submit()
+			self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Closed")
+
+			with integration_user_context(), self.assertRaises(frappe.ValidationError):
+				create_receipt_from_gate_pass(gate_pass_name)
+
+		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name, "docstatus": ["!=", 2]}), 1)
+
 	def test_desk_create_keeps_each_asn_lines_own_qty_on_insert(self):
 		with with_gate_pass_mode(True):
 			with integration_user_context():
@@ -1204,8 +1277,7 @@ class TestMaterialGatePassScan(FrappeTestCase):
 		self.assertEqual(flt(receipt.items[0].qty), 2)
 
 	def test_a_gate_pass_draft_runs_gate_pass_validation(self):
-		# CI's Gate Pass is a custom DocType on Document, which has no validate
-		# method. The gate_entry controller does. create=True covers both.
+		# The custom Gate Pass DocType has no validate method; create=True adds one.
 		controller = type(frappe.new_doc("Gate Pass"))
 		original_validate = getattr(controller, "validate", None)
 
@@ -1216,16 +1288,19 @@ class TestMaterialGatePassScan(FrappeTestCase):
 				return None
 			frappe.throw(_("refused by gate pass rules"))
 
-		with with_gate_pass_mode(True):
-			with integration_user_context():
-				_purchase_order, asn = self._submitted_material_asn()
-				with (
-					patch.object(controller, "validate", validate, create=True),
-					self.assertRaises(frappe.ValidationError) as raised,
-				):
-					create_gate_pass_from_asn("ASN", asn.name, {})
+		# Job drafts too: production's Before Save server script must run on them.
+		for submitted_asn in (self._submitted_material_asn, self._submitted_job_asn):
+			with self.subTest(submitted_asn.__name__):
+				with with_gate_pass_mode(True):
+					with integration_user_context():
+						_order, asn = submitted_asn()
+						with (
+							patch.object(controller, "validate", validate, create=True),
+							self.assertRaises(frappe.ValidationError) as raised,
+						):
+							create_gate_pass_from_asn("ASN", asn.name, {})
 
-		self.assertIn("refused by gate pass rules", str(raised.exception).lower())
+				self.assertIn("refused by gate pass rules", str(raised.exception).lower())
 
 	def test_a_second_create_reopens_the_draft_gate_pass(self):
 		with with_gate_pass_mode(True):

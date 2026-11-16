@@ -6,7 +6,6 @@ import frappe
 from frappe import _
 from frappe.exceptions import ValidationError as FrappeValidationError
 from frappe.utils import cint, cstr, flt
-from frappe.website.utils import cleanup_page_name
 
 from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
 from asn_module.templates.pages.asn_new_search import supplier_draft_asn_name
@@ -74,8 +73,8 @@ def get_context(context):
 				# Stay on the form so an unfinished draft is still on screen after Save.
 				frappe.local.flags.redirect_location = f"/asn_new?asn_name={asn_name}"
 			else:
-				stored_route = frappe.db.get_value("ASN", asn_name, "route")
-				frappe.local.flags.redirect_location = f"/{_portal_asn_route(asn_name, stored_route)}"
+				route = frappe.db.get_value("ASN", asn_name, "route")
+				frappe.local.flags.redirect_location = f"/{route}"
 			raise frappe.Redirect
 		if mode == "bulk":
 			queued = _queue_bulk_asns(supplier)
@@ -223,7 +222,7 @@ def _create_single_asn(supplier: str) -> CreateResult:
 					"purchase_order": row.purchase_order,
 					"purchase_order_item": po_item.name,
 					"item_code": row.item_code,
-					"uom": row.uom or po_item.uom,
+					"uom": po_item.uom,
 					"qty": row.qty,
 					"rate": flt(po_item.rate) if row.rate is None else row.rate,
 				}
@@ -646,20 +645,3 @@ def _safe_get(values: list[str], idx: int) -> str:
 	if idx < len(values):
 		return values[idx] or ""
 	return ""
-
-
-def _default_asn_route(asn_name: str) -> str:
-	return f"asn/{cleanup_page_name(asn_name).replace('_', '-')}"
-
-
-def _portal_asn_route(asn_name: str, stored_route: str | None = None) -> str:
-	"""Detail path under /asn/…, even when WebsiteGenerator stored a bare slug.
-
-	With an empty DocType-level route, WebsiteGenerator.make_route() returns only the
-	scrubbed name (e.g. asn-0002). Portal links and the post-submit redirect still need
-	the asn/ prefix so they do not collide with other top-level website pages.
-	"""
-	route = (stored_route or "").strip().strip("/")
-	if route.startswith("asn/"):
-		return route
-	return _default_asn_route(asn_name)

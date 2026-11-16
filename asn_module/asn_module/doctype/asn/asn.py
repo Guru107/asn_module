@@ -57,6 +57,7 @@ class ASN(WebsiteGenerator):
 		self._validate_supplier_invoice_unique()
 		self._validate_po_qty()
 		self._validate_subcontracting_lines()
+		self._validate_order_lines()
 		self._warn_stock_cap()
 
 	def before_submit(self):
@@ -118,10 +119,8 @@ class ASN(WebsiteGenerator):
 		"""Drop ASN link on cancelled receipts so deletion is not blocked by a stale Link field."""
 		if not frappe.db.has_column("Purchase Receipt", "asn"):
 			return
-		frappe.db.sql(
-			"UPDATE `tabPurchase Receipt` SET `asn` = NULL WHERE `asn` = %s AND `docstatus` = 2",
-			(self.name,),
-		)
+		pr = DocType("Purchase Receipt")
+		(frappe.qb.update(pr).set(pr.asn, None).where((pr.asn == self.name) & (pr.docstatus == 2))).run()
 
 	def _delete_linked_draft_purchase_receipts(self):
 		"""Remove draft PRs created from this ASN so the notice can be deleted after cancel without a manual PR delete."""
@@ -139,6 +138,9 @@ class ASN(WebsiteGenerator):
 
 		Receipt handlers add to ``received_qty`` in SQL, so it is read from the table and
 		never written back from this (possibly stale) document.
+
+		Status: Received when every line is fully received, Closed when anything was
+		received short, back to Submitted when the receipt is cancelled and nothing is left.
 		"""
 		asn_item = DocType("ASN Item")
 		(
@@ -160,12 +162,13 @@ class ASN(WebsiteGenerator):
 		)
 		any_received = any(received_qty > 0 for received_qty in received)
 
+		# One ASN means one receipt: once it has received anything, a short shipment is final.
 		status = self.status
 		if all_received:
 			status = "Received"
 		elif any_received:
-			status = "Partially Received"
-		elif status in ("Received", "Partially Received"):
+			status = "Closed"
+		elif status in ("Received", "Partially Received", "Closed"):
 			status = "Submitted"
 
 		if status != self.status:
@@ -274,6 +277,81 @@ class ASN(WebsiteGenerator):
 
 		if len(orders) > 1:
 			frappe.throw(_("An ASN can reference only one order."))
+
+	def _validate_order_lines(self):
+		"""Each row names a real line of a submitted, open order that belongs to this supplier.
+
+		One query per order type reads every referenced line with its order. The
+		client-side supplier filter is not a check, and the order line decides the
+		item and UOM. Runs after the quantity checks, which already refuse shipping
+		against a missing line or a Closed / On Hold order with their own messages.
+		"""
+		for order_doctype in ("Purchase Order", "Subcontracting Order"):
+			order_field = frappe.scrub(order_doctype)
+			rows = [row for row in self.items or [] if row.get(f"{order_field}_item")]
+			if not rows:
+				continue
+
+			line_doctype = DocType(f"{order_doctype} Item")
+			order = DocType(order_doctype)
+			uom_field = "uom" if order_doctype == "Purchase Order" else "stock_uom"
+			lines = {
+				line.name: line
+				for line in (
+					frappe.qb.from_(line_doctype)
+					.inner_join(order)
+					.on(order.name == line_doctype.parent)
+					.select(
+						line_doctype.name,
+						line_doctype.parent,
+						line_doctype.item_code,
+						getattr(line_doctype, uom_field).as_("uom"),
+						order.supplier,
+						order.docstatus,
+						order.status,
+					)
+					.where(line_doctype.name.isin([row.get(f"{order_field}_item") for row in rows]))
+				).run(as_dict=True)
+			}
+
+			for row in rows:
+				line_name = row.get(f"{order_field}_item")
+				order_name = row.get(order_field)
+				line = lines.get(line_name)
+				if not line:
+					frappe.throw(
+						_("Row {0}: {1} line {2} does not exist").format(row.idx, _(order_doctype), line_name)
+					)
+				if line.parent != order_name:
+					frappe.throw(
+						_("Row {0}: {1} line {2} belongs to {3}, not {4}").format(
+							row.idx, _(order_doctype), line_name, line.parent, order_name
+						)
+					)
+				if cint(line.docstatus) != 1 or line.status in _STATUSES_NOT_OPEN[order_doctype]:
+					frappe.throw(
+						_("Row {0}: {1} {2} is {3}, not open").format(
+							row.idx, _(order_doctype), order_name, line.status
+						)
+					)
+				if line.supplier != self.supplier:
+					frappe.throw(
+						_("Row {0}: Supplier {1} does not match {2} {3}, which is for {4}").format(
+							row.idx, self.supplier, _(order_doctype), order_name, line.supplier
+						)
+					)
+				if row.item_code != line.item_code:
+					frappe.throw(
+						_("Row {0}: Item Code {1} does not match {2} on {3} line {4}").format(
+							row.idx, row.item_code, line.item_code, _(order_doctype), line_name
+						)
+					)
+				if row.uom and row.uom != line.uom:
+					frappe.throw(
+						_("Row {0}: UOM {1} does not match {2} on {3} line {4}").format(
+							row.idx, row.uom, line.uom, _(order_doctype), line_name
+						)
+					)
 
 	def _validate_po_qty(self):
 		rows_by_purchase_order_item = {}
@@ -399,6 +477,11 @@ class ASN(WebsiteGenerator):
 
 
 _PO_STATUSES_WITH_NO_SHIPPED_QTY = ("Closed", "On Hold")
+# Draft and Cancelled orders are refused by docstatus; these are the submitted ones that are not open.
+_STATUSES_NOT_OPEN = {
+	"Purchase Order": _PO_STATUSES_WITH_NO_SHIPPED_QTY,
+	"Subcontracting Order": ("Closed",),
+}
 
 
 def _unreceived_qty_by_po_item(
@@ -738,33 +821,6 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 		)
 
 	return result
-
-
-@frappe.whitelist(methods=["GET"])
-def get_po_items(
-	doctype: str,
-	txt: str,
-	searchfield: str,
-	start: int,
-	page_len: int,
-	filters: dict[str, Any] | None,
-) -> list[tuple[str, str]]:
-	del doctype, searchfield
-	purchase_order = (filters or {}).get("purchase_order")
-	if not purchase_order:
-		return []
-	_get_accessible_purchase_order(purchase_order)
-
-	return frappe.db.sql(
-		"""
-		SELECT poi.item_code, poi.item_name
-		FROM `tabPurchase Order Item` poi
-		WHERE poi.parent = %s
-		AND (poi.item_code LIKE %s OR poi.item_name LIKE %s)
-		LIMIT %s OFFSET %s
-		""",
-		(purchase_order, f"%{txt}%", f"%{txt}%", page_len, start),
-	)
 
 
 @frappe.whitelist(methods=["GET"])

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import frappe
 from erpnext.buying.doctype.purchase_order.purchase_order import make_purchase_receipt
 from frappe import _
+from frappe.query_builder import Case
 from frappe.query_builder.functions import IfNull, Sum
 from frappe.utils import cint, flt
 
@@ -90,7 +91,7 @@ def _create_receipt_from_asn(asn, source_name: str) -> dict:
 	_apply_asn_fields(pr, asn)
 	fill_custom_fiscal_year(pr)
 
-	pr.insert(ignore_permissions=True)
+	pr.insert()
 
 	for asn_item in asn.items:
 		emit_asn_item_transition(
@@ -151,14 +152,13 @@ def _add_received_qty(asn_item_name: str, delta: float) -> None:
 	delta = flt_qty(delta)
 	if not delta:
 		return
-	frappe.db.sql(
-		"""
-		UPDATE `tabASN Item`
-		SET received_qty = GREATEST(COALESCE(received_qty, 0) + %s, 0)
-		WHERE name = %s
-		""",
-		(delta, asn_item_name),
-	)
+	asn_item = frappe.qb.DocType("ASN Item")
+	new_qty = IfNull(asn_item.received_qty, 0) + delta
+	(
+		frappe.qb.update(asn_item)
+		.set(asn_item.received_qty, Case().when(new_qty < 0, 0).else_(new_qty))  # GREATEST(new_qty, 0)
+		.where(asn_item.name == asn_item_name)
+	).run()
 
 
 def _lines_with_delivered_qty(doc) -> list[tuple]:
@@ -287,20 +287,30 @@ def _unreceived_qty_on_open_asns(po_items: list[str]) -> dict[str, list[tuple[st
 
 
 def on_purchase_receipt_cancel(doc, method=None):
-	"""Put delivered quantity back when a receipt is cancelled.
+	"""Void the receipt's invoice scan code and put delivered quantity back when it is cancelled.
 
-	Submit adds to ``ASN Item.received_qty`` and may mark the ASN Received, which drops
+	Submit adds to ``ASN Item.received_qty`` and marks the ASN Received or Closed, which drops
 	it out of in-transit. Cancel reverses the stock ledger and must reverse that too.
 	A return is a separate transaction: the quantity that arrived stays received, so
 	cancelling the return does not change it either. A receipt with no ASN link never
 	touched an ASN, so cancelling it leaves every ASN as it is.
 	"""
 	del method
+	void_scan_codes("create_purchase_invoice", "Purchase Receipt", doc.name)
 	if getattr(doc, "is_return", 0) or not getattr(doc, "asn", None):
 		return
-	_mapped, updated = _record_linked_received_qty(doc, sign=-1)
+	mapped_names, updated = _record_linked_received_qty(doc, sign=-1)
 	if updated and frappe.db.exists("ASN", doc.asn):
 		frappe.get_doc("ASN", doc.asn).update_receipt_status()
+	for asn_item_name, item_code in _asn_item_codes(mapped_names).items():
+		emit_asn_item_transition(
+			asn=doc.asn,
+			asn_item=asn_item_name,
+			item_code=item_code,
+			state="PR_CANCELLED",
+			ref_doctype="Purchase Receipt",
+			ref_name=doc.name,
+		)
 
 
 def on_purchase_receipt_before_submit(doc, method=None):
@@ -411,48 +421,21 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 	_set_asn_invoice_on_gate_pass(gate_pass, asn)
 	_set_if_present(gate_pass, "asn", asn.name)
 
-	invoice_no = (asn.supplier_invoice_no or "").strip()
-	invoices_field = gate_pass.meta.get_field("gate_pass_invoices")
-	if invoices_field and invoices_field.fieldtype == "Table" and invoice_no:
-		invoice_fields = {df.fieldname for df in frappe.get_meta(invoices_field.options).fields}
-		invoice_row = {}
-		if "supplier_delivery_note" in invoice_fields:
-			invoice_row["supplier_delivery_note"] = invoice_no
-		if "invoice_date" in invoice_fields:
-			invoice_row["invoice_date"] = asn.supplier_invoice_date
-		gate_pass.append("gate_pass_invoices", invoice_row)
+	for asn_item in asn.items:
+		order_line = order_lines.get(asn_item.purchase_order_item)
+		row = {
+			"item_code": asn_item.item_code,
+			"uom": asn_item.uom,
+			"rate": asn_item.rate,
+			"purchase_order_item": asn_item.purchase_order_item,
+			"receive_qty": flt(asn_item.qty),
+		}
+		if order_line:
+			row["qty"] = flt(order_line.qty)
+			row["pending_qty"] = flt(order_line.qty) - flt(order_line.received_qty)
+		gate_pass.append("items", row)
 
-	for items_fieldname, items_field in _gate_pass_line_tables(gate_pass):
-		child_fields = {df.fieldname for df in frappe.get_meta(items_field.options).fields}
-		for asn_item in asn.items:
-			order_line = order_lines.get(asn_item.purchase_order_item)
-			shipped_qty = flt(asn_item.qty)
-			row = {}
-			if "item_code" in child_fields:
-				row["item_code"] = asn_item.item_code
-			if "uom" in child_fields:
-				row["uom"] = asn_item.uom
-			if "rate" in child_fields:
-				row["rate"] = asn_item.rate
-			if "purchase_order_item" in child_fields:
-				row["purchase_order_item"] = asn_item.purchase_order_item
-			if "order_item_name" in child_fields:
-				row["order_item_name"] = asn_item.purchase_order_item
-			if "supplier_delivery_note" in child_fields and invoice_no:
-				row["supplier_delivery_note"] = invoice_no
-			if "receive_qty" in child_fields:
-				row["receive_qty"] = shipped_qty
-			if "received_qty" in child_fields:
-				row["received_qty"] = shipped_qty
-			if order_line and "qty" in child_fields:
-				row["qty"] = flt(order_line.qty)
-			if order_line and "ordered_qty" in child_fields:
-				row["ordered_qty"] = flt(order_line.qty)
-			if order_line and "pending_qty" in child_fields:
-				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
-			gate_pass.append(items_fieldname, row)
-
-	gate_pass.insert(ignore_permissions=True)
+	gate_pass.insert()
 
 	return {
 		"doctype": "Gate Pass",
@@ -503,11 +486,7 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 				row["pending_qty"] = flt(order_line.qty) - flt(getattr(order_line, "received_qty", 0))
 			gate_pass.append(table_field, row)
 
-	# Material drafts run the site Gate Pass controller. That controller checks
-	# material lines on gate_pass_table, so a Job draft that only fills the job
-	# line table would be rejected. Skip that validation for Job drafts.
-	gate_pass.flags.ignore_validate = True
-	gate_pass.insert(ignore_permissions=True, ignore_mandatory=True)
+	gate_pass.insert(ignore_mandatory=True)
 
 	return {
 		"doctype": "Gate Pass",
@@ -561,7 +540,6 @@ def _job_line_table(gate_pass) -> tuple[str | None, set[str]]:
 GATE_PASS_RECEIPT_ACTION = "create_receipt_from_gate_pass"
 
 
-@frappe.whitelist(methods=["POST"])
 def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 	"""Open the draft receipt for a submitted Gate Pass.
 
@@ -571,6 +549,7 @@ def create_receipt_from_gate_pass(gate_pass_name: str) -> dict:
 	"""
 	frappe.only_for(("Stock User", "Stock Manager"))
 	gate_pass = frappe.get_doc("Gate Pass", gate_pass_name)
+	frappe.has_permission("Gate Pass", "read", gate_pass, throw=True)
 	if cint(gate_pass.docstatus) != 1:
 		frappe.throw(_("Submit the Gate Pass before creating a receipt."))
 	if not (getattr(gate_pass, "asn", None) or "").strip():
@@ -623,11 +602,12 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 
 	from asn_module.handlers.gate_pass_create import map_purchase_receipt_draft_from_gate_pass
 
-	asn = frappe.get_doc("ASN", gate_pass.asn)
+	# A Received or Closed ASN takes no further receipt, whichever path filled it.
+	asn = _load_submitted_asn_for_scan(gate_pass.asn)
 	pr = map_purchase_receipt_draft_from_gate_pass(gate_pass)
 	_apply_asn_fields(pr, asn, gate_pass=gate_pass)
 	fill_custom_fiscal_year(pr)
-	pr.insert(ignore_permissions=True)
+	pr.insert()
 
 	for asn_item in asn.items:
 		emit_asn_item_transition(
@@ -653,7 +633,7 @@ def _create_subcontracting_receipt_from_gate_pass(gate_pass) -> dict:
 	result = _open_or_create_subcontracting_receipt(asn)
 	receipt = frappe.get_doc("Subcontracting Receipt", result["name"])
 	if _apply_gate_pass_qty_to_subcontracting_receipt(receipt, gate_pass):
-		receipt.save(ignore_permissions=True)
+		receipt.save()
 	return result
 
 
@@ -738,20 +718,6 @@ def stamp_receipt_built_by_gate_pass(doc, method=None) -> None:
 	doc.asn = asn_name
 
 
-def _gate_pass_line_tables(gate_pass) -> list[tuple[str, object]]:
-	"""Child tables that hold material lines.
-
-	Sites that use the Gate Entry app store lines on ``gate_pass_table``. The
-	scan fixture uses ``items``. A site can have both, and each one is filled.
-	"""
-	tables = []
-	for fieldname in ("gate_pass_table", "items"):
-		field = gate_pass.meta.get_field(fieldname)
-		if field and field.fieldtype == "Table":
-			tables.append((fieldname, field))
-	return tables
-
-
 def _is_job_asn(asn) -> bool:
 	for row in getattr(asn, "items", None) or []:
 		if (getattr(row, "subcontracting_order", None) or "").strip():
@@ -798,7 +764,7 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 	_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
 	receipt.asn = asn.name
 	fill_custom_fiscal_year(receipt)
-	receipt.insert(ignore_permissions=True)
+	receipt.insert()
 
 	return {
 		"doctype": "Subcontracting Receipt",
@@ -1024,14 +990,7 @@ def on_purchase_receipt_submit(doc, method):
 	if not mapped_names:
 		return
 
-	asn_item_codes = {
-		row.name: row.item_code
-		for row in frappe.get_all(
-			"ASN Item",
-			filters={"name": ["in", mapped_names]},
-			fields=["name", "item_code"],
-		)
-	}
+	asn_item_codes = _asn_item_codes(mapped_names)
 
 	for asn_item_name in mapped_names:
 		emit_asn_item_transition(
@@ -1043,6 +1002,19 @@ def on_purchase_receipt_submit(doc, method):
 			ref_doctype="Purchase Receipt",
 			ref_name=doc.name,
 		)
+
+
+def _asn_item_codes(asn_item_names: list[str]) -> dict[str, str]:
+	if not asn_item_names:
+		return {}
+	return {
+		row.name: row.item_code
+		for row in frappe.get_all(
+			"ASN Item",
+			filters={"name": ["in", asn_item_names]},
+			fields=["name", "item_code"],
+		)
+	}
 
 
 def _store_invoice_code(doc) -> None:

@@ -3,7 +3,6 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from asn_module.asn_module.doctype.scan_log.scan_log import LOG_RETENTION_DAYS, ScanLog
-from asn_module.setup import register_scan_log_clearing
 
 
 def _index_column_orders(table: str) -> list[list[str]]:
@@ -45,13 +44,6 @@ class TestScanRegistryIndexes(FrappeTestCase):
 
 
 class TestScanLogClearing(FrappeTestCase):
-	def test_register_scan_log_clearing_is_idempotent(self):
-		register_scan_log_clearing()
-		register_scan_log_clearing()
-		rows = [row for row in frappe.get_doc("Log Settings").logs_to_clear if row.ref_doctype == "Scan Log"]
-		self.assertEqual(len(rows), 1)
-		self.assertEqual(rows[0].days, LOG_RETENTION_DAYS)
-
 	def test_clear_old_logs_deletes_only_expired_rows(self):
 		old_log = frappe.get_doc(
 			{

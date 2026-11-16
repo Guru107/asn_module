@@ -84,14 +84,29 @@ frappe.pages["scan-station"].on_page_load = function (wrapper) {
 				$status.hide();
 				$input.val("").prop("disabled", false).focus();
 
-				let error_msg = r.responseJSON
-					? r.responseJSON._server_messages || r.responseJSON.message
-					: __("Scan failed. Please try again.");
-
-				$error.text(error_msg).show();
+				$error.text(get_error_message(r)).show();
 				setTimeout(() => $error.fadeOut(), 5000);
 			},
 		});
+	}
+
+	// frappe.call passes parsed JSON (417), an xhr (other statuses) or nothing (500/502/504).
+	function get_error_message(r) {
+		const body = (r && r.responseJSON) || r || {};
+		try {
+			const messages = JSON.parse(body._server_messages || "[]");
+			if (messages.length) {
+				return messages.map((m) => JSON.parse(m).message).join(" ");
+			}
+		} catch (e) {
+			// fall through to the generic message
+		}
+		// Plain `raise` (no frappe.throw) only fills `exception`: "pkg.Error: message".
+		const exc =
+			typeof body.exception === "string"
+				? body.exception.split(": ").slice(1).join(": ")
+				: "";
+		return exc || __("Scan failed. Please try again.");
 	}
 
 	// Handle scanner input (rapid keystrokes ending with Enter)

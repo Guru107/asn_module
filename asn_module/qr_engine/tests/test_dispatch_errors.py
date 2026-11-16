@@ -60,9 +60,10 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 		self.addCleanup(self._cleanup_scan_code, code)
 
 		with integration_user_context():
-			with patch(
-				"asn_module.qr_engine.dispatch._call_handler",
-				return_value="not a dict",
+			with (
+				# The source ASN is fictional; only the handler-result check is under test.
+				patch("asn_module.qr_engine.dispatch.frappe.has_permission", return_value=True),
+				patch("asn_module.qr_engine.dispatch._call_handler", return_value="not a dict"),
 			):
 				with self.assertRaises(frappe.ValidationError) as cm:
 					dispatch(code=code, device_info="test")
@@ -76,9 +77,9 @@ class TestDispatchErrorsIntegration(FrappeTestCase):
 			return {"success": False, "message": "intentional handler error"}
 
 		with integration_user_context():
-			with patch(
-				"asn_module.qr_engine.dispatch._call_handler",
-				side_effect=error_handler,
+			with (
+				patch("asn_module.qr_engine.dispatch.frappe.has_permission", return_value=True),
+				patch("asn_module.qr_engine.dispatch._call_handler", side_effect=error_handler),
 			):
 				with self.assertRaises(frappe.ValidationError) as cm:
 					dispatch(code=code, device_info="test")

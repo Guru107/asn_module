@@ -14,7 +14,6 @@ from asn_module.stock_cap.api import asn_rows_cap_check, breaches_for_asn_rows
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
 from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
 
-OPEN_PO_STATUSES = ("To Receive", "To Receive and Bill")
 MAX_BULK_ROWS = 5000
 MAX_BULK_INVOICES = 500
 # Errors shown for one upload; the rest are summed up in one line.
