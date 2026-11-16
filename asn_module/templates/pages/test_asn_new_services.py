@@ -941,6 +941,47 @@ class TestBulkUploadJob(FrappeTestCase):
 		self.assertIn("Invoice JOB-INV-2: ASN creation failed unexpectedly", mail["message"])
 		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
 
+	def _run_racing_job(self, asn_reads):
+		real_get_value = frappe.db.get_value
+		self.locked_reads = []
+
+		def get_value(doctype, *args, **kwargs):
+			if kwargs.get("for_update"):
+				self.locked_reads.append(doctype)
+			if doctype == "ASN":
+				result = asn_reads.pop(0)
+				if isinstance(result, Exception):
+					raise result
+				return result
+			return real_get_value(doctype, *args, **kwargs)
+
+		with (
+			patch("asn_module.templates.pages.asn_new_services.frappe.sendmail") as sendmail,
+			patch("asn_module.templates.pages.asn_new_services.insert_and_submit_asn") as insert,
+			patch.object(frappe.db, "get_value", side_effect=get_value),
+			patch.object(frappe.db, "commit"),
+		):
+			create_bulk_asns_job("Supp-001", self.PAYLOADS[:1], "Administrator")
+		insert.assert_not_called()
+		return sendmail.call_args.kwargs
+
+	def test_a_racing_job_does_not_create_an_invoice_another_job_already_created(self):
+		mail = self._run_racing_job(["ASN-OTHER-JOB"])
+
+		# Supplier is locked first and the ASN read is a locking read, so it sees the other job's commit.
+		self.assertEqual(self.locked_reads, ["Supplier", "ASN"])
+		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
+		self.assertIn("Invoice JOB-INV-1: a notice with this supplier invoice number", mail["message"])
+
+	def test_a_racing_job_that_deadlocks_retries_and_reports_the_other_jobs_asn(self):
+		with patch.object(frappe.db, "rollback") as rollback:
+			mail = self._run_racing_job([frappe.QueryDeadlockError("1020"), "ASN-OTHER-JOB"])
+
+		rollback.assert_called_once_with()
+		self.assertEqual(self.locked_reads, ["Supplier", "ASN", "Supplier", "ASN"])
+		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
+		self.assertIn("Invoice JOB-INV-1: a notice with this supplier invoice number", mail["message"])
+
 
 class TestCreateJobAsnForSupplier(FrappeTestCase):
 	def test_another_suppliers_order_gets_the_same_message_whether_open_or_closed(self):
