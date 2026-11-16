@@ -15,6 +15,7 @@ def setup():
 				"insert_after": "supplier",
 				"read_only": 1,
 				"in_standard_filter": 1,
+				"search_index": 1,
 			},
 			scan_code_field("asn"),
 			{

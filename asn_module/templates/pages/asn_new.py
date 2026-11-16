@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 import frappe
@@ -7,7 +9,7 @@ from frappe import _
 from frappe.exceptions import ValidationError as FrappeValidationError
 from frappe.utils import cint, cstr, flt
 
-from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
+from asn_module.templates.pages.asn import _get_supplier_for_user
 from asn_module.templates.pages.asn_new_search import supplier_draft_asn_name
 from asn_module.templates.pages.asn_new_services import (
 	BULK_ASN_JOB,
@@ -55,7 +57,6 @@ def get_context(context):
 		frappe.throw(_("Only supplier portal users can create ASNs."), frappe.PermissionError)
 
 	context.supplier = supplier
-	context.open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
 	context.asn_name = supplier_draft_asn_name(supplier, (frappe.form_dict or {}).get("asn_name")) or ""
 	context.draft_form = portal_draft_form(supplier, context.asn_name)
 
@@ -415,11 +416,15 @@ def _date_input(value) -> str:
 def _queue_bulk_asns(supplier: str) -> int:
 	"""Validate the upload here, so errors show on the page; create the ASNs in a job."""
 	payloads = validate_bulk_rows(supplier, _parse_bulk_csv_rows())
+	# Same supplier and same file give the same id, so a double submit does not queue a second job.
+	upload_hash = hashlib.sha256(json.dumps([supplier, payloads], default=str).encode()).hexdigest()
 	frappe.enqueue(
 		BULK_ASN_JOB,
 		queue="long",
 		timeout=BULK_ASN_JOB_TIMEOUT,
 		enqueue_after_commit=True,
+		job_id=f"asn_bulk_upload_{upload_hash}",
+		deduplicate=True,
 		supplier=supplier,
 		payloads=payloads,
 		notify_user=frappe.session.user,

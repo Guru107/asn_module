@@ -12,7 +12,10 @@ from frappe.utils import escape_html, flt
 from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
 from asn_module.stock_cap.api import asn_rows_cap_check, breaches_for_asn_rows
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
-from asn_module.templates.pages.asn import get_open_purchase_orders_for_supplier
+from asn_module.templates.pages.asn import (
+	get_open_purchase_orders_for_supplier,
+	get_open_subcontracting_orders_for_supplier,
+)
 
 MAX_BULK_ROWS = 5000
 MAX_BULK_INVOICES = 500
@@ -102,8 +105,8 @@ def error_entry(
 	}
 
 
-def get_supplier_open_purchase_orders(supplier: str) -> dict[str, frappe._dict]:
-	open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
+def get_supplier_open_purchase_orders(supplier: str, names: list[str]) -> dict[str, frappe._dict]:
+	open_purchase_orders = get_open_purchase_orders_for_supplier(supplier, names=names)
 	return {row.name: row for row in open_purchase_orders}
 
 
@@ -258,7 +261,7 @@ def validate_selected_purchase_orders(
 			]
 		)
 
-	open_po_map = get_supplier_open_purchase_orders(supplier)
+	open_po_map = get_supplier_open_purchase_orders(supplier, selected_purchase_orders)
 	invalid = sorted(po for po in selected_purchase_orders if po not in open_po_map)
 	if invalid:
 		raise PortalValidationError(
@@ -829,7 +832,7 @@ def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]],
 	errors: list[dict] = []
 	for header, items in payloads:
 		try:
-			asn = insert_and_submit_asn(supplier=supplier, header=header, items=items)
+			asn = _create_claimed_asn(supplier, header, items)
 		except PortalValidationError as exc:
 			errors = exc.errors
 			break
@@ -853,6 +856,46 @@ def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]],
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit - per-ASN batch commit, see above
 		asn_names.append(asn.name)
 	_email_bulk_result(notify_user, asn_names, errors)
+
+
+def _create_claimed_asn(supplier: str, header: dict, items: list[dict]):
+	"""Claim the invoice number and create the ASN, once more if MariaDB picks this job to fail.
+
+	Two jobs' gap locks on the invoice number index can deadlock, and with snapshot isolation
+	(MariaDB 11.6+) the locking read fails when it meets an ASN another job committed after this
+	transaction's snapshot. A fresh transaction clears both; the claim then reports that ASN.
+	"""
+	try:
+		_claim_supplier_invoice(supplier, header.get("supplier_invoice_no"))
+		return insert_and_submit_asn(supplier=supplier, header=header, items=items)
+	except frappe.QueryDeadlockError:
+		# Earlier ASNs are committed, so this undoes only this attempt.
+		frappe.db.rollback()
+	_claim_supplier_invoice(supplier, header.get("supplier_invoice_no"))
+	return insert_and_submit_asn(supplier=supplier, header=header, items=items)
+
+
+def _claim_supplier_invoice(supplier: str, invoice_no: str | None) -> None:
+	"""Stop a concurrent job from creating an ASN for the same supplier invoice number.
+
+	A unique index cannot skip cancelled ASNs, so the supplier row is locked until this ASN
+	commits. The check after the lock is a locking read, so it sees what the other job
+	committed while we waited, whatever snapshot this transaction already holds.
+	"""
+	frappe.db.get_value("Supplier", supplier, "name", for_update=True)
+	if frappe.db.get_value(
+		"ASN",
+		{"supplier": supplier, "supplier_invoice_no": invoice_no, "docstatus": ("!=", 2)},
+		"name",
+		for_update=True,
+	):
+		message = _(
+			"Invoice {0}: a notice with this supplier invoice number was already created, "
+			"possibly by an earlier upload. It was not created again."
+		).format(invoice_no)
+		raise PortalValidationError(
+			[error_entry(field="supplier_invoice_no", invoice_no=invoice_no, message=message)]
+		)
 
 
 def _email_bulk_result(user: str, asn_names: list[str], errors: list[dict]) -> None:
@@ -927,11 +970,11 @@ def create_job_asn_for_supplier(
 	if not order_name:
 		frappe.throw(_("Select one open Subcontracting Order."))
 
+	# One generic message: it must not reveal whether another supplier's order exists or is open.
+	if not get_open_subcontracting_orders_for_supplier(supplier, names=[order_name], page_len=1):
+		frappe.throw(_("Subcontracting Order is not available for this supplier."))
+
 	sco = frappe.get_doc("Subcontracting Order", order_name)
-	if sco.docstatus != 1 or (sco.status or "") in ("Completed", "Closed", "Cancelled"):
-		frappe.throw(_("Subcontracting Order {0} is not open.").format(order_name))
-	if sco.supplier != supplier:
-		frappe.throw(_("Subcontracting Order {0} is not for this supplier.").format(order_name))
 
 	finished_goods = {row.name: row for row in sco.items}
 	requested = lines
