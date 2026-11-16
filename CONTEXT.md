@@ -51,7 +51,7 @@ Shipped Qty minus Received Qty on submitted ASNs that are neither fully Received
 _Avoid_: pending qty, open qty, outstanding qty
 
 **Closed**:
-An ASN that is finished and will take no further receipt, whether or not Received Qty covers Shipped Qty.
+An ASN that is finished and will take no further receipt, whether or not Received Qty covers Shipped Qty. Set automatically when the ASN's first receipt is submitted with Received Qty below Shipped Qty; cancelling that receipt puts the ASN back to Submitted.
 _Avoid_: cancelled, fully received
 
 **Remaining Qty**:

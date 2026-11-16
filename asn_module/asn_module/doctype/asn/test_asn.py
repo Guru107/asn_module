@@ -817,7 +817,7 @@ class TestASN(FrappeTestCase):
 		)
 		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Received")
 
-	def test_update_receipt_status_sets_partially_received_and_updates_discrepancy_qty(self):
+	def test_update_receipt_status_closes_short_receipt_and_updates_discrepancy_qty(self):
 		asn = make_test_asn_with_two_items(qty=5)
 		asn.insert(ignore_permissions=True)
 
@@ -826,7 +826,7 @@ class TestASN(FrappeTestCase):
 		asn.update_receipt_status()
 		asn.reload()
 
-		self.assertEqual(asn.status, "Partially Received")
+		self.assertEqual(asn.status, "Closed")
 		self.assertEqual(asn.items[0].received_qty, 2)
 		self.assertEqual(asn.items[1].received_qty, 5)
 		self.assertEqual(asn.items[0].discrepancy_qty, 3)
@@ -858,11 +858,25 @@ class TestASN(FrappeTestCase):
 		asn.reload()
 
 		self.assertEqual(asn.docstatus, 1)
-		self.assertEqual(asn.status, "Partially Received")
+		self.assertEqual(asn.status, "Closed")
 		self.assertEqual(asn.items[0].received_qty, 2)
 		self.assertEqual(asn.items[1].received_qty, 5)
 		self.assertEqual(asn.items[0].discrepancy_qty, 3)
 		self.assertEqual(asn.items[1].discrepancy_qty, 0)
+
+	def test_update_receipt_status_reopens_closed_asn_when_receipt_is_reversed(self):
+		# Cancelling the receipt reverses received_qty; the ASN must go back in transit.
+		asn = make_test_asn_with_two_items(qty=5)
+		asn.insert(ignore_permissions=True)
+		asn.submit()
+		self._set_received_qty_in_db(asn, 2, 5)
+		asn.update_receipt_status()
+		self.assertEqual(asn.status, "Closed")
+
+		self._set_received_qty_in_db(asn, 0, 0)
+		asn.update_receipt_status()
+
+		self.assertEqual(asn.status, "Submitted")
 
 	def test_amendment_resets_copied_lifecycle_fields(self):
 		frappe.reload_doc("asn_module", "doctype", "asn")
@@ -1218,7 +1232,7 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 			draft.submit()
 		self.assertIn("exceeds remaining PO qty", str(submitted.exception))
 
-	def test_a_draft_and_the_unreceived_part_of_an_open_shipment_consume_remaining_qty(self):
+	def test_a_draft_and_an_open_shipment_consume_remaining_qty_until_a_short_receipt_closes_it(self):
 		po = self._submitted_purchase_order(qty=10)
 		make_test_asn(purchase_order=po, qty=6).insert(ignore_permissions=True)
 		self.assertEqual(self._offered_qty(po), 4)
@@ -1229,11 +1243,14 @@ class TestRemainingQtyAfterReturn(FrappeTestCase):
 		shipment = make_test_asn(purchase_order=open_po, qty=100)
 		shipment.insert(ignore_permissions=True)
 		shipment.submit()
-		self._purchase_receipt(open_po, shipment, qty=80)
-
 		self.assertEqual(self._offered_qty(open_po), 0)
 		with self.assertRaises(frappe.ValidationError):
 			make_test_asn(purchase_order=open_po, qty=1).insert(ignore_permissions=True)
+
+		# #134: the short receipt closes the shipment, so the 20 never delivered is freed.
+		self._purchase_receipt(open_po, shipment, qty=80)
+		self.assertEqual(frappe.db.get_value("ASN", shipment.name, "status"), "Closed")
+		self.assertEqual(self._offered_qty(open_po), 20)
 
 	def test_editing_a_draft_offers_the_same_remaining_qty_on_the_desk_and_the_portal(self):
 		"""Ordered 10, this draft declares 6. Leaving the draft out, both doors offer 10."""

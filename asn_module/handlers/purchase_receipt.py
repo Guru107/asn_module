@@ -289,7 +289,7 @@ def _unreceived_qty_on_open_asns(po_items: list[str]) -> dict[str, list[tuple[st
 def on_purchase_receipt_cancel(doc, method=None):
 	"""Void the receipt's invoice scan code and put delivered quantity back when it is cancelled.
 
-	Submit adds to ``ASN Item.received_qty`` and may mark the ASN Received, which drops
+	Submit adds to ``ASN Item.received_qty`` and marks the ASN Received or Closed, which drops
 	it out of in-transit. Cancel reverses the stock ledger and must reverse that too.
 	A return is a separate transaction: the quantity that arrived stays received, so
 	cancelling the return does not change it either. A receipt with no ASN link never
@@ -602,7 +602,8 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 
 	from asn_module.handlers.gate_pass_create import map_purchase_receipt_draft_from_gate_pass
 
-	asn = frappe.get_doc("ASN", gate_pass.asn)
+	# A Received or Closed ASN takes no further receipt, whichever path filled it.
+	asn = _load_submitted_asn_for_scan(gate_pass.asn)
 	pr = map_purchase_receipt_draft_from_gate_pass(gate_pass)
 	_apply_asn_fields(pr, asn, gate_pass=gate_pass)
 	fill_custom_fiscal_year(pr)
