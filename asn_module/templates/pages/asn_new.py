@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 import frappe
@@ -414,11 +416,15 @@ def _date_input(value) -> str:
 def _queue_bulk_asns(supplier: str) -> int:
 	"""Validate the upload here, so errors show on the page; create the ASNs in a job."""
 	payloads = validate_bulk_rows(supplier, _parse_bulk_csv_rows())
+	# Same supplier and same file give the same id, so a double submit does not queue a second job.
+	upload_hash = hashlib.sha256(json.dumps([supplier, payloads], default=str).encode()).hexdigest()
 	frappe.enqueue(
 		BULK_ASN_JOB,
 		queue="long",
 		timeout=BULK_ASN_JOB_TIMEOUT,
 		enqueue_after_commit=True,
+		job_id=f"asn_bulk_upload_{upload_hash}",
+		deduplicate=True,
 		supplier=supplier,
 		payloads=payloads,
 		notify_user=frappe.session.user,
