@@ -35,8 +35,9 @@ def _load_submitted_asn_for_scan(source_name: str):
 	if asn.docstatus != 1:
 		frappe.throw(_("Purchase Receipt can only be created from a submitted ASN"))
 	if asn.status in ("Received", "Closed", "Cancelled"):
+		receipt_label = _("Subcontracting Receipt") if _is_job_asn(asn) else _("Purchase Receipt")
 		frappe.throw(
-			_("Cannot create Purchase Receipt from ASN {0} with status {1}").format(source_name, asn.status)
+			_("Cannot create {0} from ASN {1} with status {2}").format(receipt_label, source_name, asn.status)
 		)
 	return asn
 
