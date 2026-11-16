@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_days
 
 from asn_module.asn_module.doctype.asn.test_asn import _resolve_test_company, create_purchase_order
 from asn_module.templates.pages.asn_new_services import (
@@ -11,6 +12,7 @@ from asn_module.templates.pages.asn_new_services import (
 	PortalValidationError,
 	create_bulk_asns_for_supplier,
 	create_bulk_asns_job,
+	create_job_asn_for_supplier,
 	enforce_bulk_limits,
 	error_entry,
 	fetch_purchase_order_items,
@@ -155,9 +157,10 @@ class TestServiceUtilities(FrappeTestCase):
 		with patch(
 			"asn_module.templates.pages.asn_new_services.get_open_purchase_orders_for_supplier",
 			return_value=rows,
-		):
-			result = get_supplier_open_purchase_orders("Supp-001")
+		) as open_orders:
+			result = get_supplier_open_purchase_orders("Supp-001", ["PO-001", "PO-002"])
 
+		open_orders.assert_called_once_with("Supp-001", names=["PO-001", "PO-002"])
 		self.assertEqual(sorted(result), ["PO-001", "PO-002"])
 		self.assertIs(result["PO-001"], rows[0])
 
@@ -358,6 +361,33 @@ class TestValidateSelectedPurchaseOrders(FrappeTestCase):
 				supplier="Supp-001",
 				selected_purchase_orders=["PO-0001", "PO-INVALID"],
 			)
+
+	def test_the_oldest_of_over_200_open_pos_is_accepted_and_another_suppliers_is_refused(self):
+		old_po = create_purchase_order(qty=1)
+		frappe.db.set_value(
+			"Purchase Order", old_po.name, "transaction_date", add_days(old_po.transaction_date, -30)
+		)
+		_clone_open_purchase_orders(old_po.name, 201)
+
+		accepted = validate_selected_purchase_orders(
+			supplier=old_po.supplier, selected_purchase_orders=[old_po.name]
+		)
+		self.assertEqual(list(accepted), [old_po.name])
+		with self.assertRaises(PortalValidationError):
+			validate_selected_purchase_orders(supplier="someone-else", selected_purchase_orders=[old_po.name])
+
+
+def _clone_open_purchase_orders(source: str, count: int) -> None:
+	"""Copy a submitted PO's row ``count`` times: cheap newer open orders for the same supplier."""
+	row = frappe.db.get_value("Purchase Order", source, "*", as_dict=True)
+	fields = list(row)
+	frappe.db.bulk_insert(
+		"Purchase Order",
+		fields=fields,
+		values=[
+			tuple(f"{source}-CLONE-{i}" if f == "name" else row[f] for f in fields) for i in range(count)
+		],
+	)
 
 
 def _bulk_fixture():
@@ -931,3 +961,19 @@ class TestBulkUploadJob(FrappeTestCase):
 		mail = sendmail.call_args.kwargs
 		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
 		self.assertIn("Invoice JOB-INV-1: a notice with this supplier invoice number", mail["message"])
+
+
+class TestCreateJobAsnForSupplier(FrappeTestCase):
+	def test_another_suppliers_order_gets_the_same_message_whether_open_or_closed(self):
+		from asn_module.handlers.tests.test_subcontracting import TestSubcontractingHandlers
+
+		sco = TestSubcontractingHandlers()._make_integration_subcontracting_order()
+		messages = []
+		for status in ("To Deliver", "Closed"):
+			frappe.db.set_value("Subcontracting Order", sco.name, "status", status)
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				create_job_asn_for_supplier("someone-else", sco.name, {})
+			messages.append(str(ctx.exception))
+
+		self.assertEqual(messages[0], messages[1])
+		self.assertNotIn(sco.name, messages[0])

@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -878,6 +879,40 @@ def ensure_gate_pass_for_tests() -> None:
 	frappe.clear_cache(doctype="Gate Pass")
 
 
+_ASN_DRAFT_DOCTYPES = ("Gate Pass", "Purchase Receipt", "Subcontracting Receipt")
+
+
+@contextmanager
+def _second_scan_with_a_stale_snapshot():
+	"""Replay the losing side of two simultaneous scans of one ASN.
+
+	Under REPEATABLE READ the second scan's plain reads use a snapshot taken before the
+	first scan committed its draft, so they miss it. Only a locking read sees it.
+	"""
+	real_get_value = frappe.db.get_value
+	real_get_all = frappe.get_all
+
+	def hides_draft(doctype, filters) -> bool:
+		return doctype in _ASN_DRAFT_DOCTYPES and isinstance(filters, dict) and "asn" in filters
+
+	def get_value(doctype, filters=None, *args, **kwargs):
+		if not kwargs.get("for_update") and hides_draft(doctype, filters):
+			return None
+		return real_get_value(doctype, filters, *args, **kwargs)
+
+	def get_all(doctype, *args, **kwargs):
+		if hides_draft(doctype, kwargs.get("filters")):
+			return []
+		return real_get_all(doctype, *args, **kwargs)
+
+	with (
+		patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", side_effect=get_value),
+		patch("asn_module.handlers.purchase_receipt.frappe.get_all", side_effect=get_all),
+		patch("asn_module.handlers.purchase_receipt.frappe.get_doc", wraps=frappe.get_doc) as get_doc,
+	):
+		yield get_doc
+
+
 class TestMaterialGatePassScan(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -1125,6 +1160,42 @@ class TestMaterialGatePassScan(FrappeTestCase):
 
 		self.assertNotEqual(second["name"], first["name"])
 		self.assertEqual(frappe.db.get_value("Gate Pass", second["name"], "docstatus"), 0)
+
+	def _scan_twice_concurrently(self, asn) -> tuple[dict, dict]:
+		first = create_gate_pass_from_asn("ASN", asn.name, {})
+		with _second_scan_with_a_stale_snapshot() as get_doc:
+			second = create_gate_pass_from_asn("ASN", asn.name, {})
+		# The row lock that makes the second scan wait for the first one's commit.
+		get_doc.assert_any_call("ASN", asn.name, for_update=True)
+		return first, second
+
+	def test_a_concurrent_scan_reopens_the_gate_pass_the_first_scan_saved(self):
+		with with_gate_pass_mode(True), integration_user_context():
+			_purchase_order, asn = self._submitted_material_asn()
+			first, second = self._scan_twice_concurrently(asn)
+
+		self.assertEqual(first["doctype"], "Gate Pass")
+		self.assertEqual(second["name"], first["name"])
+		self.assertEqual(frappe.db.count("Gate Pass", {"asn": asn.name, "docstatus": 0}), 1)
+
+	def test_a_concurrent_scan_reopens_the_purchase_receipt_the_first_scan_saved(self):
+		with with_gate_pass_mode(False), integration_user_context():
+			_purchase_order, asn = self._submitted_material_asn()
+			first, second = self._scan_twice_concurrently(asn)
+
+		self.assertEqual(first["doctype"], "Purchase Receipt")
+		self.assertEqual(second["name"], first["name"])
+		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name, "docstatus": 0}), 1)
+
+	def test_a_concurrent_scan_reopens_the_subcontracting_receipt_the_first_scan_saved(self):
+		with with_gate_pass_mode(False):
+			with integration_user_context(), patch_subcontracting_incoming_rate(5):
+				_order, asn = self._submitted_job_asn()
+				first, second = self._scan_twice_concurrently(asn)
+
+		self.assertEqual(first["doctype"], "Subcontracting Receipt")
+		self.assertEqual(second["name"], first["name"])
+		self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name, "docstatus": 0}), 1)
 
 	def test_a_subcontracting_order_receipt_code_stays_a_receipt(self):
 		with with_gate_pass_mode(True):

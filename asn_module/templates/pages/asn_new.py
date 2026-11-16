@@ -9,7 +9,7 @@ from frappe import _
 from frappe.exceptions import ValidationError as FrappeValidationError
 from frappe.utils import cint, cstr, flt
 
-from asn_module.templates.pages.asn import _get_supplier_for_user, get_open_purchase_orders_for_supplier
+from asn_module.templates.pages.asn import _get_supplier_for_user
 from asn_module.templates.pages.asn_new_search import supplier_draft_asn_name
 from asn_module.templates.pages.asn_new_services import (
 	BULK_ASN_JOB,
@@ -57,7 +57,6 @@ def get_context(context):
 		frappe.throw(_("Only supplier portal users can create ASNs."), frappe.PermissionError)
 
 	context.supplier = supplier
-	context.open_purchase_orders = get_open_purchase_orders_for_supplier(supplier)
 	context.asn_name = supplier_draft_asn_name(supplier, (frappe.form_dict or {}).get("asn_name")) or ""
 	context.draft_form = portal_draft_form(supplier, context.asn_name)
 

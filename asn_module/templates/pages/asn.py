@@ -72,39 +72,70 @@ def get_context(context):
 	context.asn_list = asn_list
 
 
-def get_open_purchase_orders_for_supplier(supplier: str) -> list[frappe._dict]:
+def get_open_purchase_orders_for_supplier(
+	supplier: str,
+	names: list[str] | None = None,
+	txt: str = "",
+	start: int = 0,
+	page_len: int = 0,
+) -> list[frappe._dict]:
+	"""This supplier's open Purchase Orders, newest first.
+
+	``names`` limits the result to those orders and ``txt`` to names containing it, so ownership and
+	search are answered by the query. ``page_len`` 0 means no limit.
+	"""
 	if not supplier:
 		return []
 
+	filters = {
+		"supplier": supplier,
+		"docstatus": 1,
+		"is_subcontracted": 0,
+		"status": ["in", ["To Receive", "To Receive and Bill"]],
+	}
+	_filter_by_name(filters, names, txt)
 	return frappe.get_all(
 		"Purchase Order",
-		filters={
-			"supplier": supplier,
-			"docstatus": 1,
-			"is_subcontracted": 0,
-			"status": ["in", ["To Receive", "To Receive and Bill"]],
-		},
+		filters=filters,
 		fields=["name", "transaction_date", "schedule_date", "status"],
 		order_by="transaction_date desc",
-		limit_page_length=200,
+		limit_start=start,
+		limit_page_length=page_len,
 	)
 
 
-def get_open_subcontracting_orders_for_supplier(supplier: str) -> list[frappe._dict]:
+def get_open_subcontracting_orders_for_supplier(
+	supplier: str,
+	names: list[str] | None = None,
+	txt: str = "",
+	start: int = 0,
+	page_len: int = 0,
+) -> list[frappe._dict]:
+	"""This supplier's open Subcontracting Orders; ``names``, ``txt`` and ``page_len`` as for POs."""
 	if not supplier:
 		return []
 
+	filters = {
+		"supplier": supplier,
+		"docstatus": 1,
+		"status": ["not in", ["Completed", "Closed", "Cancelled"]],
+	}
+	_filter_by_name(filters, names, txt)
 	return frappe.get_all(
 		"Subcontracting Order",
-		filters={
-			"supplier": supplier,
-			"docstatus": 1,
-			"status": ["not in", ["Completed", "Closed", "Cancelled"]],
-		},
+		filters=filters,
 		fields=["name", "transaction_date", "status"],
 		order_by="transaction_date desc",
-		limit_page_length=200,
+		limit_start=start,
+		limit_page_length=page_len,
 	)
+
+
+def _filter_by_name(filters: dict, names: list[str] | None, txt: str) -> None:
+	if names is not None:
+		filters["name"] = ["in", names]
+	elif txt:
+		filters["name"] = ["like", f"%{txt}%"]
 
 
 def _get_supplier_for_user(user):
