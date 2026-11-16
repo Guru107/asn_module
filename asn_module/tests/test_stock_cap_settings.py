@@ -1,6 +1,6 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import before_tests
 
 
@@ -42,7 +42,7 @@ def _make_settings(branch: str, warehouses: list[str], enabled: int = 1):
 	return doc
 
 
-class TestStockCapSettings(FrappeTestCase):
+class TestStockCapSettings(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

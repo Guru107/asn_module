@@ -1,7 +1,6 @@
 """Per-registry-key ``dispatch(code=…)`` coverage (real handlers, minimal mocks)."""
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.handlers.tests.test_subcontracting import (
 	TestSubcontractingHandlers,
@@ -9,6 +8,7 @@ from asn_module.handlers.tests.test_subcontracting import (
 )
 from asn_module.qr_engine.dispatch import ActionNotFoundError, dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.dispatch_flow import (
 	run_asn_pr_pi_via_dispatch,
 	run_asn_pr_submitted_via_dispatch,
@@ -22,7 +22,7 @@ from asn_module.tests.integration.fixtures import (
 from asn_module.utils.test_setup import before_tests
 
 
-class TestDispatchActionsIntegration(FrappeTestCase):
+class TestDispatchActionsIntegration(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()

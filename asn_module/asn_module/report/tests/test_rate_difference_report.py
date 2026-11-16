@@ -1,13 +1,13 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order, make_test_asn
 from asn_module.asn_module.report.asn_item_rate_difference.asn_item_rate_difference import execute
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.fixtures import ensure_integration_user
 from asn_module.utils.test_setup import before_tests
 
 
-class TestRateDifferenceReport(FrappeTestCase):
+class TestRateDifferenceReport(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()

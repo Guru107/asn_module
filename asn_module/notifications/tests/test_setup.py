@@ -1,8 +1,7 @@
 from unittest.mock import patch
 
-from frappe.tests.utils import FrappeTestCase
-
 from asn_module.notifications import setup as notifications_setup
+from asn_module.tests.compat import IntegrationTestCase
 
 
 class _FakeNotificationDoc:
@@ -31,7 +30,7 @@ class _FakeNotificationDoc:
 		return self
 
 
-class TestNotificationSetup(FrappeTestCase):
+class TestNotificationSetup(IntegrationTestCase):
 	def setUp(self):
 		# `exists` is mocked truthy in several tests; never delete real Notifications.
 		self.delete_doc = patch("asn_module.notifications.setup.frappe.delete_doc").start()

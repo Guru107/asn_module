@@ -3,7 +3,6 @@ from unittest import TestCase
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt
 
 from asn_module.handlers.gate_pass_create import (
@@ -15,6 +14,7 @@ from asn_module.handlers.gate_pass_create import (
 	throw_if_open_purchase_receipt_for_gate_pass,
 	validate_gate_pass_for_purchase_receipt,
 )
+from asn_module.tests.compat import IntegrationTestCase
 
 
 def _gp(**kwargs):
@@ -92,7 +92,7 @@ class TestValidateGatePassForPurchaseReceipt(TestCase):
 			validate_gate_pass_for_purchase_receipt(_gp(document_reference="Sales Order"))
 
 
-class TestThrowIfOpenPurchaseReceipt(FrappeTestCase):
+class TestThrowIfOpenPurchaseReceipt(IntegrationTestCase):
 	def test_no_op_when_custom_field_missing(self):
 		meta = SimpleNamespace(has_field=lambda _field: False)
 		with patch("asn_module.handlers.gate_pass_create.frappe.get_meta", return_value=meta):
@@ -111,7 +111,7 @@ class TestThrowIfOpenPurchaseReceipt(FrappeTestCase):
 				throw_if_open_purchase_receipt_for_gate_pass("GP-1")
 
 
-class TestMapPurchaseReceiptDraftHelpers(FrappeTestCase):
+class TestMapPurchaseReceiptDraftHelpers(IntegrationTestCase):
 	def test_raises_when_no_receive_qty_lines(self):
 		gp = _gp(items=[_row(purchase_order_item="poi-a", receive_qty=0)])
 		with self.assertRaises(frappe.ValidationError):
@@ -162,7 +162,7 @@ class TestMapPurchaseReceiptDraftHelpers(FrappeTestCase):
 		self.assertEqual(pr.items[0].custom_gate_pass_item, "gp-item-1")
 
 
-class TestMapPurchaseReceiptDraft(FrappeTestCase):
+class TestMapPurchaseReceiptDraft(IntegrationTestCase):
 	def test_whitelisted_create_from_gate_pass_returns_unsaved_doc(self):
 		if not frappe.db.exists("DocType", "Gate Pass"):
 			self.skipTest("Gate Pass not installed")

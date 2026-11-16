@@ -8,6 +8,7 @@ PROFILE = os.getenv("HYPOTHESIS_PROFILE", "ci")
 hypothesis_settings.register_profile(
 	"ci",
 	max_examples=80,
+	derandomize=True,  # a CI failure must reproduce on rerun
 	deadline=None,
 	suppress_health_check=(HealthCheck.too_slow,),
 )

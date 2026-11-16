@@ -1,5 +1,4 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import today
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
@@ -14,6 +13,7 @@ from asn_module.handlers.tests.test_subcontracting import (
 from asn_module.stock_cap.api import breaches_for_asn_rows
 from asn_module.stock_cap.collect import collect_lines_from_asn_rows
 from asn_module.templates.pages.asn_new_services import create_job_asn_for_supplier
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
@@ -26,7 +26,7 @@ BRANCH = "_Test Job Stock Cap Branch"
 FG_ITEM = "_Test Subcontract FG Item"
 
 
-class TestStockCapSubcontracting(FrappeTestCase):
+class TestStockCapSubcontracting(IntegrationTestCase):
 	"""Job ASNs and Subcontracting Receipts are capped, and a Job ASN counts as in transit."""
 
 	@classmethod

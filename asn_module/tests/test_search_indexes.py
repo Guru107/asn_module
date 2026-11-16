@@ -1,5 +1,6 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
+
+from asn_module.tests.compat import IntegrationTestCase
 
 INDEXED_FIELDS = {
 	"ASN": ("supplier", "supplier_invoice_no", "status"),
@@ -9,7 +10,7 @@ INDEXED_FIELDS = {
 }
 
 
-class TestSearchIndexes(FrappeTestCase):
+class TestSearchIndexes(IntegrationTestCase):
 	def test_hot_path_filters_are_indexed(self):
 		for doctype, fieldnames in INDEXED_FIELDS.items():
 			meta = frappe.get_meta(doctype)

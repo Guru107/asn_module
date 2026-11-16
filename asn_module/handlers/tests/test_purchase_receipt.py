@@ -2,7 +2,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
 	before_tests,
@@ -19,12 +18,13 @@ from asn_module.handlers.purchase_receipt import (
 	on_purchase_receipt_trash,
 	stamp_asn_item_mapping,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.tests.integration.fixtures import pin_gate_pass_mode_for_tests, with_gate_pass_mode
 from asn_module.utils.test_setup import make_test_breach
 
 
-class TestCreatePurchaseReceipt(FrappeTestCase):
+class TestCreatePurchaseReceipt(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()
@@ -397,7 +397,7 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 		)
 
 
-class TestPurchaseReceiptStockCap(FrappeTestCase):
+class TestPurchaseReceiptStockCap(IntegrationTestCase):
 	def _breach(self):
 		return make_test_breach()
 

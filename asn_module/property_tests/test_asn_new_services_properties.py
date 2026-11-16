@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-from frappe.tests.utils import FrappeTestCase as UnitTestCase
 from frappe.utils import flt
 from hypothesis import given
 from hypothesis import settings as hypothesis_settings
@@ -14,6 +13,7 @@ from asn_module.templates.pages.asn_new_services import (
 	normalize_group_value,
 	parse_positive_qty,
 )
+from asn_module.tests.compat import IntegrationTestCase
 
 
 def _identity(x):
@@ -45,7 +45,7 @@ numeric_invoice_amount_text = st.decimals(
 ).map(str)
 
 
-class TestPropertyHarness(UnitTestCase):
+class TestPropertyHarness(IntegrationTestCase):
 	@given(scan_text)
 	def test_property_harness_smoke_identity(self, text_value):
 		self.assertEqual(_identity(text_value), text_value)

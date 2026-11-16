@@ -1,10 +1,11 @@
 from pathlib import Path
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+
+from asn_module.tests.compat import IntegrationTestCase
 
 
-class TestScanStationPage(FrappeTestCase):
+class TestScanStationPage(IntegrationTestCase):
 	def test_scan_station_page_definition_matches_plan(self):
 		frappe.reload_doc("asn_module", "page", "scan_station")
 

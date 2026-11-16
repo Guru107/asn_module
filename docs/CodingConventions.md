@@ -18,7 +18,7 @@
 
 ### Unit Tests (Python)
 
-- Extend `FrappeTestCase` from `frappe.tests.utils`.
+- Extend `IntegrationTestCase` from `asn_module.tests.compat` (v16 `IntegrationTestCase`, v15 `FrappeTestCase`). A test module inside a doctype folder makes that doctype's test records on v16: list the links it builds itself in `IGNORE_TEST_RECORD_DEPENDENCIES`.
 - Helper `_ensure_loss_types()` creates Downtime Reason fixture data inside tests.
 - Use `frappe.db.set_value()` for test cleanup — it bypasses validations.
 - Avoid explicit `frappe.db.commit()` unless testing transaction isolation.

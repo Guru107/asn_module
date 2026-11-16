@@ -14,7 +14,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
 
 from asn_module.asn_module.doctype.asn.test_asn import (
@@ -44,6 +43,7 @@ from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.setup_actions import get_action
 from asn_module.templates.pages.asn_new_services import create_job_asn_for_supplier
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.fixtures import (
 	ensure_integration_user,
 	integration_user_context,
@@ -118,7 +118,7 @@ def _scan_code_for(action, doctype, name):
 	)
 
 
-class TestScanChainWiring(FrappeTestCase):
+class TestScanChainWiring(IntegrationTestCase):
 	def test_actions_cover_the_gate_pass_and_subcontracting_receipt_steps(self):
 		gate_pass = get_action(GATE_PASS_RECEIPT_ACTION)
 		self.assertEqual(gate_pass["source_doctype"], "Gate Pass")
@@ -179,7 +179,7 @@ class TestScanChainWiring(FrappeTestCase):
 		)
 
 
-class TestGatePassScanChain(FrappeTestCase):
+class TestGatePassScanChain(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -340,7 +340,7 @@ class TestGatePassScanChain(FrappeTestCase):
 		self.assertIn("not valid for scanning", str(raised.exception).lower())
 
 
-class TestSubcontractingReceiptScanChain(FrappeTestCase):
+class TestSubcontractingReceiptScanChain(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -457,7 +457,7 @@ class TestSubcontractingReceiptScanChain(FrappeTestCase):
 		self.assertEqual(second["name"], first["name"])
 
 
-class TestSubcontractingOrderAndDispatchScanChain(FrappeTestCase):
+class TestSubcontractingOrderAndDispatchScanChain(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -524,7 +524,7 @@ class TestSubcontractingOrderAndDispatchScanChain(FrappeTestCase):
 		self.assertEqual(frappe.db.count("Scan Code", {"source_name": "STE-OTHER"}), 0)
 
 
-class TestUnlinkedReceiptGetsInvoiceCode(FrappeTestCase):
+class TestUnlinkedReceiptGetsInvoiceCode(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

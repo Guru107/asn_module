@@ -3,7 +3,6 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
 	_ensure_item,
@@ -12,10 +11,11 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 )
 from asn_module.templates.pages.asn import submit_portal_asn
 from asn_module.templates.pages.asn_new import portal_draft_form
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import before_tests, build_purchase_order_with_mandatory_fields
 
 
-class TestPortalAsnDraft(FrappeTestCase):
+class TestPortalAsnDraft(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

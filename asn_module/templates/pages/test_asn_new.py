@@ -5,7 +5,6 @@ from unittest.mock import call, patch
 
 import frappe
 from frappe.exceptions import ValidationError as FrappeValidationError
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import create_purchase_order
 from asn_module.templates.pages import asn_new
@@ -19,6 +18,7 @@ from asn_module.templates.pages.asn_new_services import (
 	validate_no_duplicate_po_sr_no,
 	validate_supplier_invoices_not_reused,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils import cypress_helpers
 from asn_module.utils.test_setup import (
@@ -45,7 +45,7 @@ def _fake_frappe_local():
 	return SimpleNamespace(response={}, cache={})
 
 
-class TestASNNewPortalPage(FrappeTestCase):
+class TestASNNewPortalPage(IntegrationTestCase):
 	def test_seed_supplier_large_po_context_returns_isolated_purchase_orders(self):
 		def fake_po(name) -> SimpleNamespace:
 			items = [
@@ -1464,7 +1464,7 @@ class TestASNNewPortalPage(FrappeTestCase):
 			asn_new.get_context(context)
 
 
-class TestSingleFormSavesDraft(FrappeTestCase):
+class TestSingleFormSavesDraft(IntegrationTestCase):
 	"""The single-ASN form saves a draft and does not submit, so a stock-cap breach
 	(which runs only in ASN.before_submit) cannot strand an unlisted document.
 	"""
@@ -1520,7 +1520,7 @@ class TestSingleFormSavesDraft(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("ASN", result.asn_names[0], "docstatus"), 0)
 
 
-class TestPortalTemplateEscapesServerText(FrappeTestCase):
+class TestPortalTemplateEscapesServerText(IntegrationTestCase):
 	PAYLOAD = "<img src=x onerror=alert(1)>"
 
 	def _render(self, **context) -> str:

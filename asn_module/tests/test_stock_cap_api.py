@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import frappe
 from frappe.permissions import add_permission
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order,
@@ -14,6 +13,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 from asn_module.handlers.purchase_receipt import on_purchase_receipt_cancel, on_purchase_receipt_submit
 from asn_module.stock_cap.api import breaches_for_asn_rows, breaches_for_purchase_receipt
 from asn_module.stock_cap.messages import format_breaches, may_see_stock_figures
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.permissions import get_accessible_doc
 from asn_module.utils.test_setup import (
 	apply_item_site_requirements,
@@ -117,7 +117,7 @@ def _as_user(email: str):
 		frappe.set_user(previous)
 
 
-class TestStockCapAccessControlAndRedaction(FrappeTestCase):
+class TestStockCapAccessControlAndRedaction(IntegrationTestCase):
 	"""Covers the stock_cap security seam: may_see_stock_figures + format_breaches
 	redaction, and the shared Purchase Order access gate, under real, role-based
 	permission checks.
@@ -268,7 +268,7 @@ PR_ITEM = "_Test API PR Item"
 PR_MAX_STOCK = 5
 
 
-class TestBreachesForPurchaseReceipt(FrappeTestCase):
+class TestBreachesForPurchaseReceipt(IntegrationTestCase):
 	"""breaches_for_purchase_receipt is asn_module's second enforcement surface (the other,
 	breaches_for_asn_rows, is exercised above). The Purchase Receipt handler's own tests
 	mock this function out entirely, so nothing else in the suite calls the real

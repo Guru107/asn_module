@@ -3,7 +3,6 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.qr_engine.dispatch import (
 	DISPATCH_RATE_LIMIT,
@@ -19,6 +18,7 @@ from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_LENGTH,
 	_random_scan_code_value,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.fixtures import ensure_integration_user, integration_user_context
 from asn_module.utils.test_setup import before_tests, inline_enqueue_patcher
 
@@ -59,7 +59,7 @@ def patched_action(action_key, handler, *, source_doctype=SOURCE_DOCTYPE, roles=
 		yield
 
 
-class TestDispatch(FrappeTestCase):
+class TestDispatch(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
 		# The failure log is a background job; run it in this transaction. The job
@@ -460,7 +460,7 @@ class TestDispatch(FrappeTestCase):
 		self.assertFalse(frappe.local.flags.commit)
 
 
-class TestDispatchFailureLog(FrappeTestCase):
+class TestDispatchFailureLog(IntegrationTestCase):
 	"""A failing dispatch commits nothing; a separate job writes its Failure Scan Log."""
 
 	def _failing_dispatch(self, action_key, error):
@@ -536,7 +536,7 @@ class TestDispatchFailureLog(FrappeTestCase):
 		self.assertIn("handler result", failure_logs[0]["error_message"].lower())
 
 
-class TestDispatchEndpointAccess(FrappeTestCase):
+class TestDispatchEndpointAccess(IntegrationTestCase):
 	def test_dispatch_is_post_only(self):
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[dispatch], ["POST"])
 
@@ -580,7 +580,7 @@ class TestDispatchEndpointAccess(FrappeTestCase):
 		enqueue.assert_not_called()
 
 
-class TestDispatchSourcePermission(FrappeTestCase):
+class TestDispatchSourcePermission(IntegrationTestCase):
 	"""A role alone is not enough: the user must also be allowed to read the scanned document."""
 
 	@classmethod

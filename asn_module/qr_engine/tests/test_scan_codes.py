@@ -3,7 +3,6 @@ from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.qr_engine.scan_codes import (
 	SCAN_CODE_ALPHABET,
@@ -21,6 +20,7 @@ from asn_module.qr_engine.scan_codes import (
 	resolve_scan_code,
 	validate_scan_code_row,
 )
+from asn_module.tests.compat import IntegrationTestCase
 
 
 class _ScanCodeTestMixin:
@@ -54,7 +54,7 @@ class _ScanCodeTestMixin:
 		return doc.name
 
 
-class TestFormatScanCodeForDisplay(FrappeTestCase):
+class TestFormatScanCodeForDisplay(IntegrationTestCase):
 	def test_get_scan_code_length_returns_canonical_length(self):
 		self.assertEqual(get_scan_code_length(), SCAN_CODE_LENGTH)
 
@@ -64,7 +64,7 @@ class TestFormatScanCodeForDisplay(FrappeTestCase):
 		self.assertTrue(all(ch in SCAN_CODE_ALPHABET for ch in value))
 
 
-class TestNormalizeScanCode(FrappeTestCase):
+class TestNormalizeScanCode(IntegrationTestCase):
 	def test_none_returns_empty(self):
 		self.assertEqual(normalize_scan_code(None), "")
 
@@ -83,7 +83,7 @@ class TestNormalizeScanCode(FrappeTestCase):
 		self.assertEqual(normalize_scan_code("  abcd efgh jklm npqr  "), "ABCDEFGHJKLMNPQR")
 
 
-class TestGetOrCreateScanCode(FrappeTestCase, _ScanCodeTestMixin):
+class TestGetOrCreateScanCode(IntegrationTestCase, _ScanCodeTestMixin):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -123,7 +123,7 @@ class TestGetOrCreateScanCode(FrappeTestCase, _ScanCodeTestMixin):
 			resolve_scan_code("", "ASN", self._asn_name)
 
 
-class TestGetScanCodeDoc(FrappeTestCase, _ScanCodeTestMixin):
+class TestGetScanCodeDoc(IntegrationTestCase, _ScanCodeTestMixin):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -150,7 +150,7 @@ class TestGetScanCodeDoc(FrappeTestCase, _ScanCodeTestMixin):
 		self.assertEqual(doc.name, name)
 
 
-class TestRecordSuccessfulScan(FrappeTestCase, _ScanCodeTestMixin):
+class TestRecordSuccessfulScan(IntegrationTestCase, _ScanCodeTestMixin):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -177,7 +177,7 @@ class TestRecordSuccessfulScan(FrappeTestCase, _ScanCodeTestMixin):
 		self.assertEqual(frappe.db.get_value("Scan Code", name, "scan_count"), 6)
 
 
-class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
+class TestValidateScanCodeRow(IntegrationTestCase, _ScanCodeTestMixin):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -203,7 +203,7 @@ class TestValidateScanCodeRow(FrappeTestCase, _ScanCodeTestMixin):
 			validate_scan_code_row(doc, "create_purchase_receipt")
 
 
-class TestPurgeScanRegistryOnTrash(FrappeTestCase, _ScanCodeTestMixin):
+class TestPurgeScanRegistryOnTrash(IntegrationTestCase, _ScanCodeTestMixin):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

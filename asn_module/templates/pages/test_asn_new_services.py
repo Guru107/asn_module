@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days
 
 from asn_module.asn_module.doctype.asn.test_asn import _resolve_test_company, create_purchase_order
@@ -31,6 +30,7 @@ from asn_module.templates.pages.asn_new_services import (
 	validate_qty_within_remaining,
 	validate_selected_purchase_orders,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.financial_year_dates import get_fiscal_year_test_dates
 from asn_module.utils.test_setup import (
 	apply_item_site_requirements,
@@ -54,7 +54,7 @@ def _bulk_csv_content(row_line: str) -> bytes:
 	).encode()
 
 
-class TestParsePositiveQty(FrappeTestCase):
+class TestParsePositiveQty(IntegrationTestCase):
 	def test_positive(self):
 		self.assertEqual(parse_positive_qty("10", row_number=1, field="qty"), 10.0)
 
@@ -71,7 +71,7 @@ class TestParsePositiveQty(FrappeTestCase):
 			parse_positive_qty("", row_number=1, field="qty")
 
 
-class TestParseNonNegativeRate(FrappeTestCase):
+class TestParseNonNegativeRate(IntegrationTestCase):
 	def test_zero_ok(self):
 		self.assertEqual(parse_non_negative_rate("0", row_number=1, field="rate"), 0.0)
 
@@ -83,7 +83,7 @@ class TestParseNonNegativeRate(FrappeTestCase):
 		self.assertEqual(parse_non_negative_rate("25.5", row_number=1, field="rate"), 25.5)
 
 
-class TestParseOptionalNonNegativeRate(FrappeTestCase):
+class TestParseOptionalNonNegativeRate(IntegrationTestCase):
 	def test_none_returns_none(self):
 		self.assertIsNone(parse_optional_non_negative_rate(None, row_number=1, field="rate"))
 
@@ -98,7 +98,7 @@ class TestParseOptionalNonNegativeRate(FrappeTestCase):
 		self.assertEqual(parse_optional_non_negative_rate("10", row_number=1, field="rate"), 10.0)
 
 
-class TestParseRequiredSupplierInvoiceAmount(FrappeTestCase):
+class TestParseRequiredSupplierInvoiceAmount(IntegrationTestCase):
 	def test_valid(self):
 		self.assertEqual(parse_required_supplier_invoice_amount("250", row_number=1), 250.0)
 
@@ -114,7 +114,7 @@ class TestParseRequiredSupplierInvoiceAmount(FrappeTestCase):
 			parse_required_supplier_invoice_amount("", row_number=1)
 
 
-class TestNormalizeGroupValue(FrappeTestCase):
+class TestNormalizeGroupValue(IntegrationTestCase):
 	def test_whitespace(self):
 		self.assertEqual(normalize_group_value("  hello  "), "hello")
 
@@ -125,7 +125,7 @@ class TestNormalizeGroupValue(FrappeTestCase):
 		self.assertEqual(normalize_group_value("hello"), "hello")
 
 
-class TestServiceUtilities(FrappeTestCase):
+class TestServiceUtilities(IntegrationTestCase):
 	def test_parse_bulk_csv_content_accepts_portal_template_without_request_context(self):
 		csv_content = _bulk_csv_content(
 			"INV-1,"
@@ -190,7 +190,7 @@ class TestServiceUtilities(FrappeTestCase):
 		self.assertEqual(remaining["POI-2"], 5)
 
 
-class TestNormalizeGroupField(FrappeTestCase):
+class TestNormalizeGroupField(IntegrationTestCase):
 	def test_supplier_invoice_amount_numeric(self):
 		result = normalize_group_field("supplier_invoice_amount", "100.00")
 		self.assertEqual(result, "100.0")
@@ -204,7 +204,7 @@ class TestNormalizeGroupField(FrappeTestCase):
 		self.assertEqual(result, "LR123")
 
 
-class TestEnforceBulkLimits(FrappeTestCase):
+class TestEnforceBulkLimits(IntegrationTestCase):
 	def test_within_limit_ok(self):
 		rows = [SimpleNamespace()] * 10
 		enforce_bulk_limits(rows)
@@ -217,7 +217,7 @@ class TestEnforceBulkLimits(FrappeTestCase):
 			enforce_bulk_limits(rows)
 
 
-class TestValidateBulkGroupCount(FrappeTestCase):
+class TestValidateBulkGroupCount(IntegrationTestCase):
 	def test_within_limit_ok(self):
 		groups = {"INV-" + str(i): [] for i in range(10)}
 		validate_bulk_group_count(groups)
@@ -230,7 +230,7 @@ class TestValidateBulkGroupCount(FrappeTestCase):
 			validate_bulk_group_count(groups)
 
 
-class TestValidateInvoiceGroupConsistency(FrappeTestCase):
+class TestValidateInvoiceGroupConsistency(IntegrationTestCase):
 	def _make_bulk_row(self, **overrides):
 		defaults = dict(
 			row_number=1,
@@ -268,7 +268,7 @@ class TestValidateInvoiceGroupConsistency(FrappeTestCase):
 			validate_invoice_group_consistency("INV-1", rows)
 
 
-class TestValidateInvoiceGroupSinglePurchaseOrder(FrappeTestCase):
+class TestValidateInvoiceGroupSinglePurchaseOrder(IntegrationTestCase):
 	def _make_bulk_row(self, **overrides):
 		defaults = dict(
 			row_number=1,
@@ -308,7 +308,7 @@ class TestValidateInvoiceGroupSinglePurchaseOrder(FrappeTestCase):
 		self.assertIn("single Purchase Order", messages)
 
 
-class TestValidateQtyWithinRemaining(FrappeTestCase):
+class TestValidateQtyWithinRemaining(IntegrationTestCase):
 	def test_within_limit_ok(self):
 		validate_qty_within_remaining(
 			purchase_order_item="POI-001",
@@ -338,7 +338,7 @@ class TestValidateQtyWithinRemaining(FrappeTestCase):
 			)
 
 
-class TestValidateSelectedPurchaseOrders(FrappeTestCase):
+class TestValidateSelectedPurchaseOrders(IntegrationTestCase):
 	def test_empty_list_raises(self):
 		with (
 			patch(
@@ -419,7 +419,7 @@ def _bulk_row(po, po_item, *, row_number, invoice_no, qty):
 	)
 
 
-class TestBulkUploadStockCap(FrappeTestCase):
+class TestBulkUploadStockCap(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -700,7 +700,7 @@ def _bulk_cap_warehouse(name: str, *, company: str) -> str:
 	return full_name
 
 
-class TestBulkUploadStockCapRealPipeline(FrappeTestCase):
+class TestBulkUploadStockCapRealPipeline(IntegrationTestCase):
 	"""Exercises create_bulk_asns_for_supplier end to end against the real evaluate()/
 	fetch_cap_context() layer, without mocking breaches_for_asn_rows.
 
@@ -857,7 +857,7 @@ class TestBulkUploadStockCapRealPipeline(FrappeTestCase):
 		self.assertEqual(validation_queries(40), validation_queries(2))
 
 
-class TestBulkUploadBounds(FrappeTestCase):
+class TestBulkUploadBounds(IntegrationTestCase):
 	@staticmethod
 	def _invalid_rows(count: int) -> bytes:
 		# qty 0 fails each row on its own, without touching the database.
@@ -889,7 +889,7 @@ class TestBulkUploadBounds(FrappeTestCase):
 		self.assertIn("3 more errors", errors[-1]["message"])
 
 
-class TestBulkUploadJob(FrappeTestCase):
+class TestBulkUploadJob(IntegrationTestCase):
 	PAYLOADS = (({"supplier_invoice_no": "JOB-INV-1"}, []), ({"supplier_invoice_no": "JOB-INV-2"}, []))
 
 	def _run(self, insert_side_effect):
@@ -983,7 +983,7 @@ class TestBulkUploadJob(FrappeTestCase):
 		self.assertIn("Invoice JOB-INV-1: a notice with this supplier invoice number", mail["message"])
 
 
-class TestCreateJobAsnForSupplier(FrappeTestCase):
+class TestCreateJobAsnForSupplier(IntegrationTestCase):
 	def test_another_suppliers_order_gets_the_same_message_whether_open_or_closed(self):
 		from asn_module.handlers.tests.test_subcontracting import TestSubcontractingHandlers
 

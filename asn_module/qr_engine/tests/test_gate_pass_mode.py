@@ -1,5 +1,4 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import cint
 
 from asn_module.asn_module.doctype.asn.test_asn import (
@@ -8,6 +7,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 )
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.fixtures import (
 	ensure_integration_user,
 	integration_user_context,
@@ -16,7 +16,7 @@ from asn_module.tests.integration.fixtures import (
 from asn_module.utils.test_setup import before_tests
 
 
-class TestGatePassMode(FrappeTestCase):
+class TestGatePassMode(IntegrationTestCase):
 	def test_new_site_has_gate_pass_mode_off_and_not_on_the_asn(self):
 		self.assertTrue(frappe.db.exists("DocType", "ASN Settings"))
 		settings_meta = frappe.get_meta("ASN Settings")
@@ -32,7 +32,7 @@ class TestGatePassMode(FrappeTestCase):
 		self.assertFalse(frappe.db.has_column("ASN", "gate_pass_mode"))
 
 
-class TestMaterialAsnScanWhenGatePassModeIsOff(FrappeTestCase):
+class TestMaterialAsnScanWhenGatePassModeIsOff(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

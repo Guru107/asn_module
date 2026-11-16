@@ -8,7 +8,6 @@ line is still refused by the ordered-quantity check.
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.asn import get_purchase_order_items
 from asn_module.asn_module.doctype.asn.test_asn import (
@@ -21,6 +20,7 @@ from asn_module.templates.pages.asn_new_services import (
 	PortalValidationError,
 	validate_qty_within_remaining,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
@@ -33,7 +33,7 @@ BRANCH = "_Test Unit Price Cap Branch"
 MAX_STOCK = 4
 
 
-class TestUnitPricePurchaseOrderAsn(FrappeTestCase):
+class TestUnitPricePurchaseOrderAsn(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

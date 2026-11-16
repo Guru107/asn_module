@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.stock_cap.collect import (
 	asn_rows_from_doc,
@@ -10,6 +9,7 @@ from asn_module.stock_cap.collect import (
 	collect_lines_from_subcontracting_receipt,
 	subcontracting_order_item_receiving_qty,
 )
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import (
 	before_tests,
 	build_purchase_order_with_mandatory_fields,
@@ -31,7 +31,7 @@ def _receipt_row(**overrides):
 	return SimpleNamespace(**defaults)
 
 
-class TestStockCapCollectPurchaseReceipt(FrappeTestCase):
+class TestStockCapCollectPurchaseReceipt(IntegrationTestCase):
 	def test_receipt_lines_use_stock_qty_without_conversion(self):
 		doc = SimpleNamespace(
 			branch="Mumbai",
@@ -137,7 +137,7 @@ def _subcontracting_receipt_row(**overrides):
 	return SimpleNamespace(**defaults)
 
 
-class TestStockCapCollectSubcontractingReceipt(FrappeTestCase):
+class TestStockCapCollectSubcontractingReceipt(IntegrationTestCase):
 	def test_accepted_and_rejected_qty_are_multiplied_by_the_conversion_factor(self):
 		doc = SimpleNamespace(
 			is_return=0,
@@ -220,7 +220,7 @@ def _ensure_extra_warehouse(name: str) -> str:
 	return doc.name
 
 
-class TestStockCapCollectASN(FrappeTestCase):
+class TestStockCapCollectASN(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()

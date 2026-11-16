@@ -12,7 +12,6 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
 	create_purchase_order_with_fiscal_dates,
@@ -21,6 +20,7 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import claim_scan_code_for_single_use, get_or_create_scan_code
 from asn_module.qr_engine.tests.test_dispatch import patched_action
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import before_tests, inline_enqueue_patcher
 
 HANDLER = "asn_module.handlers.purchase_receipt.create_from_asn"
@@ -58,7 +58,7 @@ def dispatch_with_handler(action_key, handler, *, source_doctype="DocType"):
 		yield
 
 
-class TestAtomicScanClaim(FrappeTestCase):
+class TestAtomicScanClaim(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()

@@ -14,11 +14,21 @@ jobs:
   tests:
     runs-on: ubuntu-24.04
     env:
-      FRAPPE_VERSION: "16"
-      ERPNEXT_VERSION: "16"
+      FRAPPE_VERSION: ${{ matrix.frappe_version }}
+      ERPNEXT_VERSION: ${{ matrix.erpnext_version }}
     strategy:
       fail-fast: false
-    name: Server
+      matrix:
+        include:
+          - frappe_version: "15"
+            erpnext_version: "15"
+            python_version: "3.12"
+            mariadb_version: "10.6"
+          - frappe_version: "16"
+            erpnext_version: "16"
+            python_version: "3.14"
+            mariadb_version: "11.8"
+    name: Server (Frappe ${{ matrix.frappe_version }})
 
     services:
       redis-cache:
@@ -30,7 +40,7 @@ jobs:
         ports:
           - 11000:6379
       mariadb:
-        image: mariadb:11.8
+        image: mariadb:${{ matrix.mariadb_version }}
         env:
           MYSQL_ROOT_PASSWORD: root
         ports:
@@ -49,7 +59,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.14'
+          python-version: ${{ matrix.python_version }}
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -82,6 +92,8 @@ jobs:
         run: |
           sudo apt update
           sudo apt-get install mariadb-client
+          # Newer mariadb clients require TLS by default; the MariaDB 10.6 service has none.
+          printf '[client]\nskip-ssl\n' > ~/.my.cnf
 
       - name: Setup
         run: |
@@ -112,18 +124,28 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: coverage-report
+          name: coverage-report-frappe${{ matrix.frappe_version }}
           path: coverage.xml
           if-no-files-found: warn
 
   property-tests:
     runs-on: ubuntu-24.04
     env:
-      FRAPPE_VERSION: "16"
-      ERPNEXT_VERSION: "16"
+      FRAPPE_VERSION: ${{ matrix.frappe_version }}
+      ERPNEXT_VERSION: ${{ matrix.erpnext_version }}
     strategy:
       fail-fast: false
-    name: Property Tests
+      matrix:
+        include:
+          - frappe_version: "15"
+            erpnext_version: "15"
+            python_version: "3.12"
+            mariadb_version: "10.6"
+          - frappe_version: "16"
+            erpnext_version: "16"
+            python_version: "3.14"
+            mariadb_version: "11.8"
+    name: Property Tests (Frappe ${{ matrix.frappe_version }})
 
     services:
       redis-cache:
@@ -135,7 +157,7 @@ jobs:
         ports:
           - 11000:6379
       mariadb:
-        image: mariadb:11.8
+        image: mariadb:${{ matrix.mariadb_version }}
         env:
           MYSQL_ROOT_PASSWORD: root
         ports:
@@ -154,7 +176,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.14'
+          python-version: ${{ matrix.python_version }}
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -187,6 +209,8 @@ jobs:
         run: |
           sudo apt update
           sudo apt-get install mariadb-client
+          # Newer mariadb clients require TLS by default; the MariaDB 10.6 service has none.
+          printf '[client]\nskip-ssl\n' > ~/.my.cnf
 
       - name: Setup
         run: |
@@ -215,6 +239,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: property-coverage-report
+          name: property-coverage-report-frappe${{ matrix.frappe_version }}
           path: coverage.xml
           if-no-files-found: warn

@@ -2,7 +2,6 @@ from unittest.mock import patch
 
 import frappe
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice as make_pi_from_pr
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.test_asn import (
 	before_tests,
@@ -10,10 +9,11 @@ from asn_module.asn_module.doctype.asn.test_asn import (
 	make_test_asn,
 )
 from asn_module.handlers.purchase_invoice import create_from_purchase_receipt
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.utils.test_setup import apply_receipt_site_requirements
 
 
-class TestCreatePurchaseInvoice(FrappeTestCase):
+class TestCreatePurchaseInvoice(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()

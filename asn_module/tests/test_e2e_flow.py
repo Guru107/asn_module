@@ -1,5 +1,4 @@
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.asn import remaining_qty_by_purchase_order_item
 from asn_module.asn_module.doctype.asn.test_asn import (
@@ -10,6 +9,7 @@ from asn_module.qr_engine.dispatch import dispatch
 from asn_module.qr_engine.scan_codes import get_or_create_scan_code
 from asn_module.stock_cap.fetch import fetch_cap_context
 from asn_module.stock_cap.models import Line
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
 from asn_module.tests.integration.fixtures import (
 	ensure_integration_user,
@@ -19,7 +19,7 @@ from asn_module.tests.integration.fixtures import (
 from asn_module.utils.test_setup import before_tests
 
 
-class TestEndToEndFlow(FrappeTestCase):
+class TestEndToEndFlow(IntegrationTestCase):
 	"""ASN → Purchase Receipt → Purchase Invoice using scan codes and dispatch."""
 
 	@classmethod

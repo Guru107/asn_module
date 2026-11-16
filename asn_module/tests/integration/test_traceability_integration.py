@@ -1,16 +1,16 @@
 """ASN Transition Log alignment with summary and report (integration)."""
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 
 from asn_module.asn_module.doctype.asn.asn import get_item_transition_summary
 from asn_module.asn_module.report.asn_item_transition_trace.asn_item_transition_trace import execute
+from asn_module.tests.compat import IntegrationTestCase
 from asn_module.tests.integration.dispatch_flow import run_asn_pr_pi_via_dispatch
 from asn_module.tests.integration.fixtures import ensure_integration_user, pin_gate_pass_mode_for_tests
 from asn_module.utils.test_setup import before_tests
 
 
-class TestTraceabilityIntegration(FrappeTestCase):
+class TestTraceabilityIntegration(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		before_tests()
