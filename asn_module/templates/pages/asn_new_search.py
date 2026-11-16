@@ -19,7 +19,6 @@ from asn_module.templates.pages.asn import (
 	get_open_subcontracting_orders_for_supplier,
 )
 
-
 # The portal dropdowns ask for 200; a client may not ask for more.
 MAX_PAGE_LEN = 200
 
