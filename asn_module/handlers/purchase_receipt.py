@@ -895,7 +895,7 @@ def _asn_lines_received_at_gate(asn, gate_pass) -> dict:
 		for asn_item in asn.items:
 			by_position.setdefault(asn_item.purchase_order_item, []).append(asn_item)
 	received = {}
-	linked = set()
+	row_idx_by_asn_item = {}
 	for row in rows:
 		asn_item_name = getattr(row, "asn_item", None)
 		if asn_item_name:
@@ -905,13 +905,13 @@ def _asn_lines_received_at_gate(asn, gate_pass) -> dict:
 						gate_pass.name, row.idx, asn_item_name, asn.name
 					)
 				)
-			if asn_item_name in linked:
+			if asn_item_name in row_idx_by_asn_item:
 				frappe.throw(
-					_("Gate Pass {0} row {1}: ASN Item {2} is already on another row.").format(
-						gate_pass.name, row.idx, asn_item_name
+					_("Gate Pass {0} row {1}: ASN Item {2} is already on row {3}.").format(
+						gate_pass.name, row.idx, asn_item_name, row_idx_by_asn_item[asn_item_name]
 					)
 				)
-			linked.add(asn_item_name)
+			row_idx_by_asn_item[asn_item_name] = row.idx
 			asn_item = asn_lines[asn_item_name]
 		else:
 			siblings = by_position.get(row.purchase_order_item)

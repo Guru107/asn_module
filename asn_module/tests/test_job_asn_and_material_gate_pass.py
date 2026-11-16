@@ -1326,15 +1326,20 @@ class TestMaterialGatePassScan(FrappeTestCase):
 	def test_a_gate_pass_row_naming_a_foreign_or_repeated_asn_line_is_refused(self):
 		with with_gate_pass_mode(True), integration_user_context():
 			for case in ("foreign", "repeated"):
-				_asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
+				asn, gate_pass_name = self._submitted_gate_pass_for_two_lines_on_one_order_line()
 				first_row, second_row = frappe.get_doc("Gate Pass", gate_pass_name).items
 				asn_item = first_row.asn_item if case == "repeated" else "NOT-AN-ASN-ITEM"
+				expected = (
+					f"row 2: ASN Item {asn_item} is already on row 1"
+					if case == "repeated"
+					else f"row 2: ASN Item {asn_item} is not on ASN {asn.name}"
+				)
 				frappe.db.set_value(
 					"Gate Pass Item", second_row.name, "asn_item", asn_item, update_modified=False
 				)
 				with self.subTest(case), self.assertRaises(frappe.ValidationError) as raised:
 					create_receipt_from_gate_pass(gate_pass_name)
-				self.assertIn("row 2", str(raised.exception))
+				self.assertIn(expected, str(raised.exception))
 
 	def test_a_second_create_after_a_short_receipt_closed_the_asn_is_refused(self):
 		# The CI Gate Pass has no custom_gate_pass_reference, so only the ASN status stops a second receipt.
