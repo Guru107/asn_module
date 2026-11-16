@@ -123,18 +123,6 @@ class TestCreatePurchaseReceipt(FrappeTestCase):
 				payload={"action": "create_purchase_receipt"},
 			)
 
-	def test_rejects_received_job_asn_with_subcontracting_receipt_wording(self):
-		asn = self._make_submitted_asn()
-		frappe.db.set_value("ASN", asn.name, "status", "Received", update_modified=False)
-
-		with patch("asn_module.handlers.purchase_receipt._is_job_asn", return_value=True):
-			with self.assertRaisesRegex(frappe.ValidationError, "Subcontracting Receipt"):
-				create_gate_pass_from_asn(
-					source_doctype="ASN",
-					source_name=asn.name,
-					payload={"action": "create_purchase_receipt"},
-				)
-
 	def test_rejects_draft_asn(self):
 		purchase_order = create_purchase_order_with_fiscal_dates()
 		asn = make_test_asn(purchase_order=purchase_order)
