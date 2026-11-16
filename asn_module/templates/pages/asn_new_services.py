@@ -829,6 +829,7 @@ def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]],
 	errors: list[dict] = []
 	for header, items in payloads:
 		try:
+			_claim_supplier_invoice(supplier, header.get("supplier_invoice_no"))
 			asn = insert_and_submit_asn(supplier=supplier, header=header, items=items)
 		except PortalValidationError as exc:
 			errors = exc.errors
@@ -853,6 +854,34 @@ def create_bulk_asns_job(supplier: str, payloads: list[tuple[dict, list[dict]]],
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit - per-ASN batch commit, see above
 		asn_names.append(asn.name)
 	_email_bulk_result(notify_user, asn_names, errors)
+
+
+def _claim_supplier_invoice(supplier: str, invoice_no: str | None) -> None:
+	"""Stop a concurrent job from creating an ASN for the same supplier invoice number.
+
+	A unique index cannot skip cancelled ASNs, so the supplier row is locked until this ASN
+	commits. The check after the lock is a locking read, so it sees what the other job
+	committed while we waited, whatever snapshot this transaction already holds.
+	"""
+	frappe.db.get_value("Supplier", supplier, "name", for_update=True)
+	if frappe.db.get_value(
+		"ASN",
+		{"supplier": supplier, "supplier_invoice_no": invoice_no, "docstatus": ("!=", 2)},
+		"name",
+		for_update=True,
+	):
+		raise PortalValidationError(
+			[
+				error_entry(
+					field="supplier_invoice_no",
+					invoice_no=invoice_no,
+					message=_(
+						"Invoice {0}: a notice with this supplier invoice number was already created, "
+						"possibly by an earlier upload. It was not created again."
+					).format(invoice_no),
+				)
+			]
+		)
 
 
 def _email_bulk_result(user: str, asn_names: list[str], errors: list[dict]) -> None:

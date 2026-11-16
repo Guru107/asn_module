@@ -1023,6 +1023,25 @@ class TestASNNewPortalPage(FrappeTestCase):
 			[header["supplier_invoice_no"] for header, _items in kwargs["payloads"]], ["INV-1", "INV-2"]
 		)
 
+	def test_same_upload_twice_uses_one_deduplicated_job_id(self):
+		def job_kwargs(supplier, invoice_no):
+			payloads = [({"supplier_invoice_no": invoice_no}, [])]
+			with (
+				patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=[]),
+				patch("asn_module.templates.pages.asn_new.validate_bulk_rows", return_value=payloads),
+				patch("asn_module.templates.pages.asn_new.frappe.enqueue") as enqueue,
+			):
+				asn_new._queue_bulk_asns(supplier)
+			return enqueue.call_args.kwargs
+
+		first = job_kwargs("Supp-001", "INV-1")
+		again = job_kwargs("Supp-001", "INV-1")
+
+		self.assertTrue(first["deduplicate"])
+		self.assertEqual(first["job_id"], again["job_id"])
+		self.assertNotEqual(first["job_id"], job_kwargs("Supp-001", "INV-2")["job_id"])
+		self.assertNotEqual(first["job_id"], job_kwargs("Supp-002", "INV-1")["job_id"])
+
 	def test_create_bulk_asn_rejects_empty_csv(self):
 		with (
 			patch("asn_module.templates.pages.asn_new._parse_bulk_csv_rows", return_value=[]),

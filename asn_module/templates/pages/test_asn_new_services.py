@@ -910,3 +910,24 @@ class TestBulkUploadJob(FrappeTestCase):
 		self.assertIn("Created and submitted 1 ASN(s): ASN-J1", mail["message"])
 		self.assertIn("Invoice JOB-INV-2: ASN creation failed unexpectedly", mail["message"])
 		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
+
+	def test_a_racing_job_does_not_create_an_invoice_another_job_already_created(self):
+		real_get_value = frappe.db.get_value
+
+		def get_value(doctype, *args, **kwargs):
+			if doctype == "ASN":
+				return "ASN-OTHER-JOB"
+			return real_get_value(doctype, *args, **kwargs)
+
+		with (
+			patch("asn_module.templates.pages.asn_new_services.frappe.sendmail") as sendmail,
+			patch("asn_module.templates.pages.asn_new_services.insert_and_submit_asn") as insert,
+			patch.object(frappe.db, "get_value", side_effect=get_value),
+			patch.object(frappe.db, "commit"),
+		):
+			create_bulk_asns_job("Supp-001", self.PAYLOADS[:1], "Administrator")
+
+		insert.assert_not_called()
+		mail = sendmail.call_args.kwargs
+		self.assertEqual(mail["subject"], "Bulk ASN upload stopped")
+		self.assertIn("Invoice JOB-INV-1: a notice with this supplier invoice number", mail["message"])

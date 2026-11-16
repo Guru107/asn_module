@@ -1662,6 +1662,24 @@
 	const fileInput = document.getElementById("asn-bulk-file-input");
 	const dropZone = document.getElementById("asn-bulk-drop-zone");
 	const nameDisplay = document.getElementById("asn-bulk-file-name-display");
+	const bulkForm = document.getElementById("asn-bulk-upload-form");
+
+	if (bulkForm) {
+		// One request per click: a double-click or impatient retry must not post the file twice.
+		bulkForm.addEventListener("submit", (e) => {
+			const submitBtn = bulkForm.querySelector(".btn-submit-bulk");
+			if (!submitBtn || submitBtn.disabled) {
+				e.preventDefault();
+				return;
+			}
+			submitBtn.disabled = true;
+		});
+		// Back/forward cache can restore the page with the button still disabled.
+		window.addEventListener("pageshow", (e) => {
+			const submitBtn = bulkForm.querySelector(".btn-submit-bulk");
+			if (e.persisted && submitBtn) submitBtn.disabled = false;
+		});
+	}
 
 	if (btn) {
 		const raw = btn.getAttribute("data-csv-headers") || "";
