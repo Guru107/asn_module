@@ -113,7 +113,7 @@ Log in as `supplier.a@test`.
 | 3-6 | Start a new ASN on PO-1 but leave **Vehicle number** empty. Save | Under "Please fix the following errors:": "Vehicle Number is required." Form keeps what you typed. Nothing is saved | |
 | 3-7 | New ASN: fill the header but leave **Supplier Invoice No** empty and tick **no items**. Save | Draft is saved and you stay on `/asn_new?asn_name=<name>`; the title shows the name and a Draft indicator | |
 | 3-8 | On that draft set Supplier Invoice No to `INV-A-001` (used in 3-5). Save | "Supplier invoice number INV-A-001 is already used on another notice. Use a different number, or cancel that notice from your ASN list if it is still submitted and no purchase receipt has been created yet." | |
-| 3-8a | Open the 3-7 draft from `/asn` and click **Submit** | Error: "Supplier Invoice No is required." | |
+| 3-8a | Open the 3-7 draft from `/asn`, click **Edit**, tick ITEM-A with qty 1 and leave Supplier Invoice No empty. Save, then click **Submit** | Save works. Submit shows: "Supplier Invoice No is required." (Without an item, Submit shows "At least one item is required in the ASN" first) | |
 | 3-9 | With PO-1 set and items ticked, set Purchase Order to PO-2 | Confirm "Changing purchase order will clear selected items and rows. Continue?" OK switches to PO-2 with no rows. Cancel keeps PO-1 | |
 | 3-10 | Set PO-1, tick an item, then choose a Subcontracting Order | Confirm "Selecting a Subcontracting Order will clear the Purchase Order and its rows. Continue?" OK clears the PO. Setting a PO afterwards clears the Subcontracting Order | |
 | 3-11 | New ASN on PO-1. Look at the Invoice Items list | ITEM-A shows "Remaining: 40" (the 3-5 draft holds back 60). ITEM-B is not listed (nothing left) | |
@@ -402,7 +402,7 @@ Needs S-3 and **SCO-2** with its raw material sent to the supplier (Send to Subc
 | 8-15a | Scan ASN-J2 again | "Existing Gate Pass <GP> opened" | |
 | 8-16 | Fill any fields your site's Gate Pass marks mandatory, submit it, scan its code | "Subcontracting Receipt <SCR> created from ASN ASN-J2" (names the ASN). Qty from the Gate Pass line, ASN = ASN-J2 | |
 | 8-16a | Scan the Gate Pass code again | "Existing Subcontracting Receipt <SCR> opened" | |
-| 8-17 | Submit the Subcontracting Receipt, then scan the Gate Pass code | ASN-J2 **Received**. The scan is refused | |
+| 8-17 | Submit the Subcontracting Receipt, then scan the Gate Pass code | ASN-J2 **Received**. The scan creates nothing new: it opens the submitted receipt with "Existing Subcontracting Receipt <name> opened" | |
 
 Turn Gate Pass Mode off afterwards.
 
