@@ -73,6 +73,8 @@ has_website_permission = {
 	"ASN": "asn_module.templates.pages.asn.has_website_permission",
 }
 
+page_renderer = ["asn_module.supplier_asn_portal.ASNPortalNotFoundPage"]
+
 portal_menu_items = [
 	{
 		"title": "ASN",
