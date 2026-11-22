@@ -11,6 +11,5 @@ $(document).ready(function () {
 			asn_module._scan_dialog.show();
 		},
 		description: __("Open QR Scan Dialog"),
-		page: undefined,
 	});
 });
