@@ -1,19 +1,4 @@
 frappe.ui.form.on("ASN", {
-	onload(frm) {
-		if (frm.__asn_trace_report_btn) {
-			return;
-		}
-		frm.__asn_trace_report_btn = true;
-		frm.add_custom_button(__("Open Full Trace View"), () => {
-			if (!frm.doc.name || frm.is_new()) {
-				frappe.show_alert({ message: __("Save the ASN first."), indicator: "orange" });
-				return;
-			}
-			frappe.route_options = { asn: frm.doc.name };
-			frappe.set_route("query-report", "ASN Item Transition Trace");
-		});
-	},
-
 	setup(frm) {
 		frm.set_query("purchase_order", "items", function () {
 			return {
@@ -46,7 +31,15 @@ frappe.ui.form.on("ASN", {
 	},
 
 	refresh(frm) {
-		if (!frm.fields_dict.asn_trace_summary || frm.is_new() || !frm.doc.name) {
+		if (frm.is_new()) {
+			return;
+		}
+		// Added on every refresh: Frappe clears custom buttons each time the form refreshes.
+		frm.add_custom_button(__("Open Full Trace View"), () => {
+			frappe.route_options = { asn: frm.doc.name };
+			frappe.set_route("query-report", "ASN Item Transition Trace");
+		});
+		if (!frm.fields_dict.asn_trace_summary) {
 			return;
 		}
 		frappe.call({
