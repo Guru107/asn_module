@@ -1,9 +1,9 @@
 /* global asn_module */
 
 $(document).ready(function () {
-	// Global scan shortcut: Ctrl+Shift+S
+	// Global scan shortcut: Ctrl+Shift+S. frappe.ui.keys.get_key names it "shift+ctrl+s".
 	frappe.ui.keys.add_shortcut({
-		shortcut: "ctrl+shift+s",
+		shortcut: "shift+ctrl+s",
 		action: function () {
 			if (!asn_module._scan_dialog) {
 				asn_module._scan_dialog = new asn_module.ScanDialog();
@@ -11,6 +11,5 @@ $(document).ready(function () {
 			asn_module._scan_dialog.show();
 		},
 		description: __("Open QR Scan Dialog"),
-		page: undefined,
 	});
 });
