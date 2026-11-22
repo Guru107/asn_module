@@ -812,6 +812,12 @@ def _open_or_create_subcontracting_receipt(asn) -> dict:
 
 	_apply_shipped_qty_to_subcontracting_receipt(receipt, asn)
 	receipt.asn = asn.name
+	# ASN owns supplier-facing invoice/transport references, as on the Purchase Receipt.
+	# india_compliance makes supplier_delivery_note mandatory on the desk form for GST companies.
+	receipt.supplier_delivery_note = asn.supplier_invoice_no
+	receipt.transporter_name = asn.transporter_name
+	receipt.lr_no = asn.lr_no
+	receipt.lr_date = asn.lr_date
 	fill_custom_fiscal_year(receipt)
 	receipt.insert()
 

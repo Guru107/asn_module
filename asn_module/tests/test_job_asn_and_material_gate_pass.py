@@ -486,6 +486,7 @@ class TestJobAsnScan(IntegrationTestCase):
 					"supplier_invoice_no": f"JOB-SCAN-{frappe.generate_hash(length=8)}",
 					"supplier_invoice_date": today(),
 					"vehicle_number": "MH12AB1234",
+					**JOB_ASN_TRANSPORT,
 					"supplier_invoice_amount": shipped_qty * finished_good.rate,
 				},
 				lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
@@ -506,10 +507,22 @@ class TestJobAsnScan(IntegrationTestCase):
 		self.assertEqual(receipt.asn, asn.name)
 		self.assertEqual(receipt.items[0].qty, shipped_qty)
 		self.assertEqual(receipt.items[0].item_code, finished_good.item_code)
+		assert_receipt_carries_the_asn_references(self, receipt, asn)
 		self.assertEqual(
 			frappe.db.count("Subcontracting Receipt", {"asn": asn.name, "docstatus": 0}),
 			1,
 		)
+
+
+JOB_ASN_TRANSPORT = {"transporter_name": "Job Transport Co", "lr_no": "LR-JOB-7", "lr_date": "2026-01-15"}
+
+
+def assert_receipt_carries_the_asn_references(test, receipt, asn) -> None:
+	"""india_compliance makes Job Worker Delivery Note mandatory on the desk form for GST companies."""
+	test.assertEqual(receipt.supplier_delivery_note, asn.supplier_invoice_no)
+	test.assertEqual(receipt.transporter_name, asn.transporter_name)
+	test.assertEqual(receipt.lr_no, asn.lr_no)
+	test.assertEqual(str(receipt.lr_date), str(asn.lr_date))
 
 
 def submit_subcontracting_receipt_hooks(receipt) -> None:
@@ -1125,6 +1138,7 @@ class TestMaterialGatePassScan(IntegrationTestCase):
 				"supplier_invoice_no": f"JOB-GP-{frappe.generate_hash(length=8)}",
 				"supplier_invoice_date": today(),
 				"vehicle_number": "MH12AB1234",
+				**JOB_ASN_TRANSPORT,
 				"supplier_invoice_amount": shipped_qty * finished_good.rate,
 			},
 			lines=[{"subcontracting_order_item": finished_good.name, "qty": shipped_qty}],
@@ -1582,6 +1596,7 @@ class TestMaterialGatePassScan(IntegrationTestCase):
 		self.assertEqual(receipt.docstatus, 0)
 		self.assertEqual(receipt.asn, asn.name)
 		self.assertEqual(flt(receipt.items[0].qty), 2)
+		assert_receipt_carries_the_asn_references(self, receipt, asn)
 
 	def test_create_after_the_subcontracting_receipt_is_submitted_is_refused(self):
 		with with_gate_pass_mode(True):
