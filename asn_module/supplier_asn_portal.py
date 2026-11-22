@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import frappe
+from frappe.website.page_renderers.document_page import DocumentPage
+from frappe.website.page_renderers.not_found_page import NotFoundPage
+
+# Reserved for ASN detail pages: ASNPortalNotFoundPage answers 404 for anything else under it.
+ASN_PORTAL_ROUTE_PREFIX = "asn/"
 
 
 def purchase_receipt_exists_for_asn(asn_name: str) -> bool:
@@ -41,3 +46,24 @@ def asn_eligible_for_supplier_portal_delete(doc) -> bool:
 	Cancelled purchase receipts do not block (same rule as portal cancel).
 	"""
 	return doc.docstatus == 2 and not purchase_receipt_exists_for_asn(doc.name)
+
+
+class ASNPortalNotFoundPage(NotFoundPage):
+	"""404 for an ``asn/<name>`` path the ASN page refuses (not the caller's, or no such ASN).
+
+	Without it the path falls through to core PrintPage: "asn" matches the ASN DocType
+	case-insensitively, so it renders a print view for doctype "asn" and fails with a 500.
+	"""
+
+	def __init__(self, path: str, http_status_code: int | None = None) -> None:
+		# Custom renderers are built with status 200; a cached 404 page would keep it.
+		del http_status_code
+		super().__init__(path, 404)
+
+	def can_render(self) -> bool:
+		path = (self.request_path or "").strip("/")
+		return path.lower().startswith(ASN_PORTAL_ROUTE_PREFIX) and not DocumentPage(path).can_render()
+
+	def can_cache_404(self) -> bool:
+		# Core caches 404s by URL for every user, which would hide an ASN from its own supplier.
+		return False
