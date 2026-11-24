@@ -53,7 +53,9 @@ class TestScanImageEndpoint(IntegrationTestCase):
 			with self.assertRaises(frappe.RateLimitExceededError):
 				scan_image(code=CODE, kind="qr")
 
-		self.assertEqual(cache.setex.call_args.args[1], 60)
+		# Frappe opens the window with setex, or with set(..., ex=, nx=True) since its Nov 2026 fix.
+		window = cache.set.call_args.kwargs["ex"] if cache.set.called else cache.setex.call_args.args[1]
+		self.assertEqual(window, 60)
 
 	def test_endpoint_does_no_database_access_and_needs_no_registry_row(self):
 		# spec=[] makes any frappe.db attribute access raise.
