@@ -21,6 +21,8 @@ def drop_doctype(name: str) -> None:
 		if frappe.db.table_exists("Singles"):
 			frappe.db.delete("Singles", {"doctype": name})
 		frappe.db.delete("DocType", {"name": name})
-	# A table name cannot be a bound parameter; callers pass fixed DocType names, never input.
-	frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{name}`")
+	# sql_ddl commits first, so a re-run with nothing to drop must not reach it.
+	if frappe.db.table_exists(name, cached=False):
+		# A table name cannot be a bound parameter; callers pass fixed DocType names, never input.
+		frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{name}`")
 	frappe.clear_cache(doctype=name)

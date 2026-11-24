@@ -457,11 +457,11 @@ Note: the cap reads stock without locking, and Stock Entry, Stock Reconciliation
 
 | # | Steps | Expected | Result |
 |---|-------|----------|--------|
-| 10-3 | **ASN Item Rate Difference** with no filters | "Set at least one filter (ASN, Supplier, Purchase Order, Invoice No or date)." | |
-| 10-4 | Create an ASN by bulk CSV with `rate` 110 on a PO line priced 100 (the desk form cannot change Rate). Run the report for that ASN | ASN Rate 110, PO Rate 100, Rate Difference 10, Qty, Amount Difference = qty × 10. Draft ASNs are included too | |
-| 10-5 | Run 10-4 as `accounts.user@test`, Purchase Order filter empty (Accounts User has no PO read) | Works | |
-| 10-6 | Give `accounts.user@test` a User Permission on Supplier = Supplier B. Run the report with Supplier A typed in full (the picker will not offer it) | No rows. | |
-| 10-7 | **Scan Log** list | One SCAN-#### row per scan (no list columns). Open a row or use Report view: Scan Timestamp, User, Action, Source DocType/Name, Scan Code, Result (Success/Failure), Result DocType/Name, Error Message. Read-only, no New button | |
+| 10-1 | **ASN Item Rate Difference** with no filters | "Set at least one filter (ASN, Supplier, Purchase Order, Invoice No or date)." | |
+| 10-2 | Create an ASN by bulk CSV with `rate` 110 on a PO line priced 100 (the desk form cannot change Rate). Run the report for that ASN | ASN Rate 110, PO Rate 100, Rate Difference 10, Qty, Amount Difference = qty × 10. Draft ASNs are included too | |
+| 10-3 | Run 10-2 as `accounts.user@test`, Purchase Order filter empty (Accounts User has no PO read) | Works | |
+| 10-4 | Give `accounts.user@test` a User Permission on Supplier = Supplier B. Run the report with Supplier A typed in full (the picker will not offer it) | No rows. | |
+| 10-5 | **Scan Log** list | One SCAN-#### row per scan (no list columns). Open a row or use Report view: Scan Timestamp, User, Action, Source DocType/Name, Scan Code, Result (Success/Failure), Result DocType/Name, Error Message. Read-only, no New button | |
 
 ---
 
