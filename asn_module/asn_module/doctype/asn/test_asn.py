@@ -922,34 +922,36 @@ class TestASN(IntegrationTestCase):
 			with self.assertRaises(frappe.PermissionError):
 				get_purchase_order_items("PO-0001")
 
-	def test_connections_tab_lists_the_documents_that_follow_the_asn(self):
-		dashboard = frappe.get_meta("ASN").get_dashboard_data()
-		linked = {doctype for group in dashboard.transactions for doctype in group["items"]}
+	def _connections(self, gate_pass_doctype: bool, gate_pass_asn_field: bool) -> set[str]:
+		"""Doctypes on the ASN's Connections tab, with the site-specific Gate Pass set up as asked."""
+		asn_meta = frappe.get_meta("ASN")
+		gate_pass_meta = SimpleNamespace(
+			has_field=lambda fieldname: gate_pass_asn_field and fieldname == "asn"
+		)
+		dashboard_module = "asn_module.asn_module.doctype.asn.asn_dashboard.frappe"
+		with (
+			patch(f"{dashboard_module}.db.exists", return_value=gate_pass_doctype),
+			patch(f"{dashboard_module}.get_meta", return_value=gate_pass_meta),
+		):
+			dashboard = asn_meta.get_dashboard_data()
 
 		self.assertEqual(dashboard.fieldname, "asn")
-		self.assertTrue(
-			{"Gate Pass", "Purchase Receipt", "Subcontracting Receipt", "Purchase Invoice"} <= linked,
-			linked,
+		return {doctype for group in dashboard.transactions for doctype in group["items"]}
+
+	def test_connections_tab_lists_the_documents_that_follow_the_asn(self):
+		self.assertEqual(
+			self._connections(gate_pass_doctype=True, gate_pass_asn_field=True),
+			{"Gate Pass", "Purchase Receipt", "Subcontracting Receipt", "Purchase Invoice"},
 		)
 
 	def test_connections_tab_leaves_out_gate_pass_where_it_is_not_installed(self):
-		from asn_module.asn_module.doctype.asn.asn_dashboard import get_data
-
-		with patch("asn_module.asn_module.doctype.asn.asn_dashboard.frappe.db.exists", return_value=False):
-			data = get_data()
-
-		linked = {doctype for group in data["transactions"] for doctype in group["items"]}
-		self.assertEqual(linked, {"Purchase Receipt", "Subcontracting Receipt", "Purchase Invoice"})
+		self.assertEqual(
+			self._connections(gate_pass_doctype=False, gate_pass_asn_field=False),
+			{"Purchase Receipt", "Subcontracting Receipt", "Purchase Invoice"},
+		)
 
 	def test_connections_tab_leaves_out_a_gate_pass_without_the_asn_field(self):
-		from asn_module.asn_module.doctype.asn.asn_dashboard import get_data
-
-		meta = frappe.get_meta("Gate Pass")
-		with patch.object(meta, "has_field", return_value=False):
-			data = get_data()
-
-		linked = {doctype for group in data["transactions"] for doctype in group["items"]}
-		self.assertNotIn("Gate Pass", linked)
+		self.assertNotIn("Gate Pass", self._connections(gate_pass_doctype=True, gate_pass_asn_field=False))
 
 
 class TestRemainingQtyAfterReturn(IntegrationTestCase):
