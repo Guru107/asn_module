@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Incomplete ASN drafts can be saved, and rate differences against the order are reported.
 - Scan Code barcodes on the Purchase Receipt and Gate Pass print formats, drawn on demand by a scan image endpoint.
 - Ctrl+Shift+S opens the scan dialog.
+- The ASN's Connections tab lists its Gate Passes, Purchase Receipts, Subcontracting Receipts and Purchase Invoices.
 
 ### Changed
 
@@ -32,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scan dispatch is POST-only and rate-limited, and every whitelisted API declares its HTTP methods.
 - Scan Logs are cleared after 180 days.
 - The ASN Discrepancy and stale QC notifications are dropped.
+
+### Removed
+
+- The ASN Transition Log, the ASN Item Transition Trace report, and the Traceability section on the ASN form. The ASN's linked documents replace them (ADR 0005), and a patch drops the table.
 
 ### Fixed
 
@@ -45,7 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gate Pass rows link to ASN lines, so a PO item shipped as several lines keeps each row's qty.
 - A Subcontracting Receipt receives its Job ASN's invoice and transport references.
 - `/asn/<name>` answers 404, not 500, when the caller may not view the ASN.
-- The Open Full Trace View button shows on saved ASN forms.
 - The remaining raw SQL uses the query builder, and hot-path filter fields are indexed.
 
 ## [1.0.0] - 2026-10-09
