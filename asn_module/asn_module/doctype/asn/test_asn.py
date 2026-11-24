@@ -941,6 +941,16 @@ class TestASN(IntegrationTestCase):
 		linked = {doctype for group in data["transactions"] for doctype in group["items"]}
 		self.assertEqual(linked, {"Purchase Receipt", "Subcontracting Receipt", "Purchase Invoice"})
 
+	def test_connections_tab_leaves_out_a_gate_pass_without_the_asn_field(self):
+		from asn_module.asn_module.doctype.asn.asn_dashboard import get_data
+
+		meta = frappe.get_meta("Gate Pass")
+		with patch.object(meta, "has_field", return_value=False):
+			data = get_data()
+
+		linked = {doctype for group in data["transactions"] for doctype in group["items"]}
+		self.assertNotIn("Gate Pass", linked)
+
 
 class TestRemainingQtyAfterReturn(IntegrationTestCase):
 	"""A return frees further Shipped Qty on the same Purchase Order line.

@@ -8,7 +8,7 @@ def get_data() -> dict:
 		{"label": _("Receipt"), "items": ["Purchase Receipt", "Subcontracting Receipt"]},
 		{"label": _("Billing"), "items": ["Purchase Invoice"]},
 	]
-	# Gate Pass is a site-specific DocType; listing it where it is absent breaks the tab.
-	if frappe.db.exists("DocType", "Gate Pass"):
+	# Gate Pass is site-specific and setup adds its asn field; listing it without both breaks the tab.
+	if frappe.db.exists("DocType", "Gate Pass") and frappe.get_meta("Gate Pass").has_field("asn"):
 		transactions.insert(0, {"label": _("Gate"), "items": ["Gate Pass"]})
 	return {"fieldname": "asn", "transactions": transactions}
