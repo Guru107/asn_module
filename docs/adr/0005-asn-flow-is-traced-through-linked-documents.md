@@ -1,6 +1,6 @@
 # The ASN's flow is traced through its linked documents
 
-Every document that follows an ASN links back to it with an `asn` field: Gate Pass, Purchase Receipt, Subcontracting Receipt and Purchase Invoice. The ASN form's Connections tab lists them, and each document's own timeline and Version history record who changed it and when. The ASN Transition Log, its ASN Item Transition Trace report, and the form's Traceability section are removed, and a patch drops the table. Gate Pass is listed in Connections only on sites whose Gate Pass DocType has the `asn` field.
+Every document that follows an ASN links back to it with an `asn` field: Gate Pass, Purchase Receipt, Subcontracting Receipt and Purchase Invoice. The ASN form's Connections tab lists them, and each document's own timeline and Version history record who changed it and when. The ASN Transition Log, its ASN Item Transition Trace report, and the form's Traceability section are removed. Gate Pass is listed in Connections only on sites whose Gate Pass DocType has the `asn` field.
 
 ## Considered Options
 
