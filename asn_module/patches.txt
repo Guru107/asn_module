@@ -7,4 +7,3 @@
 asn_module.patches.remove_item_max_stock_field
 asn_module.patches.retire_qr_machinery
 asn_module.patches.backfill_asn_routes
-asn_module.patches.retire_transition_trace
