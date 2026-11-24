@@ -18,7 +18,6 @@ from asn_module.qr_engine.scan_codes import void_scan_codes
 from asn_module.stock_cap.api import breaches_for_purchase_receipt
 from asn_module.stock_cap.messages import throw_stock_cap_exceeded
 from asn_module.stock_cap.precision import flt_qty
-from asn_module.traceability import emit_asn_item_transition
 
 ASN_PURCHASE_RECEIPT_SCAN_ACTION = "create_purchase_receipt"
 ASN_GATE_PASS_SCAN_ACTION = "create_gate_pass_from_asn"
@@ -99,17 +98,6 @@ def _create_receipt_from_asn(asn, source_name: str) -> dict:
 
 	pr.insert()
 
-	for asn_item in asn.items:
-		emit_asn_item_transition(
-			asn=asn.name,
-			asn_item=asn_item.name,
-			item_code=asn_item.item_code,
-			state="PR_CREATED_DRAFT",
-			transition_status="OK",
-			ref_doctype="Purchase Receipt",
-			ref_name=pr.name,
-		)
-
 	return {
 		"doctype": "Purchase Receipt",
 		"name": pr.name,
@@ -177,21 +165,17 @@ def _lines_with_delivered_qty(doc) -> list[tuple]:
 	]
 
 
-def _record_linked_received_qty(doc, sign: int) -> tuple[list[str], bool]:
-	"""Apply delivered qty for mapped rows.
+def _record_linked_received_qty(doc, sign: int) -> bool:
+	"""Apply delivered qty for mapped rows; return whether any quantity was written.
 
-	Returns the mapped ASN Item names, in first-seen order, and whether any quantity was
-	written. Submit uses the names for transitions; cancel refreshes the ASN only when a
-	quantity changed.
+	Cancel refreshes the ASN only when a quantity changed.
 	"""
 	mapping = json.loads(getattr(doc, "asn_items", None) or "{}")
 	received_qty_by_asn_item: dict[str, float] = {}
-	mapped_names: dict[str, None] = {}
 	for pr_item, delivered in _lines_with_delivered_qty(doc):
 		asn_item_name = (mapping.get(pr_item.name) or {}).get("asn_item_name")
 		if not asn_item_name:
 			continue
-		mapped_names.setdefault(asn_item_name, None)
 		if delivered:
 			received_qty_by_asn_item[asn_item_name] = (
 				received_qty_by_asn_item.get(asn_item_name, 0.0) + delivered
@@ -200,7 +184,7 @@ def _record_linked_received_qty(doc, sign: int) -> tuple[list[str], bool]:
 	for asn_item_name, qty in received_qty_by_asn_item.items():
 		_add_received_qty(asn_item_name, sign * qty)
 
-	return list(mapped_names), bool(received_qty_by_asn_item)
+	return bool(received_qty_by_asn_item)
 
 
 def refuse_qty_declared_on_open_asns(items: list) -> None:
@@ -305,18 +289,8 @@ def on_purchase_receipt_cancel(doc, method=None):
 	void_scan_codes("create_purchase_invoice", "Purchase Receipt", doc.name)
 	if getattr(doc, "is_return", 0) or not getattr(doc, "asn", None):
 		return
-	mapped_names, updated = _record_linked_received_qty(doc, sign=-1)
-	if updated and frappe.db.exists("ASN", doc.asn):
+	if _record_linked_received_qty(doc, sign=-1) and frappe.db.exists("ASN", doc.asn):
 		frappe.get_doc("ASN", doc.asn).update_receipt_status()
-	for asn_item_name, item_code in _asn_item_codes(mapped_names).items():
-		emit_asn_item_transition(
-			asn=doc.asn,
-			asn_item=asn_item_name,
-			item_code=item_code,
-			state="PR_CANCELLED",
-			ref_doctype="Purchase Receipt",
-			ref_name=doc.name,
-		)
 
 
 def on_purchase_receipt_before_submit(doc, method=None):
@@ -655,17 +629,6 @@ def _create_purchase_receipt_from_gate_pass(gate_pass) -> dict:
 	_apply_asn_fields(pr, asn, gate_pass=gate_pass)
 	fill_custom_fiscal_year(pr)
 	pr.insert()
-
-	for asn_item in asn.items:
-		emit_asn_item_transition(
-			asn=asn.name,
-			asn_item=asn_item.name,
-			item_code=asn_item.item_code,
-			state="PR_CREATED_DRAFT",
-			transition_status="OK",
-			ref_doctype="Purchase Receipt",
-			ref_name=pr.name,
-		)
 
 	return {
 		"doctype": "Purchase Receipt",
@@ -1032,23 +995,6 @@ def _set_amounts_from_qty(pr, pr_item) -> None:
 		pr_item.base_net_amount = base_amount
 
 
-def on_purchase_receipt_trash(doc, method):
-	"""Remove draft-creation trace rows so stale draft PRs can be deleted."""
-	del method
-
-	if doc.docstatus != 0:
-		return
-
-	frappe.db.delete(
-		"ASN Transition Log",
-		{
-			"ref_doctype": "Purchase Receipt",
-			"ref_name": doc.name,
-			"state": "PR_CREATED_DRAFT",
-		},
-	)
-
-
 def on_purchase_receipt_submit(doc, method):
 	"""Update ASN receipt tracking and store the follow-up Scan Code on submit.
 
@@ -1066,39 +1012,8 @@ def on_purchase_receipt_submit(doc, method):
 
 	if not doc.asn:
 		return
-	mapped_names, _updated = _record_linked_received_qty(doc, sign=1)
-
-	asn = frappe.get_doc("ASN", doc.asn)
-	asn.update_receipt_status()
-
-	if not mapped_names:
-		return
-
-	asn_item_codes = _asn_item_codes(mapped_names)
-
-	for asn_item_name in mapped_names:
-		emit_asn_item_transition(
-			asn=asn.name,
-			asn_item=asn_item_name,
-			item_code=asn_item_codes.get(asn_item_name),
-			state="PR_SUBMITTED",
-			transition_status="OK",
-			ref_doctype="Purchase Receipt",
-			ref_name=doc.name,
-		)
-
-
-def _asn_item_codes(asn_item_names: list[str]) -> dict[str, str]:
-	if not asn_item_names:
-		return {}
-	return {
-		row.name: row.item_code
-		for row in frappe.get_all(
-			"ASN Item",
-			filters={"name": ["in", asn_item_names]},
-			fields=["name", "item_code"],
-		)
-	}
+	_record_linked_received_qty(doc, sign=1)
+	frappe.get_doc("ASN", doc.asn).update_receipt_status()
 
 
 def _store_invoice_code(doc) -> None:

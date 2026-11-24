@@ -169,7 +169,6 @@ doc_events = {
 		"before_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_before_submit",
 		"on_submit": "asn_module.handlers.purchase_receipt.on_purchase_receipt_submit",
 		"on_cancel": "asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",
-		"on_trash": "asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
 	},
 	"Purchase Invoice": {
 		"before_submit": "asn_module.handlers.purchase_invoice.on_purchase_invoice_before_submit",

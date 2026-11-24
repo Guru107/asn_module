@@ -1,5 +1,3 @@
-import json
-
 import frappe
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
 	make_purchase_invoice as make_purchase_invoice_from_pr,
@@ -9,7 +7,6 @@ from frappe.utils import cint, flt
 
 from asn_module.handlers.purchase_receipt import refuse_qty_declared_on_open_asns
 from asn_module.handlers.utils import fill_custom_fiscal_year, refuse_repeat_asn_booking
-from asn_module.traceability import emit_asn_item_transition
 
 
 def create_from_purchase_receipt(source_doctype: str, source_name: str, payload: dict) -> dict:
@@ -47,22 +44,6 @@ def create_from_purchase_receipt(source_doctype: str, source_name: str, payload:
 		pi.bill_date = asn.supplier_invoice_date
 	fill_custom_fiscal_year(pi)
 	pi.insert()
-
-	if pr.asn:
-		asn_items_map = json.loads(pr.asn_items or "{}")
-		for pr_item in pr.items:
-			mapping = asn_items_map.get(pr_item.name)
-			if not mapping:
-				continue
-			emit_asn_item_transition(
-				asn=pr.asn,
-				asn_item=mapping.get("asn_item_name"),
-				item_code=pr_item.item_code,
-				state="PI_CREATED_DRAFT",
-				transition_status="OK",
-				ref_doctype="Purchase Invoice",
-				ref_name=pi.name,
-			)
 
 	return {
 		"doctype": "Purchase Invoice",
