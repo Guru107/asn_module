@@ -91,7 +91,6 @@ class TestHooks(IntegrationTestCase):
 		post_sync = patches.split("[post_model_sync]", 1)[1]
 
 		self.assertIn("asn_module.patches.remove_item_max_stock_field", post_sync)
-		self.assertIn("asn_module.patches.retire_qr_machinery", post_sync)
 		self.assertNotIn("asn_module.patches.create_item_max_stock_field", post_sync)
 
 	def test_subcontracting_receipt_custom_fields_define_asn_link(self):
@@ -146,10 +145,4 @@ class TestHooks(IntegrationTestCase):
 		self.assertEqual(
 			pr_events["on_cancel"],
 			"asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",
-		)
-
-		self.assertIn("on_trash", pr_events)
-		self.assertEqual(
-			pr_events["on_trash"],
-			"asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
 		)

@@ -15,7 +15,6 @@ from asn_module.handlers.purchase_receipt import (
 	on_purchase_receipt_before_submit,
 	on_purchase_receipt_cancel,
 	on_purchase_receipt_submit,
-	on_purchase_receipt_trash,
 	stamp_asn_item_mapping,
 )
 from asn_module.tests.compat import IntegrationTestCase
@@ -211,7 +210,6 @@ class TestCreatePurchaseReceipt(IntegrationTestCase):
 			patch("asn_module.handlers.purchase_receipt.frappe.db.get_value", return_value=None),
 			patch("asn_module.handlers.purchase_receipt.frappe.db.set_value") as set_value,
 			patch("asn_module.handlers.purchase_receipt.make_purchase_receipt", return_value=pr) as make_pr,
-			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
 		):
 			result = create_gate_pass_from_asn("ASN", "ASN-UNIT-002", payload={})
 
@@ -235,7 +233,6 @@ class TestCreatePurchaseReceipt(IntegrationTestCase):
 			"Purchase Receipt", "PR-UNIT-002", "asn_items", pr.asn_items, update_modified=False
 		)
 		make_pr.assert_called_once_with("PO-001", args={"filtered_children": ["POI-001"]})
-		emit.assert_called_once()
 
 	def test_on_purchase_receipt_submit_skips_asn_bookkeeping_when_not_linked_to_asn(self):
 		doc = SimpleNamespace(asn=None, is_return=0, name="PR-UNLINKED-UNIT", items=[])
@@ -249,21 +246,6 @@ class TestCreatePurchaseReceipt(IntegrationTestCase):
 		get_doc.assert_not_called()
 		store_scan_code_mock.assert_called_once_with(doc, "create_purchase_invoice")
 
-	def test_on_purchase_receipt_trash_deletes_draft_creation_transition_logs(self):
-		doc = SimpleNamespace(name="PR-UNIT-004", docstatus=0, asn="ASN-UNIT-004")
-
-		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
-			on_purchase_receipt_trash(doc, "on_trash")
-
-		delete.assert_called_once_with(
-			"ASN Transition Log",
-			{
-				"ref_doctype": "Purchase Receipt",
-				"ref_name": "PR-UNIT-004",
-				"state": "PR_CREATED_DRAFT",
-			},
-		)
-
 	def test_on_purchase_receipt_cancel_voids_the_invoice_scan_code(self):
 		# No ASN link: nothing else to reverse, but the code must still be voided.
 		doc = SimpleNamespace(name="PR-UNIT-006", asn=None, is_return=0)
@@ -272,14 +254,6 @@ class TestCreatePurchaseReceipt(IntegrationTestCase):
 			on_purchase_receipt_cancel(doc, "on_cancel")
 
 		void.assert_called_once_with("create_purchase_invoice", "Purchase Receipt", "PR-UNIT-006")
-
-	def test_on_purchase_receipt_trash_keeps_submitted_transition_logs(self):
-		doc = SimpleNamespace(name="PR-UNIT-005", docstatus=1, asn="ASN-UNIT-005")
-
-		with patch("asn_module.handlers.purchase_receipt.frappe.db.delete") as delete:
-			on_purchase_receipt_trash(doc, "on_trash")
-
-		delete.assert_not_called()
 
 	def test_on_purchase_receipt_submit_skips_unmapped_pr_rows(self):
 		asn = SimpleNamespace(name="ASN-UNIT-003", reload=lambda: None, update_receipt_status=lambda: None)
@@ -296,19 +270,12 @@ class TestCreatePurchaseReceipt(IntegrationTestCase):
 		with (
 			patch("asn_module.handlers.purchase_receipt.frappe.get_doc", return_value=asn),
 			patch("asn_module.handlers.purchase_receipt.frappe.db.sql") as sql,
-			patch(
-				"asn_module.handlers.purchase_receipt.frappe.get_all",
-				return_value=[SimpleNamespace(name="ASN-ITEM-002", item_code="ITEM-002")],
-			),
-			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit,
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
 			on_purchase_receipt_submit(doc, "on_submit")
 
 		sql.assert_called_once()
-		emit.assert_called_once()
-		self.assertEqual(emit.call_args.kwargs["asn_item"], "ASN-ITEM-002")
 
 	@patch("asn_module.handlers.purchase_receipt.store_scan_code")
 	def test_submit_updates_asn_and_stores_invoice_scan_code(self, store_scan_code_mock):

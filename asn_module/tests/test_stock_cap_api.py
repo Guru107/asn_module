@@ -591,7 +591,6 @@ class TestBreachesForPurchaseReceipt(IntegrationTestCase):
 		)
 
 		with (
-			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -734,7 +733,6 @@ class TestBreachesForPurchaseReceipt(IntegrationTestCase):
 		self._submit_with_room(asn)
 
 		with (
-			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -781,7 +779,6 @@ class TestBreachesForPurchaseReceipt(IntegrationTestCase):
 			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=10, rejected_qty=0, item_code=PR_ITEM)],
 		)
 		with (
-			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -789,17 +786,8 @@ class TestBreachesForPurchaseReceipt(IntegrationTestCase):
 
 		asn.reload()
 		self.assertEqual(asn.status, "Received")
-		with patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition") as emit:
-			on_purchase_receipt_cancel(pr_doc, "on_cancel")
+		on_purchase_receipt_cancel(pr_doc, "on_cancel")
 
-		emit.assert_called_once_with(
-			asn=asn.name,
-			asn_item=asn.items[0].name,
-			item_code=PR_ITEM,
-			state="PR_CANCELLED",
-			ref_doctype="Purchase Receipt",
-			ref_name="PR-CANCEL-DRAIN",
-		)
 		self.assertEqual(frappe.db.get_value("ASN Item", asn.items[0].name, "received_qty"), 0)
 		asn.reload()
 		self.assertEqual(asn.status, "Submitted")
@@ -841,7 +829,6 @@ class TestBreachesForPurchaseReceipt(IntegrationTestCase):
 			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=-2, rejected_qty=0, item_code=PR_ITEM)],
 		)
 		with (
-			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):
@@ -906,7 +893,6 @@ class TestBreachesForPurchaseReceipt(IntegrationTestCase):
 			items=[SimpleNamespace(idx=1, name="pr-row-a", qty=-10, rejected_qty=0, item_code=PR_ITEM)],
 		)
 		with (
-			patch("asn_module.handlers.purchase_receipt.emit_asn_item_transition"),
 			patch("asn_module.handlers.purchase_receipt.store_scan_code"),
 			patch("asn_module.handlers.purchase_receipt.frappe.get_cached_value", return_value=True),
 		):

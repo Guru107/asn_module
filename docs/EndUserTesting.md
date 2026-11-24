@@ -201,18 +201,18 @@ Log in as `stores.mgr@test`. Open **ASN > New**.
 | 4-6 | Remove the PO-1 row. Set ITEM-A qty to 31. Save | "Rows 1: Shipped qty 31.0 exceeds remaining PO qty 30.0" | |
 | 4-7 | Type qty 0 in a row | "Quantity must be greater than 0" and Qty goes back to 1 | |
 | 4-8 | Use Supplier Invoice No `INV-A-001`. Save | "Supplier Invoice No INV-A-001 already exists for Supplier Supplier A" | |
-| 4-9 | Fix it: PO-3 ITEM-A 30, invoice `INV-A-DESK`, vehicle set. Save, then Submit | Status **Submitted**, ASN Date today, **Scan Code (manual entry)** filled, trace table shows ASN_GENERATED | |
+| 4-9 | Fix it: PO-3 ITEM-A 30, invoice `INV-A-DESK`, vehicle set. Save, then Submit | Status **Submitted**, ASN Date today, **Scan Code (manual entry)** filled | |
 | 4-10 | Log in as `stores.user@test`, create a draft ASN | Can save and delete the draft, but has no **Submit** button | |
 | 4-11 | Log in as `accounts.user@test`, open an ASN | Read-only | |
 
 Call the 4-9 ASN **ASN-M3**.
 
-### 4.2 Trace on the form
+### 4.2 Connections on the form
 
 | # | Steps | Expected | Result |
 |---|-------|----------|--------|
-| 4-12 | Open ASN-M1 | **Traceability** section with columns Item / State / Status / Ref / Updated: each item has **ASN_GENERATED**, status OK, Ref "ASN <name>" | |
-| 4-13 | Click **Open Full Trace View** | **ASN Item Transition Trace** report opens filtered on this ASN | |
+| 4-12 | Open ASN-M1 after its Purchase Invoice exists (come back after section 5) | **Connections** tab groups the documents linked to this ASN: Gate (Gate Pass, only on sites that have it), Receipt (Purchase Receipt, Subcontracting Receipt), Billing (Purchase Invoice), each with its count | |
+| 4-13 | Click the Purchase Receipt count | Purchase Receipt list opens filtered on ASN = ASN-M1 | |
 
 ### 4.3 Notification
 
@@ -267,7 +267,7 @@ How scanning behaves:
 | 5-13 | As `stores.user@test`, scan the Purchase Receipt's code | Dialog "Not permitted": "You do not have enough permissions to access this resource. Please contact your manager to get access." Scan Log Failure row: "You do not have permission to perform this action. Required roles: Accounts User, Accounts Manager" | |
 | 5-14 | As `accounts.user@test`, scan the Purchase Receipt's code | "Purchase Invoice <PI> created from Purchase Receipt <PR>". Draft invoice with ASN = ASN-M1 and Supplier Invoice No/Date from the ASN | |
 | 5-15 | Scan the receipt code again | "Existing Purchase Invoice <PI> opened" | |
-| 5-16 | Submit the Purchase Invoice. Scan the receipt code again | Submitted. Trace shows PI_CREATED_DRAFT (from 5-14); submitting adds no trace row. The scan says "Existing Purchase Invoice <PI> opened" | |
+| 5-16 | Submit the Purchase Invoice. Scan the receipt code again | Submitted. The scan says "Existing Purchase Invoice <PI> opened" | |
 | 5-17 | Open the receipt | No **Create > Purchase Invoice**: it is fully billed | |
 | 5-17a | As `accounts.user@test`, cancel the 5-16 invoice. Click **Amend** on it twice so two drafts exist (PI-1-1, PI-1-2), both with ASN = ASN-M1. Submit PI-1-1, then PI-1-2. Afterwards cancel and delete PI-1-2's draft if it remains | PI-1-2 refused: "ASN ASN-M1 is already fully invoiced on Purchase Invoice PI-1-1. Cancel PI-1-1 to invoice it again." | |
 | 5-17b | Scan the receipt code once more | "This scan code has already been used and cannot be scanned again." (the invoice it made was cancelled; known limit) | |
@@ -280,7 +280,7 @@ How scanning behaves:
 | 5-18 | Scan ASN-M3 (PO-3 ITEM-A 30). On the draft receipt change qty to **25**. Submit | ASN-M3 **Closed**. Received Qty 25, Discrepancy Qty 5 | |
 | 5-18a | Supplier A starts a new ASN on PO-3 (do not save) | ITEM-A shows "Remaining: 5": a Closed ASN frees what it did not deliver | |
 | 5-19 | Scan ASN-M3 again | "Cannot create Purchase Receipt from ASN ASN-M3 with status Closed" | |
-| 5-20 | Cancel that Purchase Receipt | ASN-M3 back to **Submitted**, Received Qty 0, Discrepancy Qty 30. Trace shows **PR_CANCELLED** | |
+| 5-20 | Cancel that Purchase Receipt | ASN-M3 back to **Submitted**, Received Qty 0, Discrepancy Qty 30 | |
 | 5-21 | As `accounts.user@test`, scan the cancelled receipt's code | "This scan code is not valid for scanning." (title "Scan not allowed") | |
 | 5-22 | Scan ASN-M3 and submit the new draft receipt with full 30 | "Purchase Receipt <PR> created from ASN ASN-M3". After submit, ASN-M3 **Received** | |
 
@@ -457,14 +457,11 @@ Note: the cap reads stock without locking, and Stock Entry, Stock Reconciliation
 
 | # | Steps | Expected | Result |
 |---|-------|----------|--------|
-| 10-1 | **ASN Item Transition Trace**, filter ASN = ASN-M1 | Per ASN item, newest first: PI_CREATED_DRAFT (Purchase Invoice), PR_SUBMITTED, PR_CREATED_DRAFT (Purchase Receipt), ASN_GENERATED (ASN), all Status OK. Columns: Event Time, ASN, ASN Item, Item Code, State, Status, Reference, Actor, Error Code, Details. There is no state for a submitted invoice or a Gate Pass. The DRAFT states appear only when the document was made by scanning | |
-| 10-2 | Try each filter: Item Code, State, Status, Ref DocType, Ref Name, From/To Date, Search, Page limit | State and Status match exact values. Search matches part of State / Item Code / Ref Name / Details | |
-| 10-2a | Clear ASN and From Date, then use Search | "Set ASN or From Date to use Search." | |
-| 10-3 | **ASN Item Rate Difference** with no filters | "Set at least one filter (ASN, Supplier, Purchase Order, Invoice No or date)." | |
-| 10-4 | Create an ASN by bulk CSV with `rate` 110 on a PO line priced 100 (the desk form cannot change Rate). Run the report for that ASN | ASN Rate 110, PO Rate 100, Rate Difference 10, Qty, Amount Difference = qty × 10. Draft ASNs are included too | |
-| 10-5 | Run 10-4 as `accounts.user@test`, Purchase Order filter empty (Accounts User has no PO read) | Works | |
-| 10-6 | Give `accounts.user@test` a User Permission on Supplier = Supplier B. Run the report with Supplier A typed in full (the picker will not offer it) | No rows. Note: the Transition Trace report does not apply User Permissions, so this user still sees Supplier A's trace rows there | |
-| 10-7 | **Scan Log** list | One SCAN-#### row per scan (no list columns). Open a row or use Report view: Scan Timestamp, User, Action, Source DocType/Name, Scan Code, Result (Success/Failure), Result DocType/Name, Error Message. Read-only, no New button | |
+| 10-1 | **ASN Item Rate Difference** with no filters | "Set at least one filter (ASN, Supplier, Purchase Order, Invoice No or date)." | |
+| 10-2 | Create an ASN by bulk CSV with `rate` 110 on a PO line priced 100 (the desk form cannot change Rate). Run the report for that ASN | ASN Rate 110, PO Rate 100, Rate Difference 10, Qty, Amount Difference = qty × 10. Draft ASNs are included too | |
+| 10-3 | Run 10-2 as `accounts.user@test`, Purchase Order filter empty (Accounts User has no PO read) | Works | |
+| 10-4 | Give `accounts.user@test` a User Permission on Supplier = Supplier B. Run the report with Supplier A typed in full (the picker will not offer it) | No rows. | |
+| 10-5 | **Scan Log** list | One SCAN-#### row per scan (no list columns). Open a row or use Report view: Scan Timestamp, User, Action, Source DocType/Name, Scan Code, Result (Success/Failure), Result DocType/Name, Error Message. Read-only, no New button | |
 
 ---
 
@@ -484,7 +481,6 @@ Tick each cell after you have tried it.
 | Edit Stock Cap settings and caps | No | Read | Yes | No |
 | Edit ASN Settings | No | No | No | No (System Manager only) |
 | Run Rate Difference report | No | No | Yes | Yes |
-| Run Transition Trace report | No | Yes | Yes | Yes |
 
 ---
 
