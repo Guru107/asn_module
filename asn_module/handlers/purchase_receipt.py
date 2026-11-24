@@ -467,6 +467,7 @@ def _open_or_create_material_gate_pass(asn) -> dict:
 		gate_pass.append("items", row)
 
 	gate_pass.insert()
+	_emit_gate_pass_transition(gate_pass.name, asn.name, "GATE_PASS_CREATED_DRAFT")
 
 	return {
 		"doctype": "Gate Pass",
@@ -518,6 +519,7 @@ def _open_or_create_job_gate_pass(asn) -> dict:
 			gate_pass.append(table_field, row)
 
 	gate_pass.insert(ignore_mandatory=True)
+	_emit_gate_pass_transition(gate_pass.name, asn.name, "GATE_PASS_CREATED_DRAFT")
 
 	return {
 		"doctype": "Gate Pass",
@@ -611,6 +613,25 @@ def on_gate_pass_submit(doc, method=None):
 	if not (getattr(doc, "asn", None) or "").strip():
 		return
 	store_scan_code(doc, GATE_PASS_RECEIPT_ACTION)
+	_emit_gate_pass_transition(doc.name, doc.asn, "GATE_PASS_SUBMITTED")
+
+
+def _emit_gate_pass_transition(gate_pass_name: str, asn_name: str, state: str) -> None:
+	"""Log a Gate Pass state on every line of its ASN: the pass carries the whole shipment."""
+	for row in frappe.get_all(
+		"ASN Item",
+		filters={"parent": asn_name, "parenttype": "ASN"},
+		fields=["name", "item_code"],
+		order_by="idx",
+	):
+		emit_asn_item_transition(
+			asn=asn_name,
+			asn_item=row.name,
+			item_code=row.item_code,
+			state=state,
+			ref_doctype="Gate Pass",
+			ref_name=gate_pass_name,
+		)
 
 
 def refuse_repeated_asn_item(doc, method=None) -> None:
@@ -634,6 +655,14 @@ def on_gate_pass_cancel(doc, method=None):
 	"""Void the Gate Pass's scan code so a cancelled pass cannot be scanned."""
 	del method
 	void_scan_codes(GATE_PASS_RECEIPT_ACTION, "Gate Pass", doc.name)
+	if (getattr(doc, "asn", None) or "").strip():
+		_emit_gate_pass_transition(doc.name, doc.asn, "GATE_PASS_CANCELLED")
+
+
+def on_gate_pass_trash(doc, method=None):
+	"""Remove the deleted Gate Pass's trace rows: their Dynamic Link would otherwise block the delete."""
+	del method
+	frappe.db.delete("ASN Transition Log", {"ref_doctype": "Gate Pass", "ref_name": doc.name})
 
 
 def _is_job_gate_pass(gate_pass) -> bool:

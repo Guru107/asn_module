@@ -158,6 +158,10 @@ class TestScanChainWiring(IntegrationTestCase):
 			events["Gate Pass"]["on_cancel"],
 		)
 		self.assertIn(
+			"asn_module.handlers.purchase_receipt.on_gate_pass_trash",
+			events["Gate Pass"]["on_trash"],
+		)
+		self.assertIn(
 			"asn_module.handlers.subcontracting.on_subcontracting_receipt_submit",
 			events["Subcontracting Receipt"]["on_submit"],
 		)
@@ -225,6 +229,63 @@ class TestGatePassScanChain(IntegrationTestCase):
 
 		self.assertEqual(frappe.db.count("Scan Code", {"source_name": gate_pass.name}), 0)
 		self.assertFalse(frappe.db.get_value("Gate Pass", gate_pass.name, "scan_code"))
+
+	def _gate_pass_states(self, gate_pass_name: str) -> list[tuple[str, str]]:
+		return frappe.get_all(
+			"ASN Transition Log",
+			filters={"ref_doctype": "Gate Pass", "ref_name": gate_pass_name},
+			fields=["asn_item", "state"],
+			order_by="creation asc, asn_item asc",
+			as_list=True,
+		)
+
+	def test_gate_pass_created_submitted_and_cancelled_are_traced_on_each_asn_line(self):
+		with with_gate_pass_mode(), integration_user_context():
+			_purchase_order, asn = _submitted_material_asn()
+			gate_pass = _gate_pass_opened_by_scan(asn)
+			created = self._gate_pass_states(gate_pass.name)
+
+			on_gate_pass_submit(gate_pass)
+			on_gate_pass_cancel(gate_pass)
+
+		lines = sorted(row.name for row in asn.items)
+		self.assertEqual(sorted(created), [(line, "GATE_PASS_CREATED_DRAFT") for line in lines])
+		states = self._gate_pass_states(gate_pass.name)
+		for state in ("GATE_PASS_CREATED_DRAFT", "GATE_PASS_SUBMITTED", "GATE_PASS_CANCELLED"):
+			self.assertEqual(sorted(line for line, s in states if s == state), lines, state)
+
+	def test_a_gate_pass_without_an_asn_is_not_traced_on_submit_or_cancel(self):
+		with with_gate_pass_mode(), integration_user_context():
+			_purchase_order, asn = _submitted_material_asn()
+			gate_pass = _gate_pass_opened_by_scan(asn)
+			frappe.db.set_value("Gate Pass", gate_pass.name, "asn", "", update_modified=False)
+			unlinked = frappe.get_doc("Gate Pass", gate_pass.name)
+
+			on_gate_pass_submit(unlinked)
+			on_gate_pass_cancel(unlinked)
+
+		self.assertEqual(
+			[state for _line, state in self._gate_pass_states(gate_pass.name)],
+			["GATE_PASS_CREATED_DRAFT"] * len(asn.items),
+		)
+
+	def test_a_cancelled_gate_pass_with_trace_rows_can_be_deleted(self):
+		with with_gate_pass_mode(), integration_user_context():
+			_purchase_order, asn = _submitted_material_asn()
+			gate_pass = _gate_pass_opened_by_scan(asn)
+			on_gate_pass_submit(gate_pass)
+			frappe.db.set_value("Gate Pass", gate_pass.name, "docstatus", 2, update_modified=False)
+			on_gate_pass_cancel(gate_pass)
+			self.assertTrue(self._gate_pass_states(gate_pass.name))
+
+			frappe.delete_doc("Gate Pass", gate_pass.name, ignore_permissions=True)
+
+		self.assertFalse(frappe.db.exists("Gate Pass", gate_pass.name))
+		self.assertFalse(self._gate_pass_states(gate_pass.name))
+		self.assertTrue(
+			frappe.db.exists("ASN Transition Log", {"asn": asn.name, "state": "ASN_GENERATED"}),
+			"only the deleted Gate Pass's rows go",
+		)
 
 	def test_a_draft_gate_pass_with_a_scan_code_can_be_deleted(self):
 		with with_gate_pass_mode(), integration_user_context():

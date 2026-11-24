@@ -457,7 +457,7 @@ Note: the cap reads stock without locking, and Stock Entry, Stock Reconciliation
 
 | # | Steps | Expected | Result |
 |---|-------|----------|--------|
-| 10-1 | **ASN Item Transition Trace**, filter ASN = ASN-M1 | Per ASN item, newest first: PI_CREATED_DRAFT (Purchase Invoice), PR_SUBMITTED, PR_CREATED_DRAFT (Purchase Receipt), ASN_GENERATED (ASN), all Status OK. Columns: Event Time, ASN, ASN Item, Item Code, State, Status, Reference, Actor, Error Code, Details. There is no state for a submitted invoice or a Gate Pass. The DRAFT states appear only when the document was made by scanning | |
+| 10-1 | **ASN Item Transition Trace**, filter ASN = ASN-M1 | Per ASN item, newest first: PI_CREATED_DRAFT (Purchase Invoice), PR_SUBMITTED, PR_CREATED_DRAFT (Purchase Receipt), ASN_GENERATED (ASN), all Status OK. Columns: Event Time, ASN, ASN Item, Item Code, State, Status, Reference, Actor, Error Code, Details. With Gate Pass Mode on, GATE_PASS_SUBMITTED and GATE_PASS_CREATED_DRAFT (Gate Pass) also appear between PR_CREATED_DRAFT and ASN_GENERATED, and GATE_PASS_CANCELLED if the pass was cancelled. There is no state for a submitted invoice. The DRAFT states appear only when the document was made by scanning | |
 | 10-2 | Try each filter: Item Code, State, Status, Ref DocType, Ref Name, From/To Date, Search, Page limit | State and Status match exact values. Search matches part of State / Item Code / Ref Name / Details | |
 | 10-2a | Clear ASN and From Date, then use Search | "Set ASN or From Date to use Search." | |
 | 10-3 | **ASN Item Rate Difference** with no filters | "Set at least one filter (ASN, Supplier, Purchase Order, Invoice No or date)." | |

@@ -1177,6 +1177,17 @@ class TestMaterialGatePassScan(IntegrationTestCase):
 		)
 		self.assertEqual(frappe.db.count("Subcontracting Receipt", {"asn": asn.name}), 0)
 		self.assertEqual(frappe.db.count("Purchase Receipt", {"asn": asn.name}), 0)
+		self.assertTrue(
+			frappe.db.exists(
+				"ASN Transition Log",
+				{
+					"asn_item": asn.items[0].name,
+					"state": "GATE_PASS_CREATED_DRAFT",
+					"ref_doctype": "Gate Pass",
+					"ref_name": gate_pass.name,
+				},
+			)
+		)
 
 	def test_a_later_scan_opens_the_same_job_gate_pass(self):
 		with with_gate_pass_mode(True):
