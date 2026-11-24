@@ -21,7 +21,6 @@ from asn_module.supplier_asn_portal import (
 	asn_eligible_for_supplier_portal_cancel,
 	asn_eligible_for_supplier_portal_delete,
 )
-from asn_module.traceability import emit_asn_item_transition, get_latest_transition_rows_for_asn
 from asn_module.utils.permissions import get_accessible_doc
 
 
@@ -78,17 +77,6 @@ class ASN(WebsiteGenerator):
 		)
 		self.reload()
 
-		for row in self.items:
-			emit_asn_item_transition(
-				asn=self.name,
-				asn_item=row.name,
-				item_code=row.item_code,
-				state="ASN_GENERATED",
-				transition_status="OK",
-				ref_doctype=self.doctype,
-				ref_name=self.name,
-			)
-
 	def before_cancel(self):
 		self._purge_scan_codes_for_asn()
 		self._delete_linked_draft_purchase_receipts()
@@ -99,7 +87,6 @@ class ASN(WebsiteGenerator):
 
 	def on_trash(self):
 		# Scan Code / Scan Log cleanup runs via the global on_trash hook on purge_scan_registry_on_trash.
-		self._delete_asn_transition_logs()
 		self._clear_cancelled_purchase_receipt_asn_links()
 		self._validate_deletable_against_purchase_receipts()
 
@@ -108,12 +95,6 @@ class ASN(WebsiteGenerator):
 		from asn_module.qr_engine.scan_codes import purge_scan_codes_for_source
 
 		purge_scan_codes_for_source(self.doctype, self.name)
-
-	def _delete_asn_transition_logs(self):
-		"""Remove traceability rows so ASN delete is not blocked by Link checks (logs are ASN-specific)."""
-		if not frappe.db.exists("DocType", "ASN Transition Log"):
-			return
-		frappe.db.delete("ASN Transition Log", {"asn": self.name})
 
 	def _clear_cancelled_purchase_receipt_asn_links(self):
 		"""Drop ASN link on cancelled receipts so deletion is not blocked by a stale Link field."""
@@ -821,15 +802,6 @@ def get_purchase_order_items(purchase_order: str, asn_name: str | None = None) -
 		)
 
 	return result
-
-
-@frappe.whitelist(methods=["GET"])
-def get_item_transition_summary(asn: str) -> list[dict]:
-	"""Latest transition row per ASN line item (for compact ASN form summary)."""
-	doc = frappe.get_doc("ASN", asn)
-	if not doc.has_permission("read"):
-		frappe.throw(_("Not permitted"), frappe.PermissionError)
-	return get_latest_transition_rows_for_asn(asn)
 
 
 def _get_accessible_purchase_order(purchase_order: str):

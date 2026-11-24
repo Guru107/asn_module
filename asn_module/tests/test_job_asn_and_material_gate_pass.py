@@ -590,12 +590,6 @@ class TestJobAsnReceiptTracking(IntegrationTestCase):
 		self.assertEqual(flt(frappe.db.get_value("ASN Item", asn_item, "received_qty")), 10)
 		self.assertEqual(frappe.db.get_value("ASN", asn.name, "status"), "Received")
 		self.assertEqual(self._in_transit(finished_good), in_transit_before - 10)
-		self.assertTrue(
-			frappe.db.exists(
-				"ASN Transition Log",
-				{"asn_item": asn_item, "state": "SCR_SUBMITTED", "ref_name": receipt.name},
-			)
-		)
 		with with_gate_pass_mode(False), integration_user_context():
 			with self.assertRaisesRegex(frappe.ValidationError, "Cannot create Subcontracting Receipt"):
 				dispatch(code=code, device_info="job-asn-rescan")

@@ -7,10 +7,7 @@ from unittest.mock import patch
 import frappe
 from frappe.utils import add_days, flt, nowdate, today
 
-from asn_module.asn_module.doctype.asn.asn import (
-	get_item_transition_summary,
-	get_purchase_order_items,
-)
+from asn_module.asn_module.doctype.asn.asn import get_purchase_order_items
 from asn_module.handlers.utils import fill_custom_fiscal_year
 from asn_module.qr_engine.scan_codes import normalize_scan_code
 from asn_module.templates.pages.asn_new_services import (
@@ -596,17 +593,6 @@ class TestASN(IntegrationTestCase):
 
 		mock_delete.assert_not_called()
 
-	def test_delete_asn_transition_logs_noops_when_doctype_missing(self):
-		asn = make_test_asn()
-		asn.name = "ASN-NO-LOG"
-		with (
-			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.exists", return_value=False),
-			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.delete") as mock_delete,
-		):
-			asn._delete_asn_transition_logs()
-
-		mock_delete.assert_not_called()
-
 	def test_delete_linked_draft_purchase_receipts_noops_without_asn_column(self):
 		asn = make_test_asn()
 		with (
@@ -755,26 +741,6 @@ class TestASN(IntegrationTestCase):
 		):
 			with self.assertRaises(frappe.LinkExistsError):
 				asn.on_trash()
-
-	def test_on_trash_deletes_asn_transition_log_rows(self):
-		asn = make_test_asn()
-		asn.insert(ignore_permissions=True)
-
-		with (
-			patch(
-				"asn_module.asn_module.doctype.asn.asn.frappe.db.exists",
-				return_value=True,
-			),
-			patch("asn_module.asn_module.doctype.asn.asn.frappe.db.delete") as mock_delete,
-			patch(
-				"asn_module.asn_module.doctype.asn.asn.frappe.db.has_column",
-				return_value=False,
-			),
-		):
-			asn.on_trash()
-
-		self.assertEqual(mock_delete.call_count, 1)
-		mock_delete.assert_called_once_with("ASN Transition Log", {"asn": asn.name})
 
 	def test_before_cancel_deletes_linked_draft_purchase_receipts(self):
 		asn = make_test_asn()
@@ -956,13 +922,24 @@ class TestASN(IntegrationTestCase):
 			with self.assertRaises(frappe.PermissionError):
 				get_purchase_order_items("PO-0001")
 
-	def test_get_item_transition_summary_rejects_without_read_permission(self):
-		doc = SimpleNamespace(has_permission=lambda _ptype: False)
-		with (
-			patch("asn_module.asn_module.doctype.asn.asn.frappe.get_doc", return_value=doc),
-			self.assertRaises(frappe.PermissionError),
-		):
-			get_item_transition_summary("ASN-0001")
+	def test_connections_tab_lists_the_documents_that_follow_the_asn(self):
+		dashboard = frappe.get_meta("ASN").get_dashboard_data()
+		linked = {doctype for group in dashboard.transactions for doctype in group["items"]}
+
+		self.assertEqual(dashboard.fieldname, "asn")
+		self.assertTrue(
+			{"Gate Pass", "Purchase Receipt", "Subcontracting Receipt", "Purchase Invoice"} <= linked,
+			linked,
+		)
+
+	def test_connections_tab_leaves_out_gate_pass_where_it_is_not_installed(self):
+		from asn_module.asn_module.doctype.asn.asn_dashboard import get_data
+
+		with patch("asn_module.asn_module.doctype.asn.asn_dashboard.frappe.db.exists", return_value=False):
+			data = get_data()
+
+		linked = {doctype for group in data["transactions"] for doctype in group["items"]}
+		self.assertEqual(linked, {"Purchase Receipt", "Subcontracting Receipt", "Purchase Invoice"})
 
 
 class TestRemainingQtyAfterReturn(IntegrationTestCase):

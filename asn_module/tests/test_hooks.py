@@ -147,9 +147,3 @@ class TestHooks(IntegrationTestCase):
 			pr_events["on_cancel"],
 			"asn_module.handlers.purchase_receipt.on_purchase_receipt_cancel",
 		)
-
-		self.assertIn("on_trash", pr_events)
-		self.assertEqual(
-			pr_events["on_trash"],
-			"asn_module.handlers.purchase_receipt.on_purchase_receipt_trash",
-		)
