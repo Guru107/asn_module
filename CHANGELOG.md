@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- The ASN Transition Log, the ASN Item Transition Trace report, and the Traceability section on the ASN form. The ASN's linked documents replace them (ADR 0005), and a patch drops the table.
+- The ASN Transition Log, the ASN Item Transition Trace report, and the Traceability section on the ASN form. The ASN's linked documents replace them (ADR 0005).
 
 ### Fixed
 
